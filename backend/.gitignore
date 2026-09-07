@@ -1,0 +1,23 @@
+# Environment & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Service-account credentials
+credentials/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
