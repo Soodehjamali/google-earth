@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: agri_intelligence
     ports:
-      - "5432:5432"
+      - "5433:5432" # تغییر پورت سیستم‌عامل به 5433 برای جلوگیری از تداخل
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -29,10 +29,10 @@ services:
       - EE_PROJECT_ID=${EE_PROJECT_ID:-}
       - EE_SERVICE_ACCOUNT=${EE_SERVICE_ACCOUNT:-}
       - EE_PRIVATE_KEY_FILE=${EE_PRIVATE_KEY_FILE:-}
-      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://127.0.0.1:5173"]
     volumes:
       - ./backend:/app
-      - ${EE_PRIVATE_KEY_FILE:-./credentials}:/app/credentials:ro
+      - ./credentials:/app/credentials:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,13 +43,15 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      - "5173:5173" # اصلاح پورت فرانت‌اند
     volumes:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
       - backend
     command: pnpm dev --host
+    environment:
+      - VITE_API_PROXY_TARGET=http://backend:8000
 
 volumes:
   postgres_data:

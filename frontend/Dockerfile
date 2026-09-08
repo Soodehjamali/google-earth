@@ -5,15 +5,15 @@ WORKDIR /app
 # Install pnpm
 RUN npm install -g pnpm
 
-# Install dependencies
+# Copy package definitions
 COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install
+
+# Install dependencies allowing build scripts (like esbuild) for Docker
+RUN pnpm install --dangerously-allow-all-builds
 
 # Copy application code
 COPY . .
 
-# Expose port
 EXPOSE 5173
 
-# Run the development server
 CMD ["pnpm", "dev", "--host"]
