@@ -1,0 +1,71 @@
+"""Dataset registry.
+
+Central declaration of every dataset this engine may read. Nothing
+downstream may hardcode a dataset ID, band name, scale factor, or unit.
+"""
+
+from app.services.agriculture.registry.datasets import (
+    DYNAMIC_WORLD_CLASSES,
+    MCD12Q1_CROPLAND_CLASSES,
+    MCD12Q1_CROPLAND_MOSAIC_CLASS,
+    MCD12Q1_IGBP_CLASSES,
+    MCD12Q1_QC_CLASSES,
+    MCD12Q1_QC_PRIMARY_VALUES,
+    MCD12Q1_STRICT_CROPLAND_CLASS,
+    NASADEM_NUM_SOURCE_CODES,
+    NASADEM_NUM_SUSPECT_CODES,
+    NASADEM_SWB_LAND,
+    NASADEM_SWB_WATER,
+    REGISTRY,
+    S2_SCL_INVALID_CLASSES,
+    TERRAIN_ASPECT_MIN_SLOPE_DEG,
+    TERRAIN_ASPECT_SECTORS,
+    WORLDCEREAL_BINARY_VALUES,
+    WORLDCEREAL_PRODUCTS,
+    WORLDCEREAL_SEASONS,
+    dataset_ids,
+    find_by_role,
+    get_dataset,
+    get_datasets,
+    has_dataset,
+)
+from app.services.agriculture.registry.external import (
+    EXTERNAL_REGISTRY,
+    SOILGRIDS_BASE_URL,
+    SOILGRIDS_DEPTHS,
+    SOILGRIDS_PROPERTIES,
+    get_external_dataset,
+    get_external_datasets,
+)
+
+__all__ = [
+    "REGISTRY",
+    "EXTERNAL_REGISTRY",
+    "DYNAMIC_WORLD_CLASSES",
+    "MCD12Q1_CROPLAND_CLASSES",
+    "MCD12Q1_CROPLAND_MOSAIC_CLASS",
+    "MCD12Q1_IGBP_CLASSES",
+    "MCD12Q1_QC_CLASSES",
+    "MCD12Q1_QC_PRIMARY_VALUES",
+    "MCD12Q1_STRICT_CROPLAND_CLASS",
+    "NASADEM_NUM_SOURCE_CODES",
+    "NASADEM_NUM_SUSPECT_CODES",
+    "NASADEM_SWB_LAND",
+    "NASADEM_SWB_WATER",
+    "S2_SCL_INVALID_CLASSES",
+    "TERRAIN_ASPECT_MIN_SLOPE_DEG",
+    "TERRAIN_ASPECT_SECTORS",
+    "WORLDCEREAL_BINARY_VALUES",
+    "WORLDCEREAL_PRODUCTS",
+    "WORLDCEREAL_SEASONS",
+    "SOILGRIDS_BASE_URL",
+    "SOILGRIDS_DEPTHS",
+    "SOILGRIDS_PROPERTIES",
+    "dataset_ids",
+    "find_by_role",
+    "get_dataset",
+    "get_datasets",
+    "get_external_dataset",
+    "get_external_datasets",
+    "has_dataset",
+]

@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 # Import all models to ensure they're registered with Base.metadata
+import sys
+from pathlib import Path
+
+# Add the backend directory to the path so we can import 'app'
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.db.base import Base
 from app.db.models import Location, Analysis, DatasetUsage, TimeSeries, Report  # noqa: F401
 

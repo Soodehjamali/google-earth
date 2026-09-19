@@ -139,7 +139,10 @@ def _classify_error(exc: Exception) -> Tuple[str, str]:
         return CODE_AUTH_FAILED, (
             "Earth Engine rejected the service-account credentials. Verify that "
             "EE_SERVICE_ACCOUNT matches the client_email in the key file, the "
-            "private key is valid, and the server clock is synchronized."
+            "private key is valid, and the server clock is synchronized. If all "
+            "of those hold, the key may have been deleted or replaced in Google "
+            "Cloud Console (IAM & Admin > Service Accounts > Keys) — create a "
+            "new JSON key and update EE_PRIVATE_KEY_FILE."
         )
 
     if "has not been used" in lowered or "not been used" in lowered:
