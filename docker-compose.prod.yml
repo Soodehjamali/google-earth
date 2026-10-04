@@ -1,0 +1,79 @@
+# Production deployment for the Agricultural Intelligence Platform.
+#
+# Usage:
+#   cp .env.example .env   # fill in real values, never commit .env
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Secrets (POSTGRES_PASSWORD, EE_PROJECT_ID, EE_SERVICE_ACCOUNT,
+# EE_PRIVATE_KEY_FILE, CORS_ORIGINS) are injected from the environment —
+# nothing sensitive is stored in this file.
+#
+# EXTERNAL EGRESS REQUIREMENT: Earth Engine calls require outbound HTTPS
+# access to earthengine.googleapis.com / oauth2.googleapis.com. Real-world
+# GEE acceptance (phase S.6) must be executed from a network that allows
+# this egress; it is not validated by this deployment.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in the environment}
+      POSTGRES_DB: ${POSTGRES_DB:-agri_intelligence}
+    # Not published to the host — only reachable on the internal network.
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-agri_intelligence}
+      EE_PROJECT_ID: ${EE_PROJECT_ID:-}
+      EE_SERVICE_ACCOUNT: ${EE_SERVICE_ACCOUNT:-}
+      EE_PRIVATE_KEY_FILE: ${EE_PRIVATE_KEY_FILE:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set (e.g. [\"https://your-domain.example\"])}
+      CACHE_TTL: ${CACHE_TTL:-3600}
+    # The GEE key file is mounted read-only from a path supplied by the
+    # operator; it is never copied into the image.
+    # NOTE: there is no repo-root ./credentials anymore — the stale key
+    # there was removed. Point EE_KEY_MOUNT_DIR at the directory that
+    # actually holds the valid key (default: ./backend/credentials).
+    volumes:
+      - ${EE_KEY_MOUNT_DIR:-./backend/credentials}:/app/credentials:ro
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Apply migrations before serving traffic, then start without --reload.
+    # `exec` makes uvicorn PID 1 so SIGTERM reaches it for graceful shutdown.
+    command: >
+      sh -c "alembic upgrade head &&
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

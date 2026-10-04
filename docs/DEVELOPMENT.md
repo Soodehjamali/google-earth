@@ -146,6 +146,12 @@ docker-compose down
 | EE_PRIVATE_KEY_FILE | No | — | Path to service account key |
 | REDIS_URL | No | — | Redis connection string (optional) |
 | CORS_ORIGINS | No | http://localhost:5173 | Allowed CORS origins |
+| LOG_LEVEL | No | INFO | Logging verbosity |
+| DB_POOL_SIZE / DB_MAX_OVERFLOW | No | 5 / 10 | Connection pool sizing |
+
+> With `APP_ENV=production` the backend refuses to start if `APP_DEBUG` is
+> true, `DATABASE_URL` uses development default credentials, or
+> `CORS_ORIGINS` contains `*`. See `docs/DEPLOYMENT.md`.
 
 ## Coding Standards
 

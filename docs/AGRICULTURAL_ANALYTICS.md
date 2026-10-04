@@ -9,7 +9,7 @@
 | C | Vegetation engine | ✅ Complete |
 | D | Climate and meteorology engine | ✅ Complete |
 | E | Thermal engine | ✅ Complete |
-| F | Water and soil moisture engine | ✅ Complete |
+| F | Water and soil moisture engine | ✅ Complete (deferred GLDAS item closed) |
 | G | Land cover engine | ✅ Complete |
 | H | Terrain engine | ✅ Complete |
 | I | Crop type, land cover, crop area & phenology foundation | ✅ Complete |
@@ -17,7 +17,7 @@
 | K | Quality, fallback, provenance layer | Pending |
 | L | Unified API v1 | Pending |
 
-Test suite: **1263 passing**, 35 integration tests collected, skipped by
+Test suite: **1320 passing**, 63 integration tests collected, skipped by
 default. No network, no credentials and no database are required for the
 default run. The `agri_intelligence` database is untouched by the test
 suite.
@@ -75,7 +75,8 @@ app/services/agriculture/
 ├── water.py             water indices, evapotranspiration, ERA5
 │                        evaporation, the CWSI/WDI omissions
 ├── soil.py              soil moisture: SMAP L3 retrieval, SMAP L4 and
-│                        ERA5-Land root zone
+│                        ERA5-Land root zone, the GLDAS-2.1 root zone
+│                        mass per unit area
 ├── landcover.py         MCD12Q1 categorical metrics + Dynamic World
 │                        probability metric (Phase I)
 ├── crop.py              WorldCereal crop context and crop area,
@@ -84,7 +85,7 @@ app/services/agriculture/
 │                        on a monthly Sentinel-2 NDVI series, and the
 │                        declined seasonal integral (Phase I)
 └── registry/
-    ├── datasets.py      Earth Engine datasets (18 registered)
+    ├── datasets.py      Earth Engine datasets (19 registered)
     └── external.py      non-GEE sources (ISRIC SoilGrids)
 ```
 
@@ -513,7 +514,7 @@ test or a build step can start from an empty registry.
 
 ## Phase F: Water and soil moisture engine
 
-Two modules, thirteen metrics, and a deliberate refusal to produce two
+Two modules, fourteen metrics, and a deliberate refusal to produce two
 more.
 
 ### Water metrics
@@ -538,6 +539,43 @@ more.
 | `soil_moisture_rootzone` | sm_rootzone | 11000 m | m3/m3 | modelled | SMAP L4 |
 | `soil_moisture_rootzone_era5` | volumetric_soil_water_layer_1..3 | 11132 m | m3/m3 | modelled | ERA5-Land |
 | `soil_moisture_wetness` | sm_rootzone_wetness | 11000 m | **fraction** | modelled | SMAP L4 |
+| `root_zone_soil_moisture_gldas` | RootMoist_inst | 27830 m | **kg/m2** | modelled | GLDAS-2.1 |
+
+### A mass per unit area is published as a mass per unit area
+
+`root_zone_soil_moisture_gldas` reports GLDAS-2.1's `RootMoist_inst` band
+in **kg/m2**, the unit the product itself publishes, and it is the one
+soil moisture figure in this engine that is not a volume fraction.
+
+This was the last item deliberately deferred from this phase's original
+audit. The two defensible ways of handling a mass-per-unit-area product
+are to convert it to `m3/m3`, which requires the thickness of the root
+zone layer and the density of water, or to publish it under its own unit
+and never merge it with the volume-fraction metrics. The first option was
+evaluated and rejected: the catalogue documents the profile layers
+individually (0-10, 10-40, 40-100, 100-200 cm) but does not document the
+depth interval that `RootMoist_inst` covers, so the divisor would be an
+assumption wearing the costume of a conversion. A conversion made from an
+unpublished thickness is exactly the kind of plausible-looking number
+this engine exists to avoid.
+
+The second option is therefore used, and it is enforced:
+
+* the metric's unit, its provenance and its warnings all state `kg/m2`;
+* the module's cross-quantity-family guard admits `kg/m2` for **this one
+  metric only** and pins the count, so a second mass metric cannot
+  appear quietly;
+* depth units (`mm`, `cm`, `m`) remain forbidden for every soil metric,
+  so nothing here can silently adopt TerraClimate's convention;
+* a test feeds a 200 kg/m2 root zone through the metric and asserts the
+  result is 200.0 and **not** 0.2 — the value a one-metre conversion
+  would have produced.
+
+The dataset registration states the same facts as caveats: GLDAS-2.1 is
+**open-loop** (it assimilates no soil moisture observations at all), the
+catalogue's range for the band is flagged *estimated* so it is not used
+  as a validity filter, and the value is not comparable with the SMAP or
+ERA5-Land volume fractions without an explicit, stated conversion.
 
 ### Water indices: three names, three different questions
 
@@ -1601,6 +1639,7 @@ Phase H.
 | `NASA/SMAP/SPL3SMP_E/006` | primary | product | 9 km | observation | 2023-12-04 |
 | `NASA/SMAP/SPL3SMP_E/005` | fallback | product | 9 km | observation | 2015-03-31 |
 | `NASA/SMAP/SPL4SMGP/008` | primary | modelled | 11 km | observation | 2015-03-31 |
+| `NASA/GLDAS/V021/NOAH/G025/T3H` | primary | modelled | 0.25° (27 830 m) | observation | 2000-01-01 |
 | `ISRIC/SoilGrids250m/v2_0` | primary | modelled | 250 m | **static** | — |
 | `NASA/NASADEM_HGT/001` | primary | product | 30 m | **static** | 2000-02-11 (acquisition) |
 | `USGS/SRTMGL1_003` | fallback | product | 30 m | **static** | 2000-02-11 (acquisition) |
@@ -1617,6 +1656,13 @@ Notes on the Phase F additions:
   which supersedes the paused REST client for these properties. The
   water-retention assets are `/wv0010`, `/wv0033` and `/wv1500`, at 250 m
   with six depth intervals and unit `cm^3/cm^3` (scale factor 0.001).
+* `NASA/GLDAS/V021/NOAH/G025/T3H` was added when the deferred Phase F
+  metric was closed. Cadence 3 hourly, pixel size 27 830 m, availability
+  from 2000-01-01, band `RootMoist_inst` with units `kg/m^2` — all
+  verified against the catalogue entry and its STAC record. Only that one
+  band is declared; the profile layers exist in the same asset and are
+  recorded in the caveats rather than registered, because no metric reads
+  them.
 
 Notes on the Phase G corrections:
 
@@ -1700,7 +1746,7 @@ backend/
     │                      test_water.py, test_soil.py, test_landcover.py,
     │                      test_terrain.py, test_crop.py, test_phenology.py
     └── integration/       requires RUN_GEE_INTEGRATION_TESTS=1
-                           (climate, thermal, terrain)
+                           (climate, thermal, terrain, water, soil)
 ```
 
 ### Coverage by area
@@ -1709,7 +1755,7 @@ backend/
 |---|---|---|
 | `test_types.py` | 35 | No value without provenance; proxy labelling; no value at insufficient quality |
 | `test_quality.py` | 63 | Missing data never becomes zero; coverage only downgrades; SMAP flag decoding |
-| `test_registry.py` | 164 | Every scale factor, band name and availability date is correct |
+| `test_registry.py` | 195 | Every scale factor, band name and availability date is correct; the GLDAS entry's unit, cadence, coverage and open-loop caveats |
 | `test_aggregation.py` | 47 | Empty reductions yield no values; coverage arithmetic is consistent |
 | `test_base.py` | 38 | Cache keys are deterministic and complete; coverage windows respected |
 | `test_executor.py` | 30 | Per-metric error isolation; error sanitisation; concurrency |
@@ -1718,7 +1764,7 @@ backend/
 | `test_climate.py` | 82 | Unit conversions; no unpaired two-band derivations |
 | `test_thermal.py` | 58 | QC bit decoding; Kelvin discipline; thermal scale factors |
 | `test_water.py` | 118 | ERA5 sign is a negation, not `abs()` and not clamped; MOD16 ×0.1 scale factor; no double counting; NDWI/NDMI/MNDWI band wiring; CWSI/WDI carry no value |
-| `test_soil.py` | 112 | Volume-fraction units preserved across quantity families; relative saturation kept distinct from volumetric water content; the SMAP skip-bit mask is load-bearing; morning and evening flags are never interchanged; thickness-weighted root zone arithmetic; missing data never becomes zero |
+| `test_soil.py` | 140 | Volume-fraction units preserved across quantity families, with exactly one pinned kg/m2 exception (GLDAS root zone) that is never converted to m3/m3; relative saturation kept distinct from volumetric water content; the SMAP skip-bit mask is load-bearing; morning and evening flags are never interchanged; thickness-weighted root zone arithmetic; missing data never becomes zero |
 | `test_landcover.py` | 172 | Class codes are counted, never averaged; there is no IGBP class 0 and water is 17; class 12 and 14 are never merged; no crop species is asserted; QC never becomes a confidence score; no year is substituted outside coverage; histogram shape resolution; service and endpoint wiring; **Dynamic World probability handling: the argmax band is structurally unreadable, no area from a probability, candidate-dominant wording, the recall limitation (Phase I)** |
 | `test_terrain.py` | 62 | A 2024 request against a 2000 acquisition computes; the circular mean wraps through north correctly; flat terrain is excluded before the trigonometry; TWI refuses with the specific missing primitive; provenance separates `product_date` from the requested period |
 
@@ -1771,6 +1817,12 @@ cd backend
 ./.venv/Scripts/python.exe -m pytest tests/unit -q
 ```
 
+Focused Phase F regression (the files this closure touches):
+
+```bash
+./.venv/Scripts/python.exe -m pytest tests/unit/agriculture/test_soil.py tests/unit/agriculture/test_registry.py -q
+```
+
 Unit tests require no network, no Earth Engine credentials and no
 database. This is enforced, not merely intended: the registry, quality
 and types modules import cleanly without pulling in `ee`.
@@ -1786,6 +1838,14 @@ Integration tests are skipped unless explicitly enabled:
 ```bash
 RUN_GEE_INTEGRATION_TESTS=1 ./.venv/Scripts/python.exe -m pytest tests/integration -q
 ```
+
+The water and soil integration files were added when the deferred Phase F
+items were closed. They check the two things the fake Earth Engine cannot
+confirm: that the ERA5-Land evaporation band really is negative for
+upward flux in the archive, and that the SMAP, MOD16, ERA5-Land and
+GLDAS-2.1 band names and units match what Earth Engine publishes. The
+GLDAS check also confirms the live pixel size is 27 830 m, so the
+declared resolution cannot drift away from the asset unnoticed.
 
 The terrain integration file additionally asserts the static contract
 against the live archive — that a 2024 terrain request computes against

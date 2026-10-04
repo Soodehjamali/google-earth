@@ -1,0 +1,142 @@
+...................................................F.................... [  3%]
+........................................................................ [  6%]
+........................................................................ [ 10%]
+........................................................................ [ 13%]
+........................................................................ [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 23%]
+........................................................................ [ 26%]
+.F...................................................................... [ 30%]
+........................................................................ [ 33%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 43%]
+........................................................................ [ 47%]
+........................................................................ [ 50%]
+........................................................................ [ 53%]
+........................................................................ [ 57%]
+.............................................................FF.F.F.F..F [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 67%]
+........................................................................ [ 70%]
+..................................F..................................... [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 87%]
+........................................................................ [ 90%]
+........................................................................ [ 94%]
+.................................FFF...............F.................... [ 97%]
+............................F....................                        [100%]
+================================== FAILURES ===================================
+__________________ test_metric_domains_are_the_expected_set ___________________
+tests\unit\agriculture\test_base.py:121: in test_metric_domains_are_the_expected_set
+    assert set(MetricDomain.ALL) == {
+E   AssertionError: assert {'climate', '...enology', ...} == {'climate', '...terrain', ...}
+E     
+E     Extra items in the left set:
+E     'irrigation'
+E     'stress'
+E     'history'
+E     'productivity'
+E     Use -v to get more diff
+______________ TestRegistration.test_registration_is_idempotent _______________
+tests\unit\agriculture\test_irrigation.py:927: in test_registration_is_idempotent
+    assert sorted(first) == sorted(second)
+E   TypeError: 'NoneType' object is not iterable
+___ TestExternalSoilGridsRegistry.test_soilgrids_properties_are_registered ____
+tests\unit\agriculture\test_soil_properties.py:440: in test_soilgrids_properties_are_registered
+    assert set(SOILGRIDS_PROPERTIES.keys()) == expected_keys
+E   AssertionError: assert {'bdod', 'cec..., 'sand', ...} == {'bdod', 'cec... 'phh2o', ...}
+E     
+E     Extra items in the right set:
+E     'cfvo'
+E     Use -v to get more diff
+__ TestExternalSoilGridsRegistry.test_all_properties_have_verified_d_factors __
+tests\unit\agriculture\test_soil_properties.py:444: in test_all_properties_have_verified_d_factors
+    assert prop.d_factor_verified, (
+E   AssertionError: clay: d_factor not verified
+E   assert False
+E    +  where False = <app.services.agriculture.registry.external.SoilGridsProperty object at 0x0000027257146560>.d_factor_verified
+___________ TestExternalSoilGridsRegistry.test_clay_unit_is_percent ___________
+tests\unit\agriculture\test_soil_properties.py:452: in test_clay_unit_is_percent
+    assert SOILGRIDS_PROPERTIES["clay"].unit == "%"
+E   AssertionError: assert 'g/kg' == '%'
+E     
+E     - %
+E     + g/kg
+___________ TestExternalSoilGridsRegistry.test_soc_unit_is_g_per_kg ___________
+tests\unit\agriculture\test_soil_properties.py:458: in test_soc_unit_is_g_per_kg
+    assert SOILGRIDS_PROPERTIES["soc"].unit == "g/kg"
+E   AssertionError: assert 'dg/kg' == 'g/kg'
+E     
+E     - g/kg
+E     + dg/kg
+E     ? +
+___________ TestExternalSoilGridsRegistry.test_bdod_unit_is_kg_dm3 ____________
+tests\unit\agriculture\test_soil_properties.py:464: in test_bdod_unit_is_kg_dm3
+    assert SOILGRIDS_PROPERTIES["bdod"].unit == "kg/dm3"
+E   AssertionError: assert 'cg/cm3' == 'kg/dm3'
+E     
+E     - kg/dm3
+E     + cg/cm3
+_______ TestExternalSoilGridsRegistry.test_to_physical_applies_d_factor _______
+tests\unit\agriculture\test_soil_properties.py:475: in test_to_physical_applies_d_factor
+    assert prop.to_physical(500) == pytest.approx(50.0)
+E   assert None == 50.0 ± 5.0e-05
+E     
+E     comparison failed
+E     Obtained: None
+E     Expected: 50.0 ± 5.0e-05
+______________ TestRegistration.test_registration_is_idempotent _______________
+tests\unit\agriculture\test_stress.py:1568: in test_registration_is_idempotent
+    assert sorted(first) == sorted(second)
+E   TypeError: 'NoneType' object is not iterable
+______ TestAnalysisServiceCache.test_domain_analysis_cache_hit[climate] _______
+tests\unit\test_agriculture_cache.py:332: in test_domain_analysis_cache_hit
+    assert mock_run.call_count == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = <MagicMock name='_run_domain_analysis' id='2690304798352'>.call_count
+_______ TestAnalysisServiceCache.test_domain_analysis_cache_hit[water] ________
+tests\unit\test_agriculture_cache.py:332: in test_domain_analysis_cache_hit
+    assert mock_run.call_count == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = <MagicMock name='_run_domain_analysis' id='2690305657168'>.call_count
+________ TestAnalysisServiceCache.test_domain_analysis_cache_hit[soil] ________
+tests\unit\test_agriculture_cache.py:332: in test_domain_analysis_cache_hit
+    assert mock_run.call_count == 1
+E   AssertionError: assert 2 == 1
+E    +  where 2 = <MagicMock name='_run_domain_analysis' id='2690304975888'>.call_count
+_ TestNoExecutionAfterCacheHit.test_create_ee_geometry_not_called_after_cache_hit _
+tests\unit\test_agriculture_cache_s4.py:646: in test_create_ee_geometry_not_called_after_cache_hit
+    mock_geom.assert_not_called()
+..\..\..\AppData\Roaming\uv\python\cpython-3.11-windows-x86_64-none\Lib\unittest\mock.py:900: in assert_not_called
+    raise AssertionError(msg)
+E   AssertionError: Expected 'create_ee_geometry' to not have been called. Called 1 times.
+E   Calls: [call({'type': 'Point', 'coordinates': [51.3, 35.7]})].
+__________________ TestMapSoil.test_maps_all_soil_properties __________________
+tests\unit\test_analysis_service.py:198: in test_maps_all_soil_properties
+    assert soil["texture"]["class"] == "loam"
+E   AssertionError: assert None == 'loam'
+============================== warnings summary ===============================
+.venv\Lib\site-packages\starlette\testclient.py:37
+  C:\Users\Jamali\Desktop\google\backend\.venv\Lib\site-packages\starlette\testclient.py:37: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = typing.Callable[[], typing.ContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/agriculture/test_base.py::test_metric_domains_are_the_expected_set
+FAILED tests/unit/agriculture/test_irrigation.py::TestRegistration::test_registration_is_idempotent
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_soilgrids_properties_are_registered
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_all_properties_have_verified_d_factors
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_clay_unit_is_percent
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_soc_unit_is_g_per_kg
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_bdod_unit_is_kg_dm3
+FAILED tests/unit/agriculture/test_soil_properties.py::TestExternalSoilGridsRegistry::test_to_physical_applies_d_factor
+FAILED tests/unit/agriculture/test_stress.py::TestRegistration::test_registration_is_idempotent
+FAILED tests/unit/test_agriculture_cache.py::TestAnalysisServiceCache::test_domain_analysis_cache_hit[climate]
+FAILED tests/unit/test_agriculture_cache.py::TestAnalysisServiceCache::test_domain_analysis_cache_hit[water]
+FAILED tests/unit/test_agriculture_cache.py::TestAnalysisServiceCache::test_domain_analysis_cache_hit[soil]
+FAILED tests/unit/test_agriculture_cache_s4.py::TestNoExecutionAfterCacheHit::test_create_ee_geometry_not_called_after_cache_hit
+FAILED tests/unit/test_analysis_service.py::TestMapSoil::test_maps_all_soil_properties
+14 failed, 2123 passed, 1 warning in 34.10s

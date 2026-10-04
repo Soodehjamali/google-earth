@@ -3,7 +3,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,11 @@ class Report(Base, TimestampMixin):
     """Generated report for an analysis."""
 
     __tablename__ = "reports"
+
+    # Indexes must match alembic migration 001_initial_tables exactly.
+    __table_args__ = (
+        Index("ix_reports_analysis_id", "analysis_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

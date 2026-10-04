@@ -6,6 +6,7 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
 import { analysesApi } from '../api/analyses'
+import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import type { Analysis, MapVisualization, TimeSeriesPoint } from '../types'
 
 export default function Climate() {
@@ -72,6 +73,7 @@ export default function Climate() {
       </div>
 
       {/* Quick Analysis Form */}
+      <ComprehensiveNotice to="/agriculture/climate" linkLabelFa="مشاهده تحلیل جامع" linkLabelEn="View comprehensive analysis" />
       <div className="card mb-3">
         <div className="card-header">
           <span className="card-title">🌤️ تحلیل اقلیم</span>

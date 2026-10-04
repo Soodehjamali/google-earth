@@ -1,0 +1,269 @@
+INFO:     Started server process [46728]
+INFO:     Waiting for application startup.
+2026-09-27 13:38:31 | INFO | app.main | Agricultural Intelligence Platform starting (env=development)
+2026-09-27 13:38:48 | WARNING | googleapiclient.http | Sleeping 1.73 seconds before retry 1 of 1 for request: GET https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false, after HTTPSConnectionPool(host='earthengine.googleapis.com', port=443): Max retries exceeded with url: /$discovery/rest?version=v1&prettyPrint=false (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))
+2026-09-27 13:39:05 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: HTTPSConnectionPool(host='earthengine.googleapis.com', port=443): Max retries exceeded with url: /$discovery/rest?version=v1&prettyPrint=false (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))
+2026-09-27 13:39:05 | ERROR | app.services.earth_engine.authentication | Earth Engine BLOCKED — initialization failed at startup (connection_failed): Earth Engine initialization failed on the server. See the backend logs for the underlying error.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:65504 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 13:39:54 | INFO | app.api.v1.agriculture | Agriculture analysis 9f6a366b-0ec7-49f5-9b3f-56e286eb46f7: 2024-04-01 to 2024-06-30
+2026-09-27 13:39:54 | ERROR | app.api.v1.agriculture | Agriculture analysis 9f6a366b-0ec7-49f5-9b3f-56e286eb46f7 failed (3.1ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:65508 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:65530 - "POST /api/v1/agriculture/analysis HTTP/1.1" 400 Bad Request
+2026-09-27 13:40:41 | INFO | app.api.v1.agriculture | Agriculture analysis 27646e09-ef49-4ef7-b3c1-4e5f25c8540d: 2024-04-01 to 2024-06-30
+INFO:     127.0.0.1:65531 - "POST /api/v1/agriculture/analysis HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:65532 - "POST /api/v1/agriculture/analysis HTTP/1.1" 422 Unprocessable Entity
+2026-09-27 13:40:41 | INFO | app.api.v1.agriculture | Agriculture analysis 8075ebc5-753e-40ea-be2b-5af39f366edb: 2024-04-01 to 2024-06-30
+INFO:     127.0.0.1:65533 - "POST /api/v1/agriculture/analysis HTTP/1.1" 400 Bad Request
+2026-09-27 13:41:02 | INFO | app.api.v1.agriculture | Agriculture analysis 03fc8bce-f4b7-47ea-8166-180a39d3efa8: 2024-04-01 to 2024-06-30
+2026-09-27 13:41:02 | ERROR | app.api.v1.agriculture | Agriculture analysis 03fc8bce-f4b7-47ea-8166-180a39d3efa8 failed (7.8ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:49155 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:49162 - "POST /api/v1/agriculture/analysis/synthesis-only HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49246 - "POST /api/v1/agriculture/analysis/synthesis-only HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57421 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:14:05 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:14:05 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:57423 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     Started server process [56760]
+INFO:     Waiting for application startup.
+2026-09-27 19:18:41 | INFO | app.main | Agricultural Intelligence Platform starting (env=development)
+2026-09-27 19:18:41 | ERROR | app.main | Earth Engine startup check failed: name '_ee_initialized' is not defined
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     Started server process [19588]
+INFO:     Waiting for application startup.
+2026-09-27 19:20:23 | INFO | app.main | Agricultural Intelligence Platform starting (env=development)
+2026-09-27 19:20:23 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: name '_REQUIRED_KEY_FIELDS' is not defined
+2026-09-27 19:20:23 | ERROR | app.services.earth_engine.authentication | Earth Engine BLOCKED — initialization failed at startup (connection_failed): Earth Engine could not be reached from this server. Verify outbound HTTPS access to earthengine.googleapis.com and oauth2.googleapis.com (network, proxy, DNS, and TLS), then retry.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     Started server process [58840]
+INFO:     Waiting for application startup.
+2026-09-27 19:25:25 | INFO | app.main | Agricultural Intelligence Platform starting (env=development)
+2026-09-27 19:25:27 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:25:27 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+2026-09-27 19:25:27 | ERROR | app.services.earth_engine.authentication | Earth Engine BLOCKED — initialization failed at startup (connection_failed): Earth Engine could not be reached from this server. Verify outbound HTTPS access to earthengine.googleapis.com and oauth2.googleapis.com (network, proxy, DNS, and TLS), then retry.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+2026-09-27 19:25:51 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:25:51 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62704 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62732 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:28 | INFO | app.api.v1.agriculture | Agriculture analysis 916a3670-7ebd-4742-a040-048508979c33: 2024-04-01 to 2024-06-30
+2026-09-27 19:26:28 | ERROR | app.api.v1.agriculture | Agriculture analysis 916a3670-7ebd-4742-a040-048508979c33 failed (2.5ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:62733 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+2026-09-27 19:26:30 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:30 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62734 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62739 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:34 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:34 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62740 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62744 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:38 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:38 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62745 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62753 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:43 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:43 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62755 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62761 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:47 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:47 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62762 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62767 - "GET /api/v1/health HTTP/1.1" 200 OK
+2026-09-27 19:26:52 | WARNING | googleapiclient.http | Invalid JSON content from response: b'<!DOCTYPE html>\n<html lang=en>\n  <meta charset=utf-8>\n  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">\n  <title>Error 403 (Forbidden)!!1</title>\n  <style>\n    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}\n  </style>\n  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>\n  <p><b>403.</b> <ins>That\xe2\x80\x99s an error.</ins>\n  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That\xe2\x80\x99s all we know.</ins>\n'
+2026-09-27 19:26:52 | ERROR | app.services.earth_engine.authentication | Earth Engine initialization failed: <HttpError 403 when requesting https://earthengine.googleapis.com/$discovery/rest?version=v1&prettyPrint=false returned "Ok". Details: "<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 403 (Forbidden)!!1</title>
+  <style>
+    *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>403.</b> <ins>That’s an error.</ins>
+  <p>Your client does not have permission to get URL <code>/$discovery/rest</code> from this server.  <ins>That’s all we know.</ins>
+">
+INFO:     127.0.0.1:62768 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+2026-09-27 19:34:35 | INFO | app.api.v1.agriculture | Agriculture analysis 0e7f75e8-55ee-4da6-aa99-d0461ad376fd: 2024-04-01 to 2024-06-30
+2026-09-27 19:34:35 | ERROR | app.api.v1.agriculture | Agriculture analysis 0e7f75e8-55ee-4da6-aa99-d0461ad376fd failed (10.7ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:62916 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:62917 - "POST /api/v1/vegetation/ndvi HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:62918 - "GET /api/v1/vegetation/indices HTTP/1.1" 200 OK
+2026-09-27 19:34:36,390 INFO sqlalchemy.engine.Engine select pg_catalog.version()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | select pg_catalog.version()
+2026-09-27 19:34:36,391 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [raw sql] ()
+2026-09-27 19:34:36,407 INFO sqlalchemy.engine.Engine select current_schema()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | select current_schema()
+2026-09-27 19:34:36,407 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [raw sql] ()
+2026-09-27 19:34:36,414 INFO sqlalchemy.engine.Engine show standard_conforming_strings
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | show standard_conforming_strings
+2026-09-27 19:34:36,414 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [raw sql] ()
+2026-09-27 19:34:36,419 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-09-27 19:34:36,473 INFO sqlalchemy.engine.Engine SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36,473 INFO sqlalchemy.engine.Engine [generated in 0.00090s] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [generated in 0.00090s] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36,498 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+INFO:     127.0.0.1:62919 - "GET /api/v1/analyses/00000000-0000-0000-0000-000000000000/water HTTP/1.1" 404 Not Found
+2026-09-27 19:34:36,509 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-09-27 19:34:36,510 INFO sqlalchemy.engine.Engine SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36,510 INFO sqlalchemy.engine.Engine [cached since 0.03738s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [cached since 0.03738s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36,513 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+INFO:     127.0.0.1:62921 - "GET /api/v1/analyses/00000000-0000-0000-0000-000000000000/landcover HTTP/1.1" 404 Not Found
+2026-09-27 19:34:36,523 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-09-27 19:34:36,524 INFO sqlalchemy.engine.Engine SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36,524 INFO sqlalchemy.engine.Engine [cached since 0.05156s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [cached since 0.05156s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36,528 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+INFO:     127.0.0.1:62922 - "GET /api/v1/analyses/00000000-0000-0000-0000-000000000000/soil HTTP/1.1" 404 Not Found
+2026-09-27 19:34:36,538 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-09-27 19:34:36,539 INFO sqlalchemy.engine.Engine SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | SELECT analyses.id, analyses.location_id, analyses.start_date, analyses.end_date, analyses.analysis_type, analyses.temporal_resolution, analyses.status, analyses.error_message, analyses.completed_at, analyses.result_data, analyses.created_at, analyses.updated_at 
+FROM analyses 
+WHERE analyses.id = $1::UUID
+2026-09-27 19:34:36,539 INFO sqlalchemy.engine.Engine [cached since 0.06679s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [cached since 0.06679s ago] (UUID('00000000-0000-0000-0000-000000000000'),)
+2026-09-27 19:34:36,544 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+INFO:     127.0.0.1:62923 - "GET /api/v1/analyses/00000000-0000-0000-0000-000000000000/climate HTTP/1.1" 404 Not Found
+2026-09-27 19:34:36 | INFO | app.api.v1.agriculture | Agriculture analysis 849db3bf-12e2-47e2-a22d-d4c9c6984afb: 2024-04-01 to 2024-06-30
+2026-09-27 19:34:36 | ERROR | app.api.v1.agriculture | Agriculture analysis 849db3bf-12e2-47e2-a22d-d4c9c6984afb failed (1.1ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:62924 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:62925 - "POST /api/v1/agriculture/analysis HTTP/1.1" 422 Unprocessable Entity
+2026-09-27 19:34:36 | INFO | app.api.v1.agriculture | Agriculture analysis 40ff59f3-177c-4101-b2aa-fdef4e559fbd: 2015-01-01 to 2015-12-31
+2026-09-27 19:34:36 | ERROR | app.api.v1.agriculture | Agriculture analysis 40ff59f3-177c-4101-b2aa-fdef4e559fbd failed (0.7ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:62926 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+2026-09-27 19:34:36 | INFO | app.api.v1.agriculture | Agriculture analysis 40ad96a5-3541-4e9d-aff8-4d6a3ccd2b53: 2024-04-01 to 2024-06-30
+2026-09-27 19:34:36 | ERROR | app.api.v1.agriculture | Agriculture analysis 40ad96a5-3541-4e9d-aff8-4d6a3ccd2b53 failed (0.5ms): Earth Engine client library not initialized. See http://goo.gle/ee-auth.
+INFO:     127.0.0.1:62927 - "POST /api/v1/agriculture/analysis HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:62928 - "POST /api/v1/agriculture/analysis/synthesis-only HTTP/1.1" 200 OK
+2026-09-27 19:34:36 | INFO | app.api.v1.agriculture | Agriculture analysis 04b5cf56-db22-4139-b5ec-860ae9198fa4: 2024-04-01 to 2024-06-30
+INFO:     127.0.0.1:62929 - "POST /api/v1/agriculture/analysis HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:62930 - "POST /api/v1/agriculture/analysis HTTP/1.1" 400 Bad Request
+2026-09-27 19:34:36,631 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-09-27 19:34:36,632 INFO sqlalchemy.engine.Engine SELECT 1
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | SELECT 1
+2026-09-27 19:34:36,632 INFO sqlalchemy.engine.Engine [generated in 0.00033s] ()
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | [generated in 0.00033s] ()
+2026-09-27 19:34:36,637 INFO sqlalchemy.engine.Engine ROLLBACK
+2026-09-27 19:34:36 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+INFO:     127.0.0.1:62931 - "GET /api/v1/health/ready HTTP/1.1" 200 OK

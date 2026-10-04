@@ -1,0 +1,6 @@
+﻿{
+  "geometry": { "type": "Point", "coordinates": [53.688, 32.4279] },
+  "start_date": "2025-06-01",
+  "end_date": "2025-09-01",
+  "cloud_max_percent": 20
+}

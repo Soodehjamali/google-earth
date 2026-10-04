@@ -42,11 +42,102 @@ __all__ = [
     "execute_metrics",
     "sanitise_error_message",
     "DEFAULT_MAX_WORKERS",
+    "TRANSPORT_MAX_ATTEMPTS",
 ]
 
 #: Conservative default. Earth Engine applies per-user request quotas, so
 #: unbounded parallelism produces rate limit errors rather than speed.
 DEFAULT_MAX_WORKERS = 4
+
+#: Total attempts allowed for a transport-class failure: the initial try
+#: plus one retry. Deliberately small — a dead endpoint does not get
+#: healthier by being asked twice in quick succession, and the retry
+#: exists only to ride out a single dropped connection.
+TRANSPORT_MAX_ATTEMPTS = 2
+
+#: Base delay before the single retry, in seconds. Short, deterministic
+#: bounds: attempt N waits ``base * 2**(N-1)`` seconds plus jitter.
+TRANSPORT_BACKOFF_BASE_S = 0.5
+TRANSPORT_BACKOFF_CAP_S = 2.0
+TRANSPORT_JITTER_FRACTION = 0.25
+
+
+def _is_transport_error(exc: BaseException) -> bool:
+    """True only for network-transport failure classes.
+
+    Retry is restricted to failures where the request never completed as a
+    server-side computation: TLS/SSL breakage, DNS, connection refusal or
+    reset, and request timeouts. Everything else — including an EE
+    computation error, a bad dataset ID, an empty collection, or an HTTP
+    response the server did send — is a definitive answer and must NOT be
+    retried, because the same request would fail identically.
+
+    Note on HTTP errors: an ``HttpError`` carries the server's answer
+    (including Google's IP-block 403 HTML), so it is transport-adjacent
+    but NOT retryable here — the block will not lift between two attempts
+    0.5 s apart, and treating a refusal as transient would only add
+    latency. Authentication and EarthEngineAuthError are likewise
+    definitive.
+    """
+    # Authentication errors are definitional failures, never transport.
+    from app.core.exceptions import EarthEngineAuthError
+
+    if isinstance(exc, EarthEngineAuthError):
+        return False
+
+    # Module-level import of the transport exception classes.
+    import requests.exceptions as _requests_exc
+
+    # SSL errors subclass both SSLError and RequestException; listing the
+    # specific classes first keeps intent explicit.
+    if isinstance(
+        exc,
+        (
+            _requests_exc.SSLError,
+            _requests_exc.ConnectionError,
+            _requests_exc.Timeout,
+            _requests_exc.ChunkedEncodingError,
+            ConnectionError,
+            TimeoutError,
+        ),
+    ):
+        return True
+
+    # ``requests.exceptions.RequestException`` catches remaining requests
+    # failures (e.g. ``ConnectionResetError`` wrapped by urllib3 as
+    # ProtocolError). Explicitly NOT retryable subclasses — HTTPError —
+    # were already matched above by exclusion order, so reaching here with
+    # a RequestException means the request never completed.
+    if isinstance(exc, _requests_exc.HTTPError):
+        return False
+    if isinstance(exc, _requests_exc.RequestException):
+        return True
+
+    # googleapiclient surfaces transport problems as socket-level errors.
+    # NOTE: googleapiclient HttpError is deliberately absent: it means the
+    # server answered (403 block page, quota, IAM), which is definitive.
+    import socket
+
+    if isinstance(exc, (socket.timeout, OSError)):
+        return True
+
+    return False
+
+
+def _transport_backoff_seconds(attempt: int) -> float:
+    """Short exponential backoff with bounded deterministic jitter.
+
+    Attempt 1 waits ~0.5 s, attempt 2 ~1 s, capped at 2 s. Jitter is a
+    deterministic fraction of the base so two workers never retry in
+    lockstep while the delay stays reproducible in tests.
+    """
+    import random
+
+    base = min(
+        TRANSPORT_BACKOFF_CAP_S,
+        TRANSPORT_BACKOFF_BASE_S * (2 ** (max(0, attempt - 1))),
+    )
+    return base * (1.0 + random.uniform(0.0, TRANSPORT_JITTER_FRACTION))
 
 
 def sanitise_error_message(exc: BaseException) -> str:
@@ -143,51 +234,83 @@ def execute_metric(
                 exc,
             )
 
-    try:
-        result = metric.compute(context)
-        elapsed = (time.perf_counter() - started) * 1000.0
+    attempts = 0
+    first_error: Optional[BaseException] = None
+    while attempts < TRANSPORT_MAX_ATTEMPTS:
+        attempts += 1
+        try:
+            result = metric.compute(context)
+            elapsed = (time.perf_counter() - started) * 1000.0
 
-        if not isinstance(result, MetricResult):
-            raise TypeError(
-                f"Metric {metric.key!r} returned {type(result).__name__}, "
-                "expected MetricResult"
+            if not isinstance(result, MetricResult):
+                raise TypeError(
+                    f"Metric {metric.key!r} returned {type(result).__name__}, "
+                    "expected MetricResult"
+                )
+
+            logger.info(
+                "Metric %s computed with status %s in %.1f ms (attempt %d)",
+                metric.key,
+                result.status,
+                elapsed,
+                attempts,
+            )
+            return ExecutionOutcome(
+                metric_key=metric.key,
+                result=result,
+                duration_ms=elapsed,
+                succeeded=result.status not in (STATUS_ERROR, STATUS_UNAVAILABLE),
             )
 
-        logger.info(
-            "Metric %s computed with status %s in %.1f ms",
-            metric.key,
-            result.status,
-            elapsed,
-        )
-        return ExecutionOutcome(
-            metric_key=metric.key,
-            result=result,
-            duration_ms=elapsed,
-            succeeded=result.status not in (STATUS_ERROR, STATUS_UNAVAILABLE),
-        )
+        except Exception as exc:  # noqa: BLE001 - isolation is the whole point
+            if first_error is None:
+                first_error = exc
+            if attempts < TRANSPORT_MAX_ATTEMPTS and _is_transport_error(exc):
+                delay = _transport_backoff_seconds(attempts)
+                logger.warning(
+                    "Metric %s transport failure (%s) on attempt %d/%d, "
+                    "retrying in %.2fs",
+                    metric.key,
+                    type(exc).__name__,
+                    attempts,
+                    TRANSPORT_MAX_ATTEMPTS,
+                    delay,
+                )
+                time.sleep(delay)
+                continue
+            break
 
-    except Exception as exc:  # noqa: BLE001 - isolation is the whole point
-        elapsed = (time.perf_counter() - started) * 1000.0
-        safe_message = sanitise_error_message(exc)
-        logger.error(
-            "Metric %s failed with %s in %.1f ms: %s",
-            metric.key,
-            type(exc).__name__,
-            elapsed,
-            safe_message,
-        )
-        return ExecutionOutcome(
+    # Both attempts failed (or the failure was non-transport): the FIRST
+    # error is reported — the retry exists to succeed, not to rewrite the
+    # failure mode. No fallback value is produced and no unavailable result
+    # is converted into a usable one.
+    elapsed = (time.perf_counter() - started) * 1000.0
+    first_error = (
+        first_error
+        if first_error is not None
+        else RuntimeError("metric produced no result")
+    )
+    safe_message = sanitise_error_message(first_error)
+    logger.error(
+        "Metric %s failed with %s after %d attempt(s) in %.1f ms: %s",
+        metric.key,
+        type(first_error).__name__,
+        attempts,
+        elapsed,
+        safe_message,
+    )
+    return ExecutionOutcome(
+        metric_key=metric.key,
+        result=MetricResult.error(
             metric_key=metric.key,
-            result=MetricResult.error(
-                metric_key=metric.key,
-                display_name=metric.display_name,
-                display_name_fa=metric.display_name_fa,
-                message=safe_message,
-                unit=metric.unit,
-            ),
-            duration_ms=elapsed,
-            error_type=type(exc).__name__,
-        )
+            display_name=metric.display_name,
+            display_name_fa=metric.display_name_fa,
+            message=safe_message,
+            unit=metric.unit,
+        ),
+        duration_ms=elapsed,
+        error_type=type(first_error).__name__,
+    )
 
 
 def execute_metrics(

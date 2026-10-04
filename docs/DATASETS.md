@@ -245,6 +245,45 @@ SoilGrids data is available through:
 
 ---
 
+## 6. Sentinel-1 SAR GRD — Phase CD-3 (Radar Canopy Signal)
+
+| Field | Value |
+|-------|-------|
+| **Dataset ID** | `COPERNICUS/S1_GRD` |
+| **Provider** | ESA / Copernicus |
+| **Product** | C-band (5.405 GHz) Ground Range Detected, log scaling, calibrated and ortho-corrected |
+| **Spatial Resolution** | 10 m (IW GRD) |
+| **Bands read** | VV, VH (decibels); HH, HV and `angle` exist but are not registered |
+| **Available From** | 2014-10-03 |
+| **Acquisition filter** | IW mode, VV+VH dual-polarization, descending pass (fixed homogeneous policy) |
+| **Temporal aggregation** | Temporal mean composite in native dB, then spatial mean |
+
+> Radar role: **complementary canopy structural/moisture-sensitive
+> signal**. Backscatter mixes canopy structure, biomass, soil and
+> roughness; it is not a measurement of leaf water and isolates no
+> canopy layer (upper/middle/lower). No middle-leaf claim is supported.
+
+### Image Properties Used for Filtering
+
+| Property | Value enforced |
+|----------|---------------|
+| `instrumentMode` | `IW` |
+| `transmitterReceiverPolarisation` | contains `VV` and `VH` |
+| `orbitProperties_pass` | `DESCENDING` |
+
+Ascending and descending passes are never mixed: opposite-side viewing
+geometry would fold acquisition direction into every comparison.
+
+### Known Limitations
+
+- No cloud mask exists for SAR and none is invented (C-band largely penetrates cloud)
+- Sentinel-1B unavailable Dec 2021–Dec 2024 (single-satellite 12-day revisit); early archive sparse
+- Incidence-angle variation between tracks is not corrected
+- Speckle mitigated by temporal-mean compositing only; few-acquisition windows stay noisy
+- Must clearly label as complementary radar signal, never leaf-layer moisture
+
+---
+
 ## Dataset Usage Summary
 
 | Phase | Dataset | Primary Use |

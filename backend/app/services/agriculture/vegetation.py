@@ -23,6 +23,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.types import NOT_AVAILABLE_REASON_UNSUPPORTED
 from app.services.agriculture.quality import (
     MODIS_THRESHOLDS,
     SENTINEL2_THRESHOLDS,
@@ -629,20 +630,95 @@ class FPARMetric(_MODISStructuralMetric):
     )
 
 
-class FCOVERMetric(_MODISStructuralMetric):
-    key = "fcover"
-    display_name = "Fraction of Vegetation Cover"
-    display_name_fa = "کسر پوشش گیاهی (FCOVER)"
+class FCOVERMetric(Metric):
+    """Fractional vegetation cover — honestly unavailable in this engine.
+
+    Why this metric cannot produce a value
+    --------------------------------------
+    The previously registered source band, MCD15A3H ``Fcov``, does not
+    exist. The MODIS Combined LAI/FPAR product publishes exactly these
+    scientific data sets: ``Lai``, ``Fpar``, ``LaiStdDev``,
+    ``FparStdDev`` and ``FparLai_QC``. There is no canopy-cover layer in
+    the MCD15A3H product description, so the registered ``Fcov`` band was
+    a phantom.
+
+    The only EE-hosted collection with a genuine published fractional
+    vegetation cover band is the discontinued Copernicus PROBA-V C1
+    100 m Land Cover (``COPERNICUS/Landcover/100m/ProbaV-C3/Global``,
+    ``ForestCoverFraction`` layer), which ended in 2019 and is not a
+    continuous fCOVER product. No maintained Earth Engine-hosted dataset
+    provides FCOVER. Options such as thresholding NDVI would be a proxy
+    published under a real product's name, which this engine is
+    specifically built to refuse.
+
+    It therefore reports ``unavailable`` for every request. This is the
+    honest answer: no value, no fallback, no proxy, with the reason
+    published in ``message`` and ``reason``, and ``available: False`` in
+    the catalog. This follows the same pattern as the never-produced crop
+    date metrics in ``crop.py``.
+
+    Restoring this metric later requires a real source: the Copernicus
+    Vegetation indices service (GEOV2 fAPAR/fCOVER) or Sentinel-2 SL2P
+    biophysical retrievals, ingested as a dataset with a verified band
+    spec, plus a real ``compute`` implementation. Nothing else in this
+    module is affected: LAI and FAPAR keep reading MCD15A3H
+    ``Lai``/``Fpar`` and the S2 metrics are untouched.
+    """
+
+    domain = MetricDomain.VEGETATION
+    dataset_ids: Sequence[str] = ()
+    measurement_basis = MeasurementBasis.PRODUCT
     unit = "fraction"
-    source_band = "Fcov"
+    key = "fcover"
+    display_name = "Fraction of Vegetation Cover (not produced)"
+    display_name_fa = "کسر پوشش گیاهی (تولید نمی‌شود)"
     description = (
-        "Fraction of ground covered by green vegetation, from MODIS."
+        "Fraction of ground covered by green vegetation. Not produced: "
+        "no Earth Engine-hosted dataset provides this variable with a "
+        "verified source band."
     )
     limitations = (
-        "Reports the fraction of ground covered, not crop vigour or health.",
-        "At 500 m it cannot separate a crop from adjacent natural "
-        "vegetation.",
+        "Not produced. See the unavailable reason for the full argument.",
     )
+
+    #: Full structural reason, published in the API and catalog.
+    UNAVAILABLE_REASON = (
+        "FCOVER is not produced: no Earth Engine-hosted dataset provides "
+        "fractional vegetation cover. The previously used source band "
+        "(MCD15A3H 'Fcov') does not exist — the MODIS MCD15A3H product "
+        "publishes only Lai, Fpar, LaiStdDev, FparStdDev and FparLai_QC, "
+        "with no canopy-cover layer. The only EE-hosted cover-fraction "
+        "layer (PROBA-V C1 ForestCoverFraction) ended in 2019 and is not "
+        "a continuous fCOVER product. A valid source (e.g. Copernicus "
+        "GEOV2 fCOVER or an S2 SL2P retrieval) must be ingested with a "
+        "verified band spec before this metric can be computed. It is "
+        "deliberately NOT derived from NDVI or any other band, because "
+        "that would publish a proxy under a real product's name."
+    )
+    UNAVAILABLE_CODE = "not_supported"
+
+    def can_attempt(self, context: MetricContext) -> Tuple[bool, str]:
+        """Refuse every period with the documented structural reason."""
+        return False, self.UNAVAILABLE_CODE
+
+    def compute(self, context: MetricContext) -> MetricResult:
+        """Always unavailable — by design, for every request."""
+        return MetricResult.unavailable(
+            metric_key=self.key,
+            display_name=self.display_name,
+            display_name_fa=self.display_name_fa,
+            reason=self.UNAVAILABLE_CODE,
+            message=self.UNAVAILABLE_REASON,
+            unit=self.unit,
+        )
+
+    def metadata(self) -> Dict[str, Any]:
+        """Catalog entry: honestly marked unavailable, with the reason."""
+        metadata = super().metadata()
+        metadata["available"] = False
+        metadata["unavailable_code"] = self.UNAVAILABLE_CODE
+        metadata["unavailable_reason"] = self.UNAVAILABLE_REASON
+        return metadata
 
 
 #: Every vegetation metric, in catalog order.

@@ -511,7 +511,13 @@ def test_catalog_dataset_entries_carry_band_metadata():
     assert red["unit"] == "reflectance"
 
 
-def test_catalog_marks_soilgrids_as_unverified():
+def test_catalog_marks_soilgrids_parameters_as_verified():
+    """The catalog reports the SoilGrids conversion state honestly.
+
+    The d-factors were carried as pending during the ISRIC API outage and
+    have since been verified against ISRIC's official documentation, so
+    the catalog must now report the dataset as verified.
+    """
     from app.services.agriculture.catalog import catalog
 
     payload = catalog()
@@ -519,7 +525,7 @@ def test_catalog_marks_soilgrids_as_unverified():
         d for d in payload["external_datasets"]
         if d["id"] == "ISRIC/SOILGRIDS/V2"
     )
-    assert soil["verified"] is False
+    assert soil["verified"] is True
 
 
 def test_register_metric_rejects_duplicate_key_from_other_class():

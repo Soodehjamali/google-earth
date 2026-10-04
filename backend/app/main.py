@@ -32,29 +32,42 @@ def validate_earth_engine_on_startup() -> None:
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     setup_logging()
-    logger.info("Agricultural Intelligence Platform starting")
+    logger.info("Agricultural Intelligence Platform starting (env=%s)", settings.APP_ENV)
     try:
         validate_earth_engine_on_startup()
     except Exception as exc:  # never block startup on EE reporting issues
         logger.error("Earth Engine startup check failed: %s", exc)
     yield
-    logger.info("Agricultural Intelligence Platform shutting down")
+    # Graceful shutdown: release database connections before the process exits.
+    from app.db.session import dispose_engine
 
+    await dispose_engine()
+    logger.info("Agricultural Intelligence Platform shut down cleanly")
+
+
+# Interactive API documentation is a development aid; disable it in
+# production to reduce the exposed surface area.
+_docs_url = "/docs" if not settings.is_production else None
+_redoc_url = "/redoc" if not settings.is_production else None
+_openapi_url = "/openapi.json" if not settings.is_production else None
 
 app = FastAPI(
     title="Agricultural Intelligence Platform",
     description="Satellite-based agricultural analysis and decision support",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
 )
 
-# CORS
+# CORS — explicit origins from configuration; no wildcard methods/headers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 
@@ -72,8 +85,12 @@ async def app_exception_handler(request: Request, exc: AppException):
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
-    """Handle uncaught exceptions."""
-    logger.error(f"Unhandled exception: {exc}")
+    """Handle uncaught exceptions.
+
+    The full traceback goes to the server logs only; clients receive a
+    generic message so internals never leak in responses.
+    """
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={
@@ -89,4 +106,4 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/")
 async def root():
-    return {"message": "Agricultural Intelligence Platform API", "docs": "/docs"}
+    return {"message": "Agricultural Intelligence Platform API", "health": "/api/v1/health"}

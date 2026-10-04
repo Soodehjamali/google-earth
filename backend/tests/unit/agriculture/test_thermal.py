@@ -307,8 +307,13 @@ def test_the_engine_never_declares_a_canopy_temperature_key():
     """Scan the whole package, not just this module.
 
     A later domain module could introduce the key by accident, so the
-    check is a source scan rather than a registry lookup.
+    check is a source scan rather than a registry lookup. The CD-4
+    middle-canopy dryness proxy is explicitly allowlisted: its
+    mandated name carries "canopy", but it is a PROXY-basis state
+    code in the vegetation domain, not a temperature quantity.
+    Anything else containing "canopy" still fails.
     """
+    allowlisted = frozenset({"middle_canopy_dryness_proxy"})
     offenders = []
     pattern = re.compile(
         r"""(?:key|metric_key)\s*=\s*["']([^"']*canopy[^"']*)["']""",
@@ -316,6 +321,8 @@ def test_the_engine_never_declares_a_canopy_temperature_key():
     )
     for path in PACKAGE_DIR.rglob("*.py"):
         for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            if match.group(1) in allowlisted:
+                continue
             offenders.append(f"{path.name}: {match.group(1)}")
     assert not offenders, (
         f"the engine declares a canopy temperature key: {offenders}"

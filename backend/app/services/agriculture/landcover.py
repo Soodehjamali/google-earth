@@ -990,6 +990,10 @@ class LandCoverProbabilityMetric(Metric):
             value=top_mean,
             unit=self.unit,
             stats=top_stats,
+            band_means={
+                band: means.get(band)
+                for band in DYNAMIC_WORLD_PROBABILITY_BANDS
+            },
             provenance=provenance,
             warnings=warnings,
         )

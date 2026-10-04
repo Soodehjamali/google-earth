@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:f1": "node --test src/components/agriculture/__tests__/f1.test.ts",
+    "test:cd6": "node --test src/components/agriculture/__tests__/cd6.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^4.7.1",

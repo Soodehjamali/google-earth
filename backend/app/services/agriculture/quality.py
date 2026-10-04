@@ -31,6 +31,7 @@ __all__ = [
     "SENTINEL2_THRESHOLDS",
     "MODIS_THRESHOLDS",
     "LANDSAT_THRESHOLDS",
+    "SAR_THRESHOLDS",
     "REANALYSIS_THRESHOLDS",
     "assess_quality",
     "assess_from_coverage",
@@ -140,6 +141,22 @@ LANDSAT_THRESHOLDS = QualityThresholds(
     poor_min_images=1,
     min_coverage_percent=20.0,
     min_valid_pixels=1,
+    excellent_min_coverage=85.0,
+    good_min_coverage=60.0,
+)
+
+#: Sentinel-1 IW, single orbit pass. The revisit is 12 days with one
+#: active satellite (6 with two), so a one-month window honestly holds
+#: two to five acquisitions and the count bar is lower than Sentinel-2's.
+#: Coverage and pixel floors match the 10 m optical grid. No cloud term:
+#: there is no cloud mask for SAR and none is invented here.
+SAR_THRESHOLDS = QualityThresholds(
+    excellent_min_images=5,
+    good_min_images=3,
+    moderate_min_images=2,
+    poor_min_images=1,
+    min_coverage_percent=25.0,
+    min_valid_pixels=20,
     excellent_min_coverage=85.0,
     good_min_coverage=60.0,
 )

@@ -10,7 +10,6 @@ from pathlib import Path
 import requests
 
 KEY_FILES = [
-    Path("../credentials/gee-key.json"),
     Path("credentials/gee-key.json"),
 ]
 

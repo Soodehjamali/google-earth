@@ -4,6 +4,7 @@ import {
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
 import { analysesApi } from '../api/analyses'
+import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import type { Analysis, TimeSeriesPoint } from '../types'
 
 const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026]
@@ -104,6 +105,13 @@ export default function Historical() {
       </div>
 
       {/* Comparison Form */}
+      <ComprehensiveNotice
+        to="/agriculture/history"
+        linkLabelFa="مشاهده تاریخچه در تحلیل جامع"
+        linkLabelEn="View history in comprehensive analysis"
+        noteFa="تحلیل جامع حوزه‌ها نیز در دسترس است."
+        noteEn="Comprehensive domain analysis is also available."
+      />
       <div className="card mb-3">
         <div className="card-header">
           <span className="card-title">📈 مقایسه سالانه</span>

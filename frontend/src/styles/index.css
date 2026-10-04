@@ -185,6 +185,27 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Agriculture subgroup (Prompt 1: domains nested under Agriculture Analysis). */
+.nav-group-active > .nav-group-link {
+  background: rgba(46, 125, 50, 0.08);
+  color: var(--color-primary);
+  border-right-color: var(--color-primary);
+  font-weight: 600;
+}
+
+.nav-sublist {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 4px 0;
+}
+
+.nav-sublist .nav-link {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-inline-start: 40px;
+  font-size: 0.85rem;
+}
+
 /* ============================================================
    Content Area
    ============================================================ */
@@ -976,4 +997,222 @@ tr:hover td {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ============================================================
+   P5.5 Evidence visualization (minimal, reuses card/badge tokens)
+   ============================================================ */
+
+.evidence-section .card-body {
+  padding: 0;
+}
+
+.evidence-bundle {
+  border-bottom: 1px solid var(--color-border-light);
+  padding: 16px 20px;
+}
+
+.evidence-bundle:last-child {
+  border-bottom: none;
+}
+
+.evidence-bundle-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.evidence-item-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.evidence-detail-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+
+.evidence-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.evidence-metric-key {
+  font-family: var(--font-family-mono);
+  font-size: 0.8rem;
+  direction: ltr;
+}
+
+.evidence-detail-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.evidence-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.evidence-detail-row {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.evidence-relationships,
+.evidence-compact-ref {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+}
+
+.evidence-relationships summary,
+.evidence-compact-ref summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.evidence-relationships ul,
+.evidence-compact-ref ul,
+.evidence-unavailable {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.evidence-provenance {
+  margin-top: 8px;
+}
+
+.provenance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 16px;
+  margin-top: 8px;
+}
+
+.provenance-item {
+  font-size: 0.8rem;
+}
+
+.provenance-limitations ul,
+.provenance-caveats ul {
+  margin: 4px 0 0 18px;
+  font-size: 0.8rem;
+}
+
+.domain-section {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.synthesis-statement {
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  margin: 12px 20px;
+  overflow: hidden;
+}
+
+.synthesis-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--color-surface);
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-family);
+  text-align: right;
+}
+
+.domain-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--color-surface);
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-family);
+  text-align: right;
+}
+
+/* P6.4 Ground-truth validation (mirrors evidence conventions) */
+
+.validation-section .card-body {
+  padding: 0;
+}
+
+.validation-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 20px 0;
+}
+
+.validation-result-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 0 20px;
+}
+
+.validation-result-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+
+.validation-result-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.validation-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.validation-result-limitations ul {
+  margin: 4px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.validation-section .evidence-compact-ref {
+  margin: 0 20px 12px;
+}
+
+.validation-section .domain-limitations {
+  padding: 0 20px 16px;
 }

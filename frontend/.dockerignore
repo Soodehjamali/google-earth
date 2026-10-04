@@ -2,3 +2,7 @@
 .git
 dist
 .dockerignore
+*.log
+.env
+.env.*
+!.env.example

@@ -53,11 +53,14 @@ from app.services.agriculture.registry import get_dataset
 from app.services.agriculture.soil import (
     ERA5_DAILY,
     ERA5_LAYER_DEPTHS_CM,
+    GLDAS_NATIVE_SCALE,
+    GLDAS_NOAH,
     SMAP_L3_CURRENT,
     SMAP_L3_PREVIOUS,
     SMAP_L4,
     SMAP_NATIVE_SCALE,
     SOIL_METRICS,
+    RootZoneSoilMoistureGLDASMetric,
     SoilMoistureRootZoneERA5Metric,
     SoilMoistureRootZoneMetric,
     SoilMoistureSurfaceEveningMetric,
@@ -78,7 +81,13 @@ EXPECTED_KEYS = {
     "soil_moisture_rootzone",
     "soil_moisture_rootzone_era5",
     "soil_moisture_wetness",
+    "root_zone_soil_moisture_gldas",
 }
+
+#: The one soil metric published in a mass per unit area rather than a
+#: volume fraction, because its product reports a mass per unit area and no
+#: defensible conversion to m3/m3 exists.
+MASS_PER_AREA_KEY = "root_zone_soil_moisture_gldas"
 
 #: Sentinel that lets a test mark a pixel as having no data.
 NO_DATA = object()
@@ -284,8 +293,28 @@ class _FakeImage:
         return masked
 
     def bitwiseAnd(self, other):  # noqa: N802 - mirrors ee.Image
+        # Bitwise operations are integer-only on Earth Engine, and the
+        # service rejects them based on the band's type: a float-typed
+        # band fails even when every value is a whole number. The fake
+        # stores values without types, so float values stand in for a
+        # float-typed band and are rejected the same way.
+        for v in self._values:
+            if isinstance(v, float):
+                raise TypeError(
+                    "Image.bitwiseAnd: Bitwise operands must be integer only"
+                )
         return _FakeImage(
             self._ee, self._band, [int(v) & int(other) for v in self._values]
+        )
+
+    def round(self):  # noqa: N802 - mirrors ee.Image
+        return _FakeImage(
+            self._ee, self._band, [round(v) for v in self._values]
+        )
+
+    def toInt(self):  # noqa: N802 - mirrors ee.Image
+        return _FakeImage(
+            self._ee, self._band, [int(v) for v in self._values]
         )
 
     def neq(self, other):  # noqa: N802 - mirrors ee.Image
@@ -643,7 +672,7 @@ class FakeEE:
             self._by_dataset = {
                 dataset_id: {k: list(v) for k, v in bands.items()}
                 for dataset_id in (SMAP_L3_CURRENT, SMAP_L3_PREVIOUS,
-                                   SMAP_L4, ERA5_DAILY)
+                                   SMAP_L4, ERA5_DAILY, GLDAS_NOAH)
             }
         self._add_implied_smap_flags()
         self.Reducer = _FakeReducerNamespace()
@@ -732,13 +761,17 @@ def test_soil_moisture_units_are_volume_fractions():
     """Soil-moisture metrics report a volume fraction, not a mass or a depth.
 
     Presenting kg/m2 or mm under an m3/m3 label is the error this asserts
-    against. The one exception is deliberate and is asserted separately:
-    the wetness metric reports a dimensionless relative saturation,
-    which is a different quantity and carries its own unit.
+    against. Two exceptions are deliberate and are each asserted
+    separately: the wetness metric reports a dimensionless relative
+    saturation, and the GLDAS metric reports a mass per unit area because
+    that is the unit its product publishes.
     """
     for metric in SOIL_METRICS:
         if metric.key == "soil_moisture_wetness":
             assert metric.unit == "fraction", metric.key
+            continue
+        if metric.key == MASS_PER_AREA_KEY:
+            assert metric.unit == "kg/m2", metric.key
             continue
         assert metric.unit == "m3/m3", metric.key
 
@@ -1142,6 +1175,68 @@ def test_the_morning_and_evening_flags_are_not_interchanged(fake_ee):
     assert morning.value == pytest.approx(0.30)
     # The evening metric must respect its own flag, not the morning's.
     assert evening.value is None
+
+
+def test_bitwise_and_on_a_float_flag_fails_like_earth_engine():
+    """The fake rejects bitwise ops on float-typed bands, as EE does.
+
+    The SMAP L3 catalogue serves the retrieval quality flag with float
+    precision. Earth Engine rejects bitwise operations on float bands
+    even when the values are whole numbers, and the fake must reproduce
+    that contract so the regression this suite guards against is
+    observable in a unit test.
+    """
+    flag = _FakeImage(None, "retrieval_qual_flag_am", [2.0, 1.0, 0.0])
+    with pytest.raises(TypeError, match="integer only"):
+        flag.bitwiseAnd(0b10)
+
+
+def test_float_flag_is_cast_to_int_before_the_bit_test(fake_ee):
+    """The regression: the SMAP flag band is served with float precision.
+
+    Earth Engine serves ``retrieval_qual_flag_am`` as a float band and
+    rejects ``bitwiseAnd`` on non-integer operands, which made both
+    surface soil moisture metrics fail with "Bitwise operands must be
+    integer only". The flag codes are whole numbers, so casting to
+    integer before the bit test is a no-op on real data and keeps the
+    masking semantics exactly as they were.
+    """
+    fake_ee(
+        {
+            SMAP_L3_CURRENT: {
+                "soil_moisture_am": [0.30, 0.02, 0.02],
+                # Float precision, exactly as the catalogue serves it.
+                "retrieval_qual_flag_am": [0.0, 2.0, 2.0],
+            }
+        }
+    )
+    context = make_context(start_date="2024-06-01", end_date="2024-06-30")
+
+    result = SoilMoistureSurfaceMetric().compute(context)
+
+    # The skipped days still contribute nothing, as before the cast.
+    assert result.status == STATUS_OK
+    assert result.value == pytest.approx(0.30)
+
+
+def test_float_flag_evening_metric_is_computable(fake_ee):
+    """The evening overpass ships the same float-typed flag band."""
+    fake_ee(
+        {
+            SMAP_L3_CURRENT: {
+                "soil_moisture_pm": [0.21, 0.03, 0.03],
+                "retrieval_qual_flag_pm": [1.0, 2.0, 2.0],
+            }
+        }
+    )
+    context = make_context(start_date="2024-06-01", end_date="2024-06-30")
+
+    result = SoilMoistureSurfaceEveningMetric().compute(context)
+
+    # Flag 1 is an uncertain-but-real retrieval and is kept; the skipped
+    # days are dropped by the same bit test after the integer cast.
+    assert result.status == STATUS_OK
+    assert result.value == pytest.approx(0.21)
 
 
 def test_the_quality_band_is_declared_in_provenance(fake_ee):
@@ -1757,6 +1852,9 @@ def test_every_soil_metric_carries_provenance(fake_ee):
                 "volumetric_soil_water_layer_2": [0.20] * 5,
                 "volumetric_soil_water_layer_3": [0.10] * 5,
             },
+            GLDAS_NOAH: {
+                "RootMoist_inst": [150.0] * 5,
+            },
         }
     )
     context = make_context(start_date="2024-06-01", end_date="2024-06-30")
@@ -1840,17 +1938,46 @@ def test_the_soil_module_does_not_convert_between_quantity_families():
 
     The module never converts kg/m2 to m3/m3 or mm, because doing so
     needs a layer thickness and a density that the satellite record does
-    not supply. Every metric therefore reports either a volume fraction
-    or an explicitly dimensionless relative saturation, and never a mass
-    or a depth.
+    not supply. Every metric therefore reports a volume fraction, an
+    explicitly dimensionless relative saturation, or — for the one product
+    that publishes a mass per unit area — that mass per unit area under
+    its own unit label. Depth units are still forbidden outright: nothing
+    here produces one.
     """
-    permitted = {"m3/m3", "fraction"}
+    permitted = {"m3/m3", "fraction", "kg/m2"}
     for metric in SOIL_METRICS:
         assert metric.unit in permitted, metric.key
-        # No mass-per-area or depth unit may appear anywhere in this
-        # module's output, because none of its inputs can produce one
-        # without an undocumented conversion.
-        assert metric.unit not in {"kg/m2", "mm", "cm"}, metric.key
+        # No depth unit may appear anywhere in this module's output.
+        assert metric.unit not in {"mm", "cm", "m"}, metric.key
+
+
+def test_exactly_one_soil_metric_is_a_mass_per_unit_area():
+    """The exception is singular and named, not a general hole.
+
+    If a second metric started reporting kg/m2, the unit guard above would
+    still pass while the module's promise quietly eroded. This pins the
+    count.
+    """
+    mass_per_area = [m.key for m in SOIL_METRICS if m.unit == "kg/m2"]
+    assert mass_per_area == [MASS_PER_AREA_KEY]
+
+
+def test_the_mass_per_area_metric_is_never_labelled_as_a_volume_fraction():
+    """The one metric whose unit differs must be unambiguous about it.
+
+    Its unit, its description, its limitations and its provenance text all
+    have to say kg/m2, and none of them may present it as an m3/m3 value.
+    """
+    metric = RootZoneSoilMoistureGLDASMetric()
+    assert metric.unit == "kg/m2"
+
+    described = " ".join((
+        metric.description,
+        *metric.limitations,
+    )).lower()
+    assert "kg/m2" in described
+    assert "not a volume fraction" in described
+    assert "m3/m3" in described
 
 
 def test_the_wetness_metric_is_dimensionless():
@@ -1874,3 +2001,265 @@ def test_quality_is_reported_from_coverage(fake_ee):
 
     assert result.provenance.quality_level is not None
     assert result.provenance.quality_level in set(QualityLevel)
+
+
+# ==========================================================================
+# GLDAS-2.1 root zone metric — the mass-per-unit-area exception
+#
+# This metric closes the deferral recorded when the water and soil moisture
+# engine was first built: the product publishes a water mass per unit area
+# (kg/m2) whereas every other soil metric publishes a volume fraction. The
+# decision taken is the "separate unit label" branch — publish the product's
+# own unit and never convert. The conversion branch was rejected because the
+# catalogue does not document the root zone layer thickness.
+# ==========================================================================
+
+
+def test_gldas_metric_is_published_in_kg_per_m2():
+    assert RootZoneSoilMoistureGLDASMetric().unit == "kg/m2"
+
+
+def test_gldas_metric_is_declared_modelled_not_measured():
+    """GLDAS-2.1 is open-loop: no observation is assimilated."""
+    metric = RootZoneSoilMoistureGLDASMetric()
+    assert metric.measurement_basis is MeasurementBasis.MODELLED
+    assert metric.measurement_basis is not MeasurementBasis.DIRECT
+    assert metric.measurement_basis is not MeasurementBasis.PRODUCT
+
+
+def test_gldas_metric_declares_the_verified_dataset():
+    assert RootZoneSoilMoistureGLDASMetric().dataset_ids == (GLDAS_NOAH,)
+
+
+def test_gldas_metric_reads_only_the_root_zone_band():
+    metric = RootZoneSoilMoistureGLDASMetric()
+    assert metric.source_bands == ("RootMoist_inst",)
+    assert get_dataset(GLDAS_NOAH).has_band("RootMoist_inst")
+
+
+def test_gldas_metric_reads_no_retrieval_quality_flag():
+    """The SMAP skip-bit mask does not apply to a model field.
+
+    The GLDAS asset publishes no retrieval quality flag, and applying the
+    SMAP mask logic here would be meaningless. This pins that no flag band
+    is read.
+    """
+    metric = RootZoneSoilMoistureGLDASMetric()
+    for band in metric.source_bands:
+        assert "flag" not in band.lower()
+
+
+def test_gldas_metric_reduces_at_the_native_scale():
+    """Reducing at 10 m would resample a 27.8 km grid and misreport it."""
+    assert GLDAS_NATIVE_SCALE == 27830
+    assert RootZoneSoilMoistureGLDASMetric().default_scale == GLDAS_NATIVE_SCALE
+
+
+def test_gldas_metric_computes_the_period_mean_of_the_band(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [100.0, 200.0, 300.0]}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.status == STATUS_OK, result.message
+    assert result.value == pytest.approx(200.0)
+    assert result.unit == "kg/m2"
+
+
+def test_gldas_metric_applies_no_conversion_to_a_volume_fraction(fake_ee):
+    """The load-bearing check of this metric's decision.
+
+    A 200 kg/m2 root zone value would become 0.2 if it were divided by a
+    one-metre layer and the density of water. The metric must instead
+    publish the product's own number under its own unit.
+    """
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [200.0]}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.status == STATUS_OK, result.message
+    assert result.value == pytest.approx(200.0)
+    assert result.value != pytest.approx(0.2)
+    assert result.unit == "kg/m2"
+    assert result.unit != "m3/m3"
+
+
+def test_gldas_metric_provenance_carries_the_unit_and_the_dataset(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0]}})
+
+    provenance = RootZoneSoilMoistureGLDASMetric().compute(make_context()).provenance
+
+    assert provenance.source_dataset_id == GLDAS_NOAH
+    assert provenance.unit == "kg/m2"
+    assert "RootMoist_inst" in provenance.bands
+    assert provenance.measurement_basis is MeasurementBasis.MODELLED
+
+
+
+def test_gldas_provenance_states_that_no_conversion_was_applied(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0]}})
+
+    provenance = RootZoneSoilMoistureGLDASMetric().compute(make_context()).provenance
+    joined = " ".join(provenance.limitations).lower()
+
+    assert "no conversion" in joined
+    assert "kg/m2" in joined
+    assert "m3/m3" in joined
+    assert "layer thickness" in joined
+
+
+def test_gldas_provenance_carries_the_citation(fake_ee):
+    """A number without a source is a guess; the citation is the source."""
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0]}})
+
+    provenance = RootZoneSoilMoistureGLDASMetric().compute(make_context()).provenance
+
+    assert "Rodell" in provenance.citation
+    assert "Global Land Data Assimilation System" in provenance.citation
+
+
+def test_gldas_metric_always_warns_that_it_is_a_model(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0]}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+    joined = " ".join(result.warnings).lower()
+
+    assert any("model" in w.lower() for w in result.warnings)
+    assert "open-loop" in joined
+
+
+def test_gldas_metric_always_warns_about_the_unit(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0]}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+    joined = " ".join(result.warnings).lower()
+
+    assert "kg/m2" in joined
+    assert "not m3/m3" in joined
+
+
+def test_gldas_metric_with_no_timestep_is_insufficient(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": []}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.status == STATUS_INSUFFICIENT_DATA
+    assert result.value is None
+
+
+def test_gldas_metric_with_no_valid_pixel_is_insufficient(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [NO_DATA] * 4}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.status == STATUS_INSUFFICIENT_DATA
+    assert result.value is None
+
+
+def test_gldas_metric_never_reports_zero_for_missing_data(fake_ee):
+    """A dry root zone and an unobserved one are different claims."""
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": []}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.value is None
+    assert result.value != 0.0
+
+
+def test_gldas_metric_reports_a_negative_value_without_clamping(fake_ee):
+    """A negative water mass is impossible, so it is flagged, not hidden.
+
+    Clamping it to zero would silently invent a completely dry root zone.
+    """
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [-10.0]}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.status == STATUS_OK, result.message
+    assert result.value == pytest.approx(-10.0)
+    assert any("negative" in w.lower() for w in result.warnings)
+
+
+def test_gldas_metric_reports_quality(fake_ee):
+    fake_ee({GLDAS_NOAH: {"RootMoist_inst": [150.0] * 5}})
+
+    result = RootZoneSoilMoistureGLDASMetric().compute(make_context())
+
+    assert result.provenance.quality_level is not None
+    assert result.provenance.quality_level in set(QualityLevel)
+
+
+
+def test_gldas_metric_reports_the_persian_label():
+    metric = RootZoneSoilMoistureGLDASMetric()
+    assert any("\u0600" <= char <= "\u06ff" for char in metric.display_name_fa)
+
+
+def test_gldas_metric_is_not_flagged_as_a_proxy():
+    """A model is modelled; it is not a proxy for a measurement."""
+    metadata = RootZoneSoilMoistureGLDASMetric().metadata()
+
+    assert metadata["available"] is True
+    assert metadata["is_proxy"] is False
+    assert metadata["measurement_basis"] == "modelled"
+    assert metadata["dataset_ids"] == [GLDAS_NOAH]
+    assert metadata["unit"] == "kg/m2"
+
+
+def test_gldas_metric_is_registrable_and_appears_in_the_catalog():
+    register_metrics(SOIL_METRICS)
+    from app.services.agriculture.catalog import catalog, metric_keys
+
+    assert MASS_PER_AREA_KEY in metric_keys()
+    entry = next(
+        e for e in catalog()["metrics"] if e["key"] == MASS_PER_AREA_KEY
+    )
+    assert entry["dataset_ids"] == [GLDAS_NOAH]
+    assert entry["unit"] == "kg/m2"
+
+
+def test_gldas_metric_refuses_a_request_before_its_coverage():
+    """GLDAS-2.1 starts in 2000; a 1999 request cannot be served."""
+    context = make_context(start_date="1999-06-01", end_date="1999-06-30")
+
+    can_attempt, reason = RootZoneSoilMoistureGLDASMetric().can_attempt(context)
+
+    assert can_attempt is False
+    assert reason == "outside_temporal_coverage"
+
+
+def test_gldas_dataset_records_that_it_is_open_loop():
+    """The single most important caveat about this product."""
+    joined = " ".join(get_dataset(GLDAS_NOAH).caveats).lower()
+    assert "open-loop" in joined
+    assert "assimilates no soil moisture observations" in joined
+
+
+def test_gldas_dataset_records_the_conversion_requirement():
+    """Why the value is published in kg/m2 rather than converted."""
+    joined = " ".join(get_dataset(GLDAS_NOAH).caveats).lower()
+    assert "m3/m3" in joined
+    assert "thickness" in joined
+    assert "density of water" in joined
+
+
+def test_gldas_band_declares_no_estimated_range_as_a_validity_filter():
+    """The catalogue's range for this band is flagged *estimated*.
+
+    Using it as a filter would reject a genuine near-zero value, because
+    the estimated minimum is 2 kg/m2 rather than 0.
+    """
+    band = get_dataset(GLDAS_NOAH).band("RootMoist_inst")
+    assert band.valid_range is None
+
+    joined = " ".join(get_dataset(GLDAS_NOAH).caveats).lower()
+    assert "estimated" in joined
+    assert "not used as a validity filter" in joined
+
+
+def test_gldas_band_is_not_scaled():
+    """The asset serves physical kg/m2; no scale factor may be applied."""
+    band = get_dataset(GLDAS_NOAH).band("RootMoist_inst")
+    assert band.scale_factor == 1.0
+    assert band.offset == 0.0
+    assert band.unit == "kg/m2"
+

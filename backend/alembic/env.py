@@ -22,6 +22,14 @@ from app.db.models import Location, Analysis, DatasetUsage, TimeSeries, Report  
 # this is the Alembic Config object
 config = context.config
 
+# The database URL comes from the DATABASE_URL environment variable (via the
+# application settings), never from a value stored in alembic.ini. This keeps
+# credentials out of version control and lets every environment inject its
+# own URL.
+from app.core.config import settings  # noqa: E402
+
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:

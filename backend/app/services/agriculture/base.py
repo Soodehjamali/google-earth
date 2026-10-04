@@ -56,10 +56,14 @@ class MetricDomain:
     CROP = "crop"
     PHENOLOGY = "phenology"
     LANDCOVER = "landcover"
+    STRESS = "stress"
+    IRRIGATION = "irrigation"
+    PRODUCTIVITY = "productivity"
+    HISTORY = "history"
 
     ALL: Tuple[str, ...] = (
         VEGETATION, WATER, SOIL, CLIMATE, THERMAL, TERRAIN, CROP, PHENOLOGY,
-        LANDCOVER,
+        LANDCOVER, STRESS, IRRIGATION, PRODUCTIVITY, HISTORY,
     )
 
 

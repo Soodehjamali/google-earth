@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,13 @@ class Analysis(Base, TimestampMixin):
     """An analysis job tied to a location."""
 
     __tablename__ = "analyses"
+
+    # Indexes must match alembic migration 001_initial_tables exactly.
+    __table_args__ = (
+        Index("ix_analyses_location_id", "location_id"),
+        Index("ix_analyses_status", "status"),
+        Index("ix_analyses_created_at", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

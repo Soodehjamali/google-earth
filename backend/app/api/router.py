@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    agriculture,
     health,
     locations,
     analyses,
@@ -22,6 +23,7 @@ api_router = APIRouter()
 
 # V1 routes
 api_router.include_router(health.router, prefix="/v1", tags=["Health"])
+api_router.include_router(agriculture.router, prefix="/v1/agriculture", tags=["Agriculture"])
 api_router.include_router(locations.router, prefix="/v1/locations", tags=["Locations"])
 api_router.include_router(analyses.router, prefix="/v1/analyses", tags=["Analyses"])
 api_router.include_router(vegetation.router, prefix="/v1/vegetation", tags=["Vegetation"])

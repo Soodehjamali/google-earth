@@ -86,17 +86,46 @@ def register_all_metrics() -> List[str]:
         UNAVAILABLE_WATER_METRICS,
         WATER_METRICS,
     )
+    from app.services.agriculture.canopy_moisture import CANOPY_MOISTURE_METRICS
+    from app.services.agriculture.canopy_proxy import CANOPY_PROXY_METRICS
+    from app.services.agriculture.radar import RADAR_METRICS
+    from app.services.agriculture.stress import (
+        UNAVAILABLE_STRESS_METRICS,
+        STRESS_METRICS,
+    )
+    from app.services.agriculture.irrigation import (
+        UNAVAILABLE_IRRIGATION_METRICS,
+        IRRIGATION_METRICS,
+    )
+    from app.services.agriculture.productivity import PRODUCTIVITY_METRICS
+    from app.services.agriculture.history import (
+        UNAVAILABLE_HISTORY_METRICS,
+        HISTORY_METRICS,
+    )
+    from app.services.agriculture.soil_properties import (
+        UNAVAILABLE_SOIL_PROPERTY_METRICS,
+        SOIL_PROPERTY_METRICS,
+    )
+    from app.services.agriculture.yield_model import UNAVAILABLE_YIELD_METRICS
 
     register_metrics(VEGETATION_METRICS)
     register_metrics(CLIMATE_METRICS)
     register_metrics(THERMAL_METRICS)
     register_metrics(WATER_METRICS)
+    register_metrics(CANOPY_MOISTURE_METRICS)
+    register_metrics(RADAR_METRICS)
+    register_metrics(CANOPY_PROXY_METRICS)
     register_metrics(SOIL_METRICS)
     register_metrics(LANDCOVER_METRICS)
     register_metrics(DYNAMIC_WORLD_METRICS)
     register_metrics(TERRAIN_METRICS)
     register_metrics(CROP_METRICS)
     register_metrics(PHENOLOGY_METRICS)
+    register_metrics(STRESS_METRICS)
+    register_metrics(IRRIGATION_METRICS)
+    register_metrics(PRODUCTIVITY_METRICS)
+    register_metrics(HISTORY_METRICS)
+    register_metrics(SOIL_PROPERTY_METRICS)
     # These are registered precisely so the catalog can answer "can this
     # system tell me about crop water stress, or which crop is growing
     # here, or how wet the ground is?" with a reasoned no, rather than with
@@ -106,6 +135,11 @@ def register_all_metrics() -> List[str]:
     register_metrics(UNAVAILABLE_TERRAIN_METRICS)
     register_metrics(UNAVAILABLE_CROP_METRICS)
     register_metrics(UNAVAILABLE_PHENOLOGY_METRICS)
+    register_metrics(UNAVAILABLE_STRESS_METRICS)
+    register_metrics(UNAVAILABLE_IRRIGATION_METRICS)
+    register_metrics(UNAVAILABLE_HISTORY_METRICS)
+    register_metrics(UNAVAILABLE_SOIL_PROPERTY_METRICS)
+    register_metrics(UNAVAILABLE_YIELD_METRICS)
 
     return metric_keys()
 

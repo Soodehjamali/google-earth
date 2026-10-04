@@ -97,12 +97,59 @@ def test_spectral_index_bands_exist_in_sentinel2_registry():
 
 
 def test_modis_structural_metrics_use_registered_bands():
-    for metric in (LAIMetric(), FPARMetric(), FCOVERMetric()):
+    """LAI and FAPAR read registered MCD15A3H bands.
+
+    FCOVER is deliberately absent: MCD15A3H publishes no Fcov band, so
+    the metric is a never-produced metric with no dataset. See
+    test_fcover_is_honestly_unavailable below.
+    """
+    for metric in (LAIMetric(), FPARMetric()):
         dataset = metric.primary_dataset()
         assert dataset.has_band(metric.source_band), (
             f"{metric.key} uses {metric.source_band} which is not in "
             f"{dataset.id}"
         )
+
+
+def test_fcover_is_honestly_unavailable():
+    """MCD15A3H has no Fcov band, so fcover must refuse to compute.
+
+    The metric must declare no dataset (there is no EE-hosted source for
+    fractional vegetation cover), refuse every period as unsupported,
+    return an unavailable result with the structural reason, and mark
+    itself unavailable in the catalog metadata.
+    """
+    from app.services.agriculture.base import MetricContext
+    from app.services.agriculture.types import (
+        STATUS_UNAVAILABLE,
+        NOT_AVAILABLE_REASON_UNSUPPORTED,
+    )
+
+    metric = FCOVERMetric()
+    assert metric.dataset_ids == (), (
+        "fcover must not claim a dataset: MCD15A3H publishes no Fcov band"
+    )
+    assert not hasattr(metric, "source_band")
+
+    context = MetricContext(
+        geometry={}, start_date="2024-07-01", end_date="2024-07-31",
+        geometry_key="k",
+    )
+    can_attempt, reason = metric.can_attempt(context)
+    assert can_attempt is False
+    assert reason == NOT_AVAILABLE_REASON_UNSUPPORTED
+
+    result = metric.compute(context)
+    assert result.status == STATUS_UNAVAILABLE
+    assert result.value is None
+    assert result.reason == NOT_AVAILABLE_REASON_UNSUPPORTED
+    assert "Fcov" in (result.message or "")
+    assert "MCD15A3H" in (result.message or "")
+
+    metadata = metric.metadata()
+    assert metadata["available"] is False
+    assert metadata["unavailable_code"]
+    assert len(metadata["unavailable_reason"]) > 100
 
 
 def test_band_roles_match_the_declared_required_bands():
@@ -141,7 +188,7 @@ def test_ten_metre_indices_use_ten_metre_scale():
 
 
 def test_modis_metrics_use_five_hundred_metre_scale():
-    for metric in (LAIMetric(), FPARMetric(), FCOVERMetric()):
+    for metric in (LAIMetric(), FPARMetric()):
         assert metric.default_scale == 500, metric.key
 
 
@@ -270,9 +317,12 @@ def test_metadata_is_complete(metric: Metric):
     assert metadata["domain"] == "vegetation"
     assert metadata["unit"]
     assert metadata["description"]
-    assert metadata["dataset_ids"]
     assert metadata["limitations"]
     assert metadata["is_proxy"] is False
+    # An unavailable metric (available: False) legitimately declares no
+    # dataset; everything else must be attributable.
+    if metadata.get("available", True):
+        assert metadata["dataset_ids"]
 
 
 @pytest.mark.parametrize("metric", VEGETATION_METRICS, ids=lambda m: m.key)

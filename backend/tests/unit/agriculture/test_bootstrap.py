@@ -21,7 +21,15 @@ from app.services.agriculture.catalog import (
 )
 from app.services.agriculture.climate import CLIMATE_METRICS
 from app.services.agriculture.thermal import THERMAL_METRICS
+from app.services.agriculture.types import MeasurementBasis
 from app.services.agriculture.vegetation import VEGETATION_METRICS
+
+#: Metric keys allowed to contain "canopy" despite the engine-wide
+#: canopy-temperature prohibition below: the CD-4 middle-canopy
+#: dryness proxy, whose mandated name carries "canopy" but which is a
+#: PROXY-basis state code in the vegetation domain — not a
+#: temperature quantity of any kind.
+CANOPY_KEY_ALLOWLIST = frozenset({"middle_canopy_dryness_proxy"})
 
 #: Domains that must be represented once every phase is complete. Phases
 #: C, D and E are done; later phases add to this set.
@@ -62,6 +70,11 @@ def test_no_registered_metric_is_a_canopy_temperature_metric():
     """The engine-wide prohibition, checked at the registry level."""
     register_all_metrics()
     for key in metric_keys():
+        if key in CANOPY_KEY_ALLOWLIST:
+            metric = get_metric(key)
+            assert metric.measurement_basis is MeasurementBasis.PROXY, key
+            assert "temperature" not in metric.unit.lower(), key
+            continue
         assert "canopy" not in key, key
         assert "leaf_temp" not in key, key
 

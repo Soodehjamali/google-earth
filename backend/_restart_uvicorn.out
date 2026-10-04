@@ -1,0 +1,152 @@
+INFO:     Started server process [12864]
+INFO:     Waiting for application startup.
+2026-09-30 22:05:17 | INFO | app.main | Agricultural Intelligence Platform starting (env=development)
+*** Earth Engine *** Share your feedback by taking our Annual Developer Satisfaction Survey: https://google.qualtrics.com/jfe/form/SV_9oS0DRcPvElRMNw?source=python
+2026-09-30 22:05:26 | INFO | app.services.earth_engine.authentication | Earth Engine initialized (project=proverbial-will-507706-e1, auth=service_account)
+2026-09-30 22:05:26 | INFO | app.services.earth_engine.authentication | Earth Engine ready — project: proverbial-will-507706-e1
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:50251 - "GET /api/v1/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50252 - "GET /api/v1/health/earth-engine HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50296 - "GET /api/v1/agriculture/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50297 - "GET /api/v1/agriculture/health HTTP/1.1" 200 OK
+2026-09-30 22:08:54 | INFO | app.api.v1.agriculture | Agriculture analysis 12887379-25cf-46f5-8d16-a056878465ff: 2025-06-01 to 2025-09-01
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric composite_stress: Metric 'composite_stress' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric composite_stress computed with status unavailable in 0.5 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric crop_biomass_estimate: Metric 'crop_biomass_estimate' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric crop_biomass_estimate computed with status unavailable in 1.4 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric crop_evapotranspiration: Metric 'crop_evapotranspiration' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric crop_evapotranspiration computed with status unavailable in 0.7 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric crop_flowering_date: Metric 'crop_flowering_date' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric crop_flowering_date computed with status unavailable in 0.3 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric crop_yield_estimate: Metric 'crop_yield_estimate' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric crop_yield_estimate computed with status unavailable in 0.1 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric crop_yield_uncertainty: Metric 'crop_yield_uncertainty' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric crop_yield_uncertainty computed with status unavailable in 0.4 ms (attempt 1)
+2026-09-30 22:08:55 | WARNING | app.services.agriculture.executor | Capability check failed for metric cwsi: Metric 'cwsi' declares no datasets
+2026-09-30 22:08:55 | INFO | app.services.agriculture.executor | Metric cwsi computed with status unavailable in 0.6 ms (attempt 1)
+2026-09-30 22:08:56 | INFO | app.services.agriculture.executor | Metric aspect computed with status insufficient_data in 1263.7 ms (attempt 1)
+2026-09-30 22:08:56 | INFO | app.services.agriculture.executor | Metric elevation computed with status insufficient_data in 1467.6 ms (attempt 1)
+2026-09-30 22:08:56 | INFO | app.services.agriculture.executor | Metric era5_potential_evaporation computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:08:56 | INFO | app.services.agriculture.executor | Metric crop_area_normalised_productivity_indicator computed with status insufficient_data in 1661.5 ms (attempt 1)
+2026-09-30 22:08:58 | INFO | app.services.agriculture.executor | Metric era5_evaporation computed with status ok in 1839.8 ms (attempt 1)
+2026-09-30 22:08:59 | INFO | app.services.agriculture.executor | Metric evapotranspiration computed with status insufficient_data in 1628.2 ms (attempt 1)
+2026-09-30 22:09:00 | INFO | app.services.agriculture.executor | Metric evaporative_fraction computed with status insufficient_data in 3478.2 ms (attempt 1)
+2026-09-30 22:09:00 | INFO | app.services.agriculture.executor | Metric et_precipitation_deficit computed with status insufficient_data in 3853.7 ms (attempt 1)
+2026-09-30 22:09:01 | INFO | app.services.agriculture.executor | Metric evapotranspiration_cumulative computed with status insufficient_data in 1682.6 ms (attempt 1)
+2026-09-30 22:09:03 | INFO | app.services.agriculture.executor | Metric fapar computed with status insufficient_data in 1264.1 ms (attempt 1)
+2026-09-30 22:09:04 | INFO | app.services.agriculture.executor | Metric evi computed with status insufficient_data in 3697.0 ms (attempt 1)
+2026-09-30 22:09:04 | WARNING | app.services.agriculture.executor | Capability check failed for metric gross_irrigation_requirement: Metric 'gross_irrigation_requirement' declares no datasets
+2026-09-30 22:09:04 | INFO | app.services.agriculture.executor | Metric gross_irrigation_requirement computed with status unavailable in 0.6 ms (attempt 1)
+2026-09-30 22:09:04 | WARNING | app.services.agriculture.executor | Capability check failed for metric irrigation: Metric 'irrigation' declares no datasets
+2026-09-30 22:09:04 | INFO | app.services.agriculture.executor | Metric irrigation computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:09:04 | WARNING | app.services.agriculture.executor | Capability check failed for metric irrigation_water_requirement: Metric 'irrigation_water_requirement' declares no datasets
+2026-09-30 22:09:04 | INFO | app.services.agriculture.executor | Metric irrigation_water_requirement computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:09:05 | INFO | app.services.agriculture.executor | Metric lai computed with status insufficient_data in 1400.6 ms (attempt 1)
+2026-09-30 22:09:07 | INFO | app.services.agriculture.executor | Metric gdd computed with status ok in 3895.8 ms (attempt 1)
+2026-09-30 22:09:08 | ERROR | app.services.agriculture.executor | Metric land_surface_temperature_day failed with ValueError after 1 attempt(s) in 1213.1 ms: ValueError: Metric 'land_surface_temperature_day' carries a value but its provenance says quality is 'insufficient', which means no value should exist. Contradictory result.
+2026-09-30 22:09:08 | INFO | app.services.agriculture.executor | Metric land_cover_probability computed with status insufficient_data in 2819.4 ms (attempt 1)
+2026-09-30 22:09:09 | ERROR | app.services.agriculture.executor | Metric land_surface_temperature_night failed with ValueError after 1 attempt(s) in 1217.6 ms: ValueError: Metric 'land_surface_temperature_night' carries a value but its provenance says quality is 'insufficient', which means no value should exist. Contradictory result.
+2026-09-30 22:09:10 | ERROR | app.services.agriculture.executor | Metric land_surface_temperature_mean failed with ValueError after 1 attempt(s) in 2054.9 ms: ValueError: Metric 'land_surface_temperature_mean' carries a value but its provenance says quality is 'insufficient', which means no value should exist. Contradictory result.
+2026-09-30 22:09:10 | INFO | app.services.agriculture.executor | Metric climate_trend computed with status ok in 15283.5 ms (attempt 1)
+2026-09-30 22:09:11 | INFO | app.services.agriculture.executor | Metric landsat_surface_temperature computed with status ok in 1650.6 ms (attempt 1)
+2026-09-30 22:09:23 | INFO | app.services.agriculture.executor | Metric evapotranspiration_anomaly computed with status insufficient_data in 23771.7 ms (attempt 1)
+2026-09-30 22:09:25 | ERROR | app.services.agriculture.executor | Metric lst_day_percentile failed with ValueError after 1 attempt(s) in 15341.3 ms: ValueError: Metric 'lst_day_percentile' carries a value but its provenance says quality is 'insufficient', which means no value should exist. Contradictory result.
+2026-09-30 22:09:26 | INFO | app.services.agriculture.executor | Metric mndwi computed with status insufficient_data in 2935.2 ms (attempt 1)
+2026-09-30 22:09:28 | INFO | app.services.agriculture.executor | Metric msavi computed with status insufficient_data in 3014.7 ms (attempt 1)
+2026-09-30 22:09:29 | INFO | app.services.agriculture.executor | Metric msi computed with status insufficient_data in 2586.5 ms (attempt 1)
+2026-09-30 22:09:30 | ERROR | app.services.agriculture.executor | Metric lst_day_anomaly failed with ValueError after 1 attempt(s) in 19667.1 ms: ValueError: Metric 'lst_day_anomaly' carries a value but its provenance says quality is 'insufficient', which means no value should exist. Contradictory result.
+2026-09-30 22:09:30 | INFO | app.services.agriculture.executor | Metric ndmi computed with status insufficient_data in 1853.8 ms (attempt 1)
+2026-09-30 22:09:34 | INFO | app.services.agriculture.executor | Metric ndre computed with status insufficient_data in 3605.8 ms (attempt 1)
+2026-09-30 22:09:54 | INFO | app.services.agriculture.executor | Metric ndmi_anomaly computed with status insufficient_data in 23995.0 ms (attempt 1)
+2026-09-30 22:09:54 | INFO | app.services.agriculture.executor | Metric msi_anomaly computed with status insufficient_data in 26084.3 ms (attempt 1)
+2026-09-30 22:09:56 | INFO | app.services.agriculture.executor | Metric ndvi computed with status insufficient_data in 2118.2 ms (attempt 1)
+2026-09-30 22:10:02 | INFO | app.services.agriculture.executor | Metric ndre_anomaly computed with status insufficient_data in 27803.1 ms (attempt 1)
+2026-09-30 22:10:21 | INFO | app.services.agriculture.executor | Metric ndvi_anomaly_absolute computed with status ok in 26423.0 ms (attempt 1)
+2026-09-30 22:10:21 | INFO | app.services.agriculture.executor | Metric ndvi_anomaly_persistence computed with status ok in 25500.4 ms (attempt 1)
+2026-09-30 22:10:29 | INFO | app.services.agriculture.executor | Metric ndvi_anomaly_relative computed with status ok in 27495.4 ms (attempt 1)
+2026-09-30 22:10:34 | INFO | app.services.agriculture.executor | Metric middle_canopy_dryness_proxy computed with status insufficient_data in 82793.9 ms (attempt 1)
+2026-09-30 22:10:45 | INFO | app.services.agriculture.executor | Metric ndvi_anomaly_standardized computed with status ok in 24598.2 ms (attempt 1)
+2026-09-30 22:10:48 | INFO | app.services.agriculture.executor | Metric ndwi computed with status insufficient_data in 2237.9 ms (attempt 1)
+2026-09-30 22:10:49 | INFO | app.services.agriculture.executor | Metric par computed with status ok in 1543.4 ms (attempt 1)
+2026-09-30 22:10:50 | INFO | app.services.agriculture.executor | Metric ndvi_change_shift computed with status ok in 28424.3 ms (attempt 1)
+2026-09-30 22:10:52 | INFO | app.services.agriculture.executor | Metric potential_evapotranspiration computed with status insufficient_data in 1991.0 ms (attempt 1)
+2026-09-30 22:10:54 | INFO | app.services.agriculture.executor | Metric ndvi_percentile_context computed with status ok in 24716.1 ms (attempt 1)
+2026-09-30 22:10:55 | INFO | app.services.agriculture.executor | Metric precipitation computed with status ok in 2946.6 ms (attempt 1)
+2026-09-30 22:10:56 | INFO | app.services.agriculture.executor | Metric precipitation_cumulative computed with status ok in 1501.0 ms (attempt 1)
+2026-09-30 22:10:59 | INFO | app.services.agriculture.executor | Metric plant_available_water_fraction computed with status insufficient_data in 9681.4 ms (attempt 1)
+2026-09-30 22:11:00 | INFO | app.services.agriculture.executor | Metric relative_humidity computed with status ok in 4379.7 ms (attempt 1)
+2026-09-30 22:11:01 | INFO | app.services.agriculture.executor | Metric root_zone_soil_moisture_gldas computed with status ok in 2013.2 ms (attempt 1)
+2026-09-30 22:11:01 | INFO | app.services.agriculture.executor | Metric rvi computed with status insufficient_data in 868.1 ms (attempt 1)
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric ndvi_trend computed with status ok in 28048.2 ms (attempt 1)
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric soil_available_water_capacity computed with status insufficient_data in 451.4 ms (attempt 1)
+2026-09-30 22:11:02 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_bulk_density: Metric 'soil_bulk_density' declares no datasets
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric soil_bulk_density computed with status unavailable in 0.8 ms (attempt 1)
+2026-09-30 22:11:02 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_cation_exchange_capacity: Metric 'soil_cation_exchange_capacity' declares no datasets
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric soil_cation_exchange_capacity computed with status unavailable in 0.4 ms (attempt 1)
+2026-09-30 22:11:02 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_clay_content: Metric 'soil_clay_content' declares no datasets
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric soil_clay_content computed with status unavailable in 0.5 ms (attempt 1)
+2026-09-30 22:11:02 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_coarse_fragments: Metric 'soil_coarse_fragments' declares no datasets
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric soil_coarse_fragments computed with status unavailable in 0.4 ms (attempt 1)
+2026-09-30 22:11:02 | INFO | app.services.agriculture.executor | Metric slope computed with status insufficient_data in 870.3 ms (attempt 1)
+2026-09-30 22:11:03 | INFO | app.services.agriculture.executor | Metric soil_field_capacity computed with status insufficient_data in 524.0 ms (attempt 1)
+2026-09-30 22:11:04 | INFO | app.services.agriculture.executor | Metric savi computed with status insufficient_data in 2824.1 ms (attempt 1)
+2026-09-30 22:11:07 | INFO | app.services.agriculture.executor | Metric soil_moisture_rootzone_era5 computed with status ok in 3106.9 ms (attempt 1)
+2026-09-30 22:11:09 | INFO | app.services.agriculture.executor | Metric soil_moisture_surface computed with status insufficient_data in 2189.9 ms (attempt 1)
+2026-09-30 22:11:11 | INFO | app.services.agriculture.executor | Metric soil_moisture_surface_evening computed with status insufficient_data in 2264.8 ms (attempt 1)
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_moisture_rootzone computed with status ok in 9733.4 ms (attempt 1)
+2026-09-30 22:11:12 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_organic_carbon: Metric 'soil_organic_carbon' declares no datasets
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_organic_carbon computed with status unavailable in 0.3 ms (attempt 1)
+2026-09-30 22:11:12 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_ph: Metric 'soil_ph' declares no datasets
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_ph computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:11:12 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_salinity: Metric 'soil_salinity' declares no datasets
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_salinity computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:11:12 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_sand_content: Metric 'soil_sand_content' declares no datasets
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_sand_content computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:11:12 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_silt_content: Metric 'soil_silt_content' declares no datasets
+2026-09-30 22:11:12 | INFO | app.services.agriculture.executor | Metric soil_silt_content computed with status unavailable in 0.2 ms (attempt 1)
+2026-09-30 22:11:13 | INFO | app.services.agriculture.executor | Metric soil_temperature_0_7cm computed with status ok in 962.9 ms (attempt 1)
+2026-09-30 22:11:14 | INFO | app.services.agriculture.executor | Metric soil_temperature_7_28cm computed with status ok in 955.4 ms (attempt 1)
+2026-09-30 22:11:14 | WARNING | app.services.agriculture.executor | Capability check failed for metric soil_texture_class: Metric 'soil_texture_class' declares no datasets
+2026-09-30 22:11:14 | INFO | app.services.agriculture.executor | Metric soil_texture_class computed with status unavailable in 1.5 ms (attempt 1)
+2026-09-30 22:11:17 | INFO | app.services.agriculture.executor | Metric precipitation_anomaly computed with status ok in 22727.4 ms (attempt 1)
+2026-09-30 22:11:17 | INFO | app.services.agriculture.executor | Metric soil_wilting_point computed with status insufficient_data in 469.3 ms (attempt 1)
+2026-09-30 22:11:19 | INFO | app.services.agriculture.executor | Metric solar_radiation computed with status ok in 1845.9 ms (attempt 1)
+2026-09-30 22:11:21 | INFO | app.services.agriculture.executor | Metric surface_temperature_range computed with status ok in 2294.5 ms (attempt 1)
+2026-09-30 22:11:24 | INFO | app.services.agriculture.executor | Metric temperature_max computed with status ok in 2238.8 ms (attempt 1)
+2026-09-30 22:11:25 | INFO | app.services.agriculture.executor | Metric soil_moisture_wetness computed with status ok in 13929.2 ms (attempt 1)
+2026-09-30 22:11:26 | INFO | app.services.agriculture.executor | Metric temperature_mean computed with status ok in 1892.2 ms (attempt 1)
+2026-09-30 22:11:26 | INFO | app.services.agriculture.executor | Metric terrain_historical_trend computed with status unavailable in 0.1 ms (attempt 1)
+2026-09-30 22:11:26 | INFO | app.services.agriculture.executor | Metric terrain_ruggedness computed with status insufficient_data in 548.7 ms (attempt 1)
+2026-09-30 22:11:26 | WARNING | app.services.agriculture.executor | Capability check failed for metric topographic_wetness_index: Metric 'topographic_wetness_index' declares no datasets
+2026-09-30 22:11:26 | INFO | app.services.agriculture.executor | Metric topographic_wetness_index computed with status unavailable in 0.6 ms (attempt 1)
+2026-09-30 22:11:26 | INFO | app.services.agriculture.executor | Metric vegetation_seasonal_integral computed with status unavailable in 0.1 ms (attempt 1)
+2026-09-30 22:11:27 | INFO | app.services.agriculture.executor | Metric soil_water_content_ratio computed with status insufficient_data in 13268.8 ms (attempt 1)
+2026-09-30 22:11:27 | INFO | app.services.agriculture.executor | Metric vh computed with status insufficient_data in 1168.4 ms (attempt 1)
+2026-09-30 22:11:27 | INFO | app.services.agriculture.executor | Metric temperature_min computed with status ok in 2270.7 ms (attempt 1)
+2026-09-30 22:11:30 | INFO | app.services.agriculture.executor | Metric vh_vv computed with status insufficient_data in 2599.9 ms (attempt 1)
+2026-09-30 22:11:32 | INFO | app.services.agriculture.executor | Metric vpd computed with status ok in 4638.9 ms (attempt 1)
+2026-09-30 22:11:33 | INFO | app.services.agriculture.executor | Metric vv computed with status insufficient_data in 1085.8 ms (attempt 1)
+2026-09-30 22:11:33 | WARNING | app.services.agriculture.executor | Capability check failed for metric wdi: Metric 'wdi' declares no datasets
+2026-09-30 22:11:33 | INFO | app.services.agriculture.executor | Metric wdi computed with status unavailable in 0.4 ms (attempt 1)
+2026-09-30 22:11:40 | INFO | app.services.agriculture.executor | Metric wind_speed computed with status ok in 6869.7 ms (attempt 1)
+2026-09-30 22:11:49 | INFO | app.services.agriculture.executor | Metric vpd_anomaly computed with status ok in 21617.5 ms (attempt 1)
+2026-09-30 22:11:53 | INFO | app.services.agriculture.executor | Metric vpd_high_duration computed with status ok in 22887.5 ms (attempt 1)
+2026-09-30 22:12:07 | INFO | app.services.agriculture.executor | Metric soil_moisture_rootzone_anomaly computed with status ok in 64727.2 ms (attempt 1)
+2026-09-30 22:12:39 | INFO | app.services.agriculture.radar_anomaly | Radar anomaly analysis for vv: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:12:42 | INFO | app.services.agriculture.radar_anomaly | Radar anomaly analysis for vh: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:12:48 | INFO | app.services.agriculture.radar_anomaly | Radar anomaly analysis for vh_vv: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:12:53 | INFO | app.services.agriculture.radar_anomaly | Radar anomaly analysis for rvi: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:12:54 | WARNING | app.services.agriculture.thermal_profile | Thermal profile for land_surface_temperature_day: month 2025-06-01 to 2025-06-30 failed (ValueError); recording a missing observation.
+2026-09-30 22:12:55 | WARNING | app.services.agriculture.thermal_profile | Thermal profile for land_surface_temperature_day: month 2025-07-01 to 2025-07-31 failed (ValueError); recording a missing observation.
+2026-09-30 22:12:56 | WARNING | app.services.agriculture.thermal_profile | Thermal profile for land_surface_temperature_day: month 2025-08-01 to 2025-08-31 failed (ValueError); recording a missing observation.
+2026-09-30 22:13:04 | INFO | app.services.agriculture.thermal_anomaly | Thermal anomaly analysis for land_surface_temperature_day: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:13:04 | INFO | app.services.agriculture.thermal_anomaly | Thermal anomaly analysis for temperature_mean: 3 usable month(s), baseline present, 3 scored point(s).
+2026-09-30 22:13:04 | INFO | app.services.agriculture.thermal_anomaly | Thermal anomaly analysis for land_surface_temperature_day: 0 usable month(s), baseline refused, 0 scored point(s).
+2026-09-30 22:13:04 | INFO | app.services.agriculture.thermal_anomaly | Thermal anomaly analysis for temperature_mean: 3 usable month(s), baseline present, 3 scored point(s).
+2026-09-30 22:13:04 | INFO | app.services.agriculture.thermal_concordance | Thermal concordance: 3 month(s), LST concordant 0, ERA5 context concordant 0.
+2026-09-30 22:13:04 | WARNING | app.services.agriculture.spatial_section | Spatial section skipped: ValueError
+2026-09-30 22:13:04 | INFO | app.api.v1.agriculture | Agriculture analysis 12887379-25cf-46f5-8d16-a056878465ff: completed (metrics=118, unknown=0, cache_lookup=0.0ms, total=249626.4ms)
+INFO:     127.0.0.1:50328 - "POST /api/v1/agriculture/analysis HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50612 - "GET /api/v1/agriculture/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50616 - "GET /api/v1/agriculture/health HTTP/1.1" 200 OK

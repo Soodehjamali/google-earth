@@ -7,7 +7,6 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parent
 KEY_PATHS = [
     BACKEND / "credentials" / "gee-key.json",
-    BACKEND.parent / "credentials" / "gee-key.json",
 ]
 
 

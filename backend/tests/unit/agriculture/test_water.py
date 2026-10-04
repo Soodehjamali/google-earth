@@ -69,6 +69,7 @@ from app.services.agriculture.water import (
     MNDWIMetric,
     MOD16_GAPFILLED,
     MOD16_NRT,
+    MSIMetric,
     NDMIMetric,
     NDWIMetric,
     PotentialEvapotranspirationMetric,
@@ -84,6 +85,7 @@ EXPECTED_KEYS = {
     "ndwi",
     "ndmi",
     "mndwi",
+    "msi",
     "evapotranspiration",
     "potential_evapotranspiration",
     "evapotranspiration_cumulative",
@@ -1514,7 +1516,7 @@ def test_every_available_water_metric_returns_a_result_object(fake_ee):
             MOD16_NRT: {"ET": [300.0] * 4, "PET": [400.0] * 4},
         }
     )
-    skipped = (NDWIMetric, NDMIMetric, MNDWIMetric)
+    skipped = (NDWIMetric, NDMIMetric, MNDWIMetric, MSIMetric)
     for metric in ALL_WATER_METRICS:
         if isinstance(metric, skipped):
             continue

@@ -1,18 +1,17 @@
-version: "3.8"
-
+# Development compose stack. For production use docker-compose.prod.yml.
 services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: agri_intelligence
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-agri_intelligence}
     ports:
       - "5433:5432" # تغییر پورت سیستم‌عامل به 5433 برای جلوگیری از تداخل
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,14 +24,16 @@ services:
       - "8000:8000"
     environment:
       - APP_ENV=development
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/agri_intelligence
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-agri_intelligence}
       - EE_PROJECT_ID=${EE_PROJECT_ID:-}
       - EE_SERVICE_ACCOUNT=${EE_SERVICE_ACCOUNT:-}
       - EE_PRIVATE_KEY_FILE=${EE_PRIVATE_KEY_FILE:-}
       - CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://127.0.0.1:5173"]
     volumes:
       - ./backend:/app
-      - ./credentials:/app/credentials:ro
+      # The backend bind mount above already exposes ./backend/credentials
+      # at /app/credentials. Do not mount the repo-root ./credentials here:
+      # it held a stale, revoked key and would mask the valid backend key.
     depends_on:
       postgres:
         condition: service_healthy

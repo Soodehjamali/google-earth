@@ -1,0 +1,21 @@
+# Never bake secrets or local state into the image
+.env
+.env.*
+!.env.example
+credentials/
+*.pem
+*.key
+
+# Local development / test artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+*.log
+_pipaudit.log
+_check_keys.py
+_diag_key.py

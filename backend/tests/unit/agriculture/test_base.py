@@ -118,10 +118,19 @@ def test_valid_metric_constructs():
 
 
 def test_metric_domains_are_the_expected_set():
+    """Pin the full domain set.
+
+    Phase S added the stress, irrigation, productivity and history
+    domains to the nine pre-existing ones. Every entry here must have a
+    real domain module behind it — the set is asserted against the
+    modules that ``register_all_metrics`` imports, so a domain cannot be
+    added to the enum without an engine to populate it.
+    """
     assert set(MetricDomain.ALL) == {
         "vegetation", "water", "soil", "climate",
         "thermal", "terrain", "crop", "phenology",
-        "landcover",
+        "landcover", "stress", "irrigation", "productivity",
+        "history",
     }
 
 

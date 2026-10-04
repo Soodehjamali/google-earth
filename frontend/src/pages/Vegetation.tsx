@@ -2,6 +2,7 @@ import { useState } from 'react'
 import MapView from '../components/MapView'
 import KPICard from '../components/KPICard'
 import NDVIChart from '../components/NDVIChart'
+import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import { analysesApi } from '../api/analyses'
 import type { Analysis, MapVisualization, TimeSeriesPoint } from '../types'
 
@@ -89,6 +90,7 @@ export default function Vegetation() {
       </div>
 
       {/* Quick Analysis Form */}
+      <ComprehensiveNotice to="/agriculture/vegetation" linkLabelFa="مشاهده تحلیل جامع" linkLabelEn="View comprehensive analysis" />
       <div className="card mb-3">
         <div className="card-header">
           <span className="card-title">🌿 تحلیل سریع پوشش گیاهی</span>

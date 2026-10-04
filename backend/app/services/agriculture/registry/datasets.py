@@ -180,6 +180,45 @@ _register(DatasetSpec(
 
 
 # ==========================================================================
+# RADAR — Sentinel-1 GRD (C-band SAR, log scaling)
+# ==========================================================================
+
+_register(DatasetSpec(
+    id="COPERNICUS/S1_GRD",
+    name="Sentinel-1 SAR GRD: C-band Ground Range Detected (log scaling)",
+    name_fa="رادار سنتینل-۱ (GRD)",
+    provider="ESA / Copernicus",
+    description=(
+        "Calibrated, ortho-corrected C-band (5.405 GHz) Synthetic "
+        "Aperture Radar Ground Range Detected scenes in log scaling. "
+        "Backscatter is stored in decibels. Only the bands this engine "
+        "reads are registered; HH, HV and the incidence-angle band exist "
+        "in the collection but are deliberately omitted so that a metric "
+        "cannot silently read a band the registry does not declare."
+    ),
+    spatial_resolution="10 m (IW GRD)",
+    temporal_resolution="12 days single satellite (6 days with two active)",
+    available_from="2014-10-03",
+    available_to=None,
+    measurement_basis=MeasurementBasis.DIRECT,
+    bands={
+        "VV": BandSpec("VV", "Co-polarized backscatter, vertical transmit/vertical receive", "dB", 1.0, 0.0, (-50.0, 1.0)),
+        "VH": BandSpec("VH", "Cross-polarized backscatter, vertical transmit/horizontal receive", "dB", 1.0, 0.0, (-50.0, 1.0)),
+    },
+    caveats=(
+        "There is no cloud mask for SAR: C-band largely penetrates cloud, so no cloud-mask band or method is declared.",
+        "This engine reads only Interferometric Wide Swath (IW) dual-polarization VV+VH descending-pass acquisitions; other modes, polarizations and passes are excluded by the metric filter for acquisition homogeneity.",
+        "The constellation changed over the archive: Sentinel-1B was unavailable from December 2021 to the arrival of Sentinel-1C in December 2024, leaving a single-satellite 12-day revisit in between, and early-archive coverage is sparse.",
+        "Incidence-angle variation between satellite tracks is not corrected; acquisitions share the orbit pass but may come from different relative orbits.",
+        "Speckle is mitigated by temporal-mean compositing; single-scene backscatter is noisy and must not be read as a field condition.",
+        "Backscatter mixes canopy structure, biomass, soil and roughness contributions; it is moisture-sensitive but is not a measurement of leaf water content.",
+    ),
+    citation="Sentinel-1 SAR GRD, ESA/Copernicus",
+    docs_url="https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S1_GRD",
+))
+
+
+# ==========================================================================
 # VEGETATION STRUCTURE — MODIS
 # ==========================================================================
 
@@ -875,6 +914,72 @@ _register(DatasetSpec(
     ),
     citation="SMAP L4 SPL4SMGP v008, NASA NSIDC",
     docs_url="https://developers.google.com/earth-engine/datasets/catalog/NASA_SMAP_SPL4SMGP_008",
+))
+
+
+# ==========================================================================
+# SOIL MOISTURE — GLDAS-2.1 Noah (open-loop land surface model)
+# ==========================================================================
+#
+# Registered when the deferred ``root_zone_soil_moisture_gldas`` metric was
+# closed. Every parameter below was verified against the official Earth
+# Engine catalogue entry and its STAC record:
+#
+#   https://developers.google.com/earth-engine/datasets/catalog/NASA_GLDAS_V021_NOAH_G025_T3H
+#   https://storage.googleapis.com/earthengine-stac/catalog/NASA/NASA_GLDAS_V021_NOAH_G025_T3H.json
+#
+# Confirmed: cadence 3 hours, pixel size 27830 m, availability from
+# 2000-01-01T03:00:00Z, band ``RootMoist_inst`` described as "Root zone
+# soil moisture" with units ``kg/m^2``, and an explicit statement that
+# GLDAS-2.1 is OPEN-LOOP, i.e. it assimilates no observations.
+
+_register(DatasetSpec(
+    id="NASA/GLDAS/V021/NOAH/G025/T3H",
+    name="GLDAS-2.1 Noah land surface model",
+    name_fa="مدل سطح زمین GLDAS-2.1 (نوح)",
+    provider="NASA GES DISC at NASA Goddard Space Flight Center",
+    description=(
+        "Global Land Data Assimilation System version 2.1: the Noah land "
+        "surface model run open-loop on a 0.25 degree grid, forced with "
+        "GDAS atmospheric analyses, disaggregated GPCP precipitation and "
+        "AGRMET radiation. Root zone soil moisture is published as a water "
+        "mass per unit area in kg/m2."
+    ),
+    spatial_resolution="27830 m (0.25 degree global grid)",
+    temporal_resolution="3 hourly",
+    available_from="2000-01-01",
+    available_to=None,
+    measurement_basis=MeasurementBasis.MODELLED,
+    roles=("modelled_root_zone",),
+    bands={
+        # Unit is a MASS PER UNIT AREA, not a volume fraction. The
+        # catalogue documents no validity range for this band, only an
+        # estimated one (2 to 949.6 kg/m2, flagged as estimated), which is
+        # deliberately not used as a filter — see the caveats.
+        "RootMoist_inst": BandSpec(
+            "RootMoist_inst",
+            "Root zone soil moisture, as a water mass per unit area",
+            "kg/m2", 1.0, 0.0, None, ()),
+    },
+    caveats=(
+        "GLDAS-2.1 is an OPEN-LOOP simulation: it assimilates no soil moisture observations at all. It is a land surface model driven by observation-based meteorology, so it is neither a measurement nor a data-assimilation product.",
+        "The value is a water MASS PER UNIT AREA (kg/m2). Converting it to a volume fraction (m3/m3) requires the thickness of the layer and the density of water, and the catalogue does not document the depth interval that the root zone band covers, so no conversion is performed anywhere in this engine.",
+        "The catalogue publishes only an ESTIMATED range for this band (2 to 949.6 kg/m2, flagged 'estimated'). It is therefore not used as a validity filter, because a genuine near-zero value would be wrongly rejected by the lower bound.",
+        "At 27 830 m per pixel the value describes a region of hundreds of kilometres. It cannot describe a field, and it cannot represent irrigation, which this model does not simulate at that scale.",
+        "Not comparable with SMAP L3, SMAP L4 or ERA5-Land soil moisture, all of which report a volume fraction. Placing them side by side without an explicit, documented conversion compares two different quantities.",
+        "The soil moisture profile layers (SoilMoi0_10cm_inst, SoilMoi10_40cm_inst, SoilMoi40_100cm_inst, SoilMoi100_200cm_inst, all in kg/m2) exist in the same asset and are not declared here because no metric reads them.",
+    ),
+    citation=(
+        "Rodell, M., P.R. Houser, U. Jambor, J. Gottschalck, K. Mitchell, "
+        "C.-J. Meng, K. Arsenault, B. Cosgrove, J. Radakovich, M. "
+        "Bosilovich, J.K. Entin, J.P. Walker, D. Lohmann and D. Toll, "
+        "The Global Land Data Assimilation System, Bulletin of the "
+        "American Meteorological Society, 85(3), 381-394, 2004"
+    ),
+    docs_url=(
+        "https://developers.google.com/earth-engine/datasets/catalog/"
+        "NASA_GLDAS_V021_NOAH_G025_T3H"
+    ),
 ))
 
 

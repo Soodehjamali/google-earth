@@ -2,6 +2,7 @@ import { useState } from 'react'
 import MapView from '../components/MapView'
 import KPICard from '../components/KPICard'
 import { analysesApi } from '../api/analyses'
+import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import type { Analysis, MapVisualization } from '../types'
 
 export default function Water() {
@@ -78,6 +79,7 @@ export default function Water() {
       </div>
 
       {/* Quick Analysis Form */}
+      <ComprehensiveNotice to="/agriculture/water" linkLabelFa="مشاهده تحلیل جامع" linkLabelEn="View comprehensive analysis" />
       <div className="card mb-3">
         <div className="card-header">
           <span className="card-title">💧 تحلیل آب</span>

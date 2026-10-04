@@ -2,6 +2,7 @@ import { useState } from 'react'
 import MapView from '../components/MapView'
 import KPICard from '../components/KPICard'
 import { analysesApi } from '../api/analyses'
+import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import type { Analysis, MapVisualization } from '../types'
 
 const LANDCOVER_CLASSES: Record<string, { label: string; labelFa: string; color: string }> = {
@@ -87,6 +88,7 @@ export default function LandCover() {
       </div>
 
       {/* Quick Analysis Form */}
+      <ComprehensiveNotice to="/agriculture/land-crop" linkLabelFa="مشاهده تحلیل جامع" linkLabelEn="View comprehensive analysis" />
       <div className="card mb-3">
         <div className="card-header">
           <span className="card-title">🗺️ تحلیل پوشش ارضی</span>

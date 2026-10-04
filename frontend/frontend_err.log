@@ -1,1 +1,119 @@
 $ vite "--" "--port" "5173" "--strictPort"
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+
+    node_modules/react-transition-group/esm/TransitionGroup.js:1:42:
+      1 │ ...Loose from "@babel/runtime/helpers/esm/objectWithoutPropertiesLo...
+        ╵               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/extends"
+
+    node_modules/react-transition-group/esm/CSSTransition.js:1:21:
+      1 │ import _extends from "@babel/runtime/helpers/esm/extends";
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/extends" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+
+    node_modules/react-transition-group/esm/SwitchTransition.js:1:27:
+      1 │ import _inheritsLoose from "@babel/runtime/helpers/esm/inheritsLoose";
+        ╵                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/inheritsLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+
+    node_modules/react-transition-group/esm/ReplaceTransition.js:1:42:
+      1 │ ...Loose from "@babel/runtime/helpers/esm/objectWithoutPropertiesLo...
+        ╵               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+
+    node_modules/react-transition-group/esm/Transition.js:1:42:
+      1 │ ...Loose from "@babel/runtime/helpers/esm/objectWithoutPropertiesLo...
+        ╵               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/extends"
+
+    node_modules/react-transition-group/esm/TransitionGroup.js:2:21:
+      2 │ import _extends from "@babel/runtime/helpers/esm/extends";
+        ╵                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/extends" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+
+    node_modules/react-transition-group/esm/CSSTransition.js:2:42:
+      2 │ ...Loose from "@babel/runtime/helpers/esm/objectWithoutPropertiesLo...
+        ╵               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+
+    node_modules/react-transition-group/esm/ReplaceTransition.js:2:27:
+      2 │ import _inheritsLoose from "@babel/runtime/helpers/esm/inheritsLoose";
+        ╵                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/inheritsLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+
+    node_modules/react-transition-group/esm/Transition.js:2:27:
+      2 │ import _inheritsLoose from "@babel/runtime/helpers/esm/inheritsLoose";
+        ╵                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/inheritsLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/assertThisInitialized"
+
+    node_modules/react-transition-group/esm/TransitionGroup.js:3:35:
+      3 │ ...nitialized from "@babel/runtime/helpers/esm/assertThisInitialized";
+        ╵                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/assertThisInitialized" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+
+    node_modules/react-transition-group/esm/CSSTransition.js:3:27:
+      3 │ import _inheritsLoose from "@babel/runtime/helpers/esm/inheritsLoose";
+        ╵                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/inheritsLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+✘ [ERROR] Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+
+    node_modules/react-transition-group/esm/TransitionGroup.js:4:27:
+      4 │ import _inheritsLoose from "@babel/runtime/helpers/esm/inheritsLoose";
+        ╵                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  You can mark the path "@babel/runtime/helpers/esm/inheritsLoose" as external to exclude it from the bundle, which will remove this error and leave the unresolved path in the bundle.
+
+C:\Users\Jamali\Desktop\google\frontend\node_modules\.pnpm\esbuild@0.25.12\node_modules\esbuild\lib\main.js:1467
+  let error = new Error(text);
+              ^
+
+Error: Build failed with 12 errors:
+node_modules/react-transition-group/esm/CSSTransition.js:1:21: ERROR: Could not resolve "@babel/runtime/helpers/esm/extends"
+node_modules/react-transition-group/esm/CSSTransition.js:2:42: ERROR: Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+node_modules/react-transition-group/esm/CSSTransition.js:3:27: ERROR: Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+node_modules/react-transition-group/esm/ReplaceTransition.js:1:42: ERROR: Could not resolve "@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"
+node_modules/react-transition-group/esm/ReplaceTransition.js:2:27: ERROR: Could not resolve "@babel/runtime/helpers/esm/inheritsLoose"
+...
+    at failureErrorWithLog (C:\Users\Jamali\Desktop\google\frontend\node_modules\.pnpm\esbuild@0.25.12\node_modules\esbuild\lib\main.js:1467:15)
+    at C:\Users\Jamali\Desktop\google\frontend\node_modules\.pnpm\esbuild@0.25.12\node_modules\esbuild\lib\main.js:926:25
+    at C:\Users\Jamali\Desktop\google\frontend\node_modules\.pnpm\esbuild@0.25.12\node_modules\esbuild\lib\main.js:1345:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  errors: [Getter/Setter],
+  warnings: [Getter/Setter]
+}
+
+Node.js v24.16.0
+The system cannot find the path specified.
+[ELIFECYCLE] Command failed with exit code 1.

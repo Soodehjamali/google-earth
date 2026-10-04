@@ -55,9 +55,18 @@ def register_metric(metric: Metric) -> Metric:
     return metric
 
 
-def register_metrics(metrics: Iterable[Metric]) -> None:
+def register_metrics(metrics: Iterable[Metric]) -> List[str]:
+    """Register a batch of metrics and return the keys now registered.
+
+    Returning the keys (rather than ``None``) lets callers log what was
+    registered and lets the domain-level idempotency tests compare two
+    consecutive registrations of the same batch. The set of keys is
+    unchanged by re-registering the same metrics, so the return value is
+    stable across repeated calls.
+    """
     for metric in metrics:
         register_metric(metric)
+    return sorted(_METRICS)
 
 
 def get_metric(key: str) -> Metric:

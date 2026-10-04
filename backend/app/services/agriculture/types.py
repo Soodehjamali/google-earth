@@ -658,6 +658,12 @@ class MetricResult:
     #: exclusive and enforced in ``__post_init__``.
     class_histogram: Optional[ClassHistogram] = None
 
+    #: Per-band mean probabilities for the Dynamic World probability
+    #: metric, keyed by the canonical band names. Structured computed
+    #: data carried alongside the scalar value — never parsed from
+    #: warning strings. None for every other metric.
+    band_means: Optional[Dict[str, Optional[float]]] = None
+
     unit: str = ""
     provenance: Optional[Provenance] = None
 
@@ -861,6 +867,9 @@ class MetricResult:
             "stats": self.stats.to_dict() if self.stats else None,
             "class_histogram": (
                 self.class_histogram.to_dict() if self.class_histogram else None
+            ),
+            "band_means": (
+                dict(self.band_means) if self.band_means else None
             ),
             "provenance": self.provenance.to_dict() if self.provenance else None,
             "reason": self.reason,

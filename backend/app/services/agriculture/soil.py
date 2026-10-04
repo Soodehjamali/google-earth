@@ -22,6 +22,14 @@ depth of water, which is the mass per unit area expressed as a length.
 Dividing one by the other without stating the layer thickness produces a
 number with no physical meaning, so this module never does it.
 
+The GLDAS entry in that table is a real metric, not a hypothetical:
+:class:`RootZoneSoilMoistureGLDASMetric` publishes root zone water in
+``kg/m2``. It is labelled with its own unit everywhere it surfaces and is
+never merged with the volume-fraction metrics. The alternative — dividing
+by a layer thickness to reach ``m3/m3`` — was evaluated and rejected,
+because the catalogue does not document the depth interval the GLDAS root
+zone band covers.
+
 What is measured and what is modelled
 -------------------------------------
 This distinction is not cosmetic and the code enforces it:
@@ -74,12 +82,15 @@ __all__ = [
     "SoilMoistureRootZoneMetric",
     "SoilMoistureRootZoneERA5Metric",
     "SoilMoistureWetnessMetric",
+    "RootZoneSoilMoistureGLDASMetric",
     "SOIL_METRICS",
     "SMAP_L3_CURRENT",
     "SMAP_L3_PREVIOUS",
     "SMAP_L4",
     "ERA5_DAILY",
+    "GLDAS_NOAH",
     "SMAP_NATIVE_SCALE",
+    "GLDAS_NATIVE_SCALE",
 ]
 
 
@@ -90,6 +101,7 @@ __all__ = [
 SMAP_L3_CURRENT = "NASA/SMAP/SPL3SMP_E/006"
 SMAP_L3_PREVIOUS = "NASA/SMAP/SPL3SMP_E/005"
 SMAP_L4 = "NASA/SMAP/SPL4SMGP/008"
+GLDAS_NOAH = "NASA/GLDAS/V021/NOAH/G025/T3H"
 ERA5_DAILY = "ECMWF/ERA5_LAND/DAILY_AGGR"
 
 #: SMAP L3 is posted on a 9 km EASE-Grid; Earth Engine serves it on a
@@ -99,6 +111,12 @@ SMAP_NATIVE_SCALE = 9000
 
 #: ERA5-Land is 0.1 degree, approximately 11.1 km.
 ERA5_WORKING_SCALE = 11132
+
+#: GLDAS-2.1 is posted on a 0.25 degree grid. The catalogue gives the pixel
+#: size as 27830 m, confirmed against the STAC record and against the live
+#: asset's nominal scale. Reducing at a finer scale would resample the grid
+#: and the reported resolution would be false.
+GLDAS_NATIVE_SCALE = 27830
 
 #: The ERA5-Land layer boundaries in centimetres, from the catalogue band
 #: descriptions. Layer 3 (28-100 cm) is the deeper half of the 0-100 cm
@@ -164,7 +182,12 @@ def _reduce_smap_l3(
         # recommended from uncertain quality, which is handled through the
         # quality assessment rather than through masking, because an
         # uncertain retrieval is still a real observation.
-        skipped = flag.bitwiseAnd(0b10).neq(0)
+        # The catalogue serves the flag band with float precision, and
+        # bitwiseAnd is defined for integers only, so cast the flag to an
+        # integer before the bit test. The codes are whole numbers, so the
+        # rounding is a no-op on real data and the masking semantics are
+        # unchanged.
+        skipped = flag.round().toInt().bitwiseAnd(0b10).neq(0)
         return soil.updateMask(skipped.Not()).rename(band_name)
 
     prepared = collection.map(prepare)
@@ -768,6 +791,201 @@ class SoilMoistureRootZoneMetric(Metric):
         )
 
 
+class RootZoneSoilMoistureGLDASMetric(Metric):
+    """Root zone soil moisture from the GLDAS-2.1 Noah land surface model.
+
+    **This metric is published in ``kg/m2``, the unit the product itself
+    uses, and it is the only soil metric that is not a volume fraction.**
+    That is the deliberate resolution of a decision recorded when this
+    metric was first audited: the product reports a water *mass per unit
+    area*, and the two ways of dealing with that are
+
+    1. convert it to ``m3/m3``, which requires the thickness of the root
+       zone layer and the density of water, or
+    2. publish it in its own unit, clearly labelled, and never merge it
+       with the volume-fraction metrics.
+
+    Option 1 was evaluated and rejected. The catalogue documents the
+    layered profile bands individually (0-10, 10-40, 40-100, 100-200 cm)
+    but does not document the depth interval that ``RootMoist_inst``
+    covers, so the divisor would be an assumption dressed as a conversion.
+    Option 2 is therefore used: no conversion is applied anywhere, the
+    unit is stated as ``kg/m2`` in the result, the provenance and the
+    warnings, and the metric is never averaged with an ``m3/m3`` value.
+
+    What this product is *not*: it is not a measurement. GLDAS-2.1 is
+    open-loop — it assimilates no soil moisture observations at all — and
+    it is a land surface model driven by observation-based meteorology.
+    """
+
+    key = "root_zone_soil_moisture_gldas"
+    display_name = "Root Zone Soil Moisture (GLDAS-2.1 model, kg/m2)"
+    display_name_fa = "رطوبت خاک ناحیه ریشه (GLDAS-2.1، کیلوگرم بر متر مربع)"
+    unit = "kg/m2"
+    domain = MetricDomain.SOIL
+    dataset_ids = (GLDAS_NOAH,)
+    measurement_basis = MeasurementBasis.MODELLED
+    default_scale = GLDAS_NATIVE_SCALE
+    description = (
+        "Water stored in the root zone of the GLDAS-2.1 Noah land surface "
+        "model, expressed as a mass per unit area in kg/m2. This is the "
+        "one soil moisture figure in this engine that is not a volume "
+        "fraction, because the product publishes a mass per unit area and "
+        "no defensible conversion to m3/m3 exists without an undocumented "
+        "layer thickness."
+    )
+    limitations = (
+        "The unit is kg/m2, a water mass per unit area. It is NOT a volume "
+        "fraction and must not be read as an m3/m3 value, compared with "
+        "one, or averaged with one.",
+        "Converting kg/m2 to m3/m3 requires the thickness of the layer and "
+        "the density of water. The catalogue does not document the depth "
+        "interval the root zone band covers, so no conversion is applied "
+        "and none should be applied downstream without stating that "
+        "assumption explicitly.",
+        "GLDAS-2.1 is an OPEN-LOOP model: it assimilates no soil moisture "
+        "observations. It is forced by observation-based meteorology, so "
+        "it is neither a satellite retrieval nor a data-assimilation "
+        "product, and it cannot be described as a measurement.",
+        "At 27 830 m (about 28 km) per pixel the value describes a region "
+        "of hundreds of kilometres, not a field. It cannot represent "
+        "irrigation at that scale, and the model does not simulate it.",
+    )
+
+    @property
+    def source_bands(self) -> Tuple[str, ...]:
+        return ("RootMoist_inst",)
+
+    def compute(self, context: MetricContext) -> MetricResult:
+        import ee
+
+        dataset = self.primary_dataset()
+        band_name = "RootMoist_inst"
+
+        collection = (
+            ee.ImageCollection(GLDAS_NOAH)
+            .filterDate(context.start_date, context.end_date)
+            .filterBounds(context.geometry)
+            .select([band_name])
+        )
+
+        # The product is 3-hourly. A mean over the period is taken for the
+        # same reason the SMAP L4 metric takes one: it is the period
+        # average a water balance needs, and it is insensitive to a single
+        # unrepresentative timestep.
+        step_count = int(collection.size().getInfo())
+
+        raw = collection.mean().reduceRegion(
+            reducer=build_reducer(ee),
+            geometry=context.geometry,
+            scale=self.default_scale,
+            maxPixels=1e9,
+            bestEffort=True,
+        ).getInfo()
+
+        area_sq_m = context.option("area_sq_m")
+        stats = parse_reduction_result(
+            raw or {},
+            band=band_name,
+            total_pixel_count=estimate_pixel_count(area_sq_m, self.default_scale),
+            pixel_area_sq_m=pixel_area_sq_m(self.default_scale),
+            band_spec=dataset.band(band_name),
+        )
+
+        quality = assess_quality(
+            image_count=max(step_count, 1),
+            coverage_percent=stats.coverage_percent,
+            valid_pixel_count=stats.valid_pixel_count,
+            thresholds=REANALYSIS_THRESHOLDS,
+        )
+
+        provenance = self.build_provenance(
+            context=context,
+            dataset=dataset,
+            bands=[band_name],
+            formula=(
+                f"{band_name} water mass per unit area (kg/m2), mean over "
+                "the period; NO conversion to a volume fraction is applied"
+            ),
+            quality=quality,
+            image_count=step_count,
+            aggregation_method=(
+                "time mean of 3-hourly steps, then spatial mean"
+            ),
+            extra_limitations=(
+                "This value is reported in the product's own unit, kg/m2. "
+                "No conversion to m3/m3 is performed, because that would "
+                "require a root zone layer thickness the catalogue does "
+                "not document.",
+                "It is not comparable with the SMAP L3, SMAP L4 or ERA5 "
+                "root zone values in this module, which are volume "
+                "fractions of different layers.",
+            ),
+        )
+
+        if step_count == 0:
+            return MetricResult.insufficient(
+                metric_key=self.key,
+                display_name=self.display_name,
+                display_name_fa=self.display_name_fa,
+                message=(
+                    "No GLDAS-2.1 timesteps were available for the "
+                    "requested period, so no root zone water mass is "
+                    "reported. Reporting zero would falsely indicate a "
+                    "completely dry root zone."
+                ),
+                unit=self.unit,
+                provenance=provenance,
+            )
+
+        if not stats.has_values:
+            return MetricResult.insufficient(
+                metric_key=self.key,
+                display_name=self.display_name,
+                display_name_fa=self.display_name_fa,
+                message=(
+                    f"{step_count} GLDAS-2.1 timestep(s) were found but no "
+                    "valid pixels were returned for this area, so no root "
+                    "zone water mass is reported."
+                ),
+                unit=self.unit,
+                provenance=provenance,
+            )
+
+        warnings: List[str] = [
+            "This is an open-loop land surface model estimate, not a "
+            "measurement, and not a data-assimilation product.",
+            "The unit is kg/m2 (water mass per unit area), not m3/m3. It "
+            "is not comparable with the SMAP or ERA5 soil moisture "
+            "metrics.",
+        ]
+
+        # A negative water mass cannot exist. It is reported rather than
+        # hidden, because it signals a problem upstream, and it is never
+        # clamped to zero — clamping would silently invent a dry root zone.
+        if stats.mean is not None and stats.mean < 0.0:
+            warnings.append(
+                f"Mean root zone water mass {stats.mean:.3f} kg/m2 is "
+                "negative, which is physically impossible. This indicates "
+                "a problem in the source data rather than a real "
+                "condition."
+            )
+
+        if quality is QualityLevel.POOR:
+            warnings.append(describe_quality(QualityLevel.POOR))
+
+        return MetricResult(
+            metric_key=self.key,
+            display_name=self.display_name,
+            display_name_fa=self.display_name_fa,
+            value=stats.mean,
+            unit=self.unit,
+            stats=stats,
+            provenance=provenance,
+            warnings=warnings,
+        )
+
+
 class SoilMoistureWetnessMetric(Metric):
     """Root zone relative saturation (wetness) from SMAP L4.
 
@@ -967,4 +1185,5 @@ SOIL_METRICS: Tuple[Metric, ...] = (
     SoilMoistureRootZoneMetric(),
     SoilMoistureRootZoneERA5Metric(),
     SoilMoistureWetnessMetric(),
+    RootZoneSoilMoistureGLDASMetric(),
 )

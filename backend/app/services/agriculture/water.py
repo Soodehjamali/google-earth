@@ -2,7 +2,7 @@
 
 This module covers four groups:
 
-1. **Spectral water indices** — NDWI, NDMI and MNDWI. The formulas already
+1. **Spectral water indices** — NDWI, NDMI, MNDWI and MSI. The formulas already
    exist as pure functions in :mod:`app.services.agriculture.indices`;
    this module only wires them to Earth Engine. No formula is restated
    here, so there is no possibility of the two drifting apart.
@@ -72,6 +72,7 @@ __all__ = [
     "NDWIMetric",
     "NDMIMetric",
     "MNDWIMetric",
+    "MSIMetric",
     "EvapotranspirationMetric",
     "PotentialEvapotranspirationMetric",
     "CumulativeEvapotranspirationMetric",
@@ -116,12 +117,14 @@ MOD16_NOMINAL_PERIOD_DAYS = 8
 #
 #   NDWI  = (GREEN - NIR)   / (GREEN + NIR)     bands B3, B8
 #   NDMI  = (NIR   - SWIR1) / (NIR   + SWIR1)   bands B8, B11
+#   MSI   =  SWIR1 / NIR                           bands B11, B8
 #
-# They answer different questions. NDWI finds open water; NDMI describes
-# vegetation water content. Feeding the same band pair to both would
-# produce a numerically valid but physically meaningless number, so the
-# required_bands tuples below are asserted against the pure registry by
-# tests.
+# NDWI finds open water; NDMI and MSI describe vegetation water content
+# from opposite directions. MSI is the ratio counterpart of NDMI:
+# MSI = (1 - NDMI) / (1 + NDMI). Feeding the same band pair to NDWI and
+# NDMI would produce a numerically valid but physically meaningless
+# number, so the required_bands tuples below are asserted against the
+# pure registry by tests.
 
 
 class _WaterIndexMetric(_SpectralIndexMetric):
@@ -238,6 +241,51 @@ class MNDWIMetric(_WaterIndexMetric):
 
     def build_expression(self, composite: Any, ee_module: Any) -> Any:
         return composite.normalizedDifference(["B3", "B11"])
+
+
+class MSIMetric(_WaterIndexMetric):
+    key = "msi"
+    display_name = "MSI (moisture stress)"
+    display_name_fa = "شاخص تنش رطوبتی (MSI)"
+    index_name = "MSI"
+    # Hunt and Rock MSI: shortwave infrared 1 over near-infrared.
+    required_bands = ("B11", "B8")
+    band_scale = 20
+    description = (
+        "Moisture Stress Index after Hunt and Rock. A ratio of shortwave "
+        "infrared to near-infrared that rises as canopy water content falls."
+    )
+    limitations = (
+        "The shortwave infrared band is acquired at 20 m, so within-field "
+        "detail is coarser than for NDVI.",
+        "This is a canopy water stress signal, not a soil moisture "
+        "measurement and not a fraction of dry leaves. There is no "
+        "validated conversion from MSI to a percentage of drying.",
+        "Affected by canopy structure as well as by water content: a "
+        "change in leaf area changes MSI without any change in leaf water.",
+        "Cannot distinguish a genuinely water-stressed canopy from one "
+        "that is senescing, diseased, or damaged by pests.",
+        "Higher values generally correspond to greater stress, but the "
+        "value is a derived index to be read alongside NDMI, not a "
+        "diagnosis of a cause.",
+    )
+
+    @property
+    def domain_note(self) -> str:
+        return (
+            "MSI is the ratio counterpart of NDMI and uses the same two "
+            "bands: MSI = SWIR1 / NIR while NDMI = (NIR - SWIR1) / "
+            "(NIR + SWIR1). MSI rises with stress where NDMI falls."
+        )
+
+    def build_expression(self, composite: Any, ee_module: Any) -> Any:
+        return composite.expression(
+            "SWIR / NIR",
+            {
+                "SWIR": composite.select("B11"),
+                "NIR": composite.select("B8"),
+            },
+        )
 
 
 # ==========================================================================
@@ -1341,6 +1389,7 @@ WATER_METRICS: Tuple[Metric, ...] = (
     NDWIMetric(),
     NDMIMetric(),
     MNDWIMetric(),
+    MSIMetric(),
     EvapotranspirationMetric(),
     PotentialEvapotranspirationMetric(),
     CumulativeEvapotranspirationMetric(),

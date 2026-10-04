@@ -6,24 +6,25 @@ is always obvious which metrics depend on an external service.
 
 STATUS OF THE SOILGRIDS REST API
 --------------------------------
-As of the verification pass for this engine, ISRIC's SoilGrids REST API
-(``https://rest.isric.org/soilgrids/v2.0/``) is **paused**. ISRIC states
-that they are experiencing service issues, have temporarily paused the
-endpoint, and cannot give a restoration timeline. They also label the API
-as beta with no uptime guarantee.
+The ISRIC SoilGrids REST API (``https://rest.isric.org/soilgrids/v2.0/``)
+was **paused** during the original verification pass, so the conversion
+factors below were carried as ``PENDING_VERIFICATION``. The official
+ISRIC documentation (``docs.isric.org``, "SoilGrids layers" FAQ) has since
+been re-consulted and confirms both the mapped units and the conversion
+factors: "All maps produced with SoilGrids store data as integer values ...
+By dividing the predictions values by the values in the Conversion factor
+column, the user can obtain the more familiar units in the Conventional
+units column."
 
 Consequences for this module:
 
-* The client is built and correct, but will legitimately return
-  ``unavailable`` while the service is paused. That is honest behaviour,
-  not a bug.
-* The exact conversion factors ('d-factors') and the literal depth
-  interval strings could not be confirmed against the live Swagger
-  documentation during the outage. They are therefore declared as
-  :data:`PENDING_VERIFICATION` with the values recorded as reported by
-  ISRIC's published specification, and flagged in ``caveats``.
-* Nothing here invents a number. Where a factor is unverified, the
-  registry says so and the metric reports lower confidence.
+* The d-factors and conventional units are now **verified** against the
+  official ISRIC table and are flagged accordingly.
+* The client is built and correct, but may still legitimately return
+  ``unavailable`` while the service itself is paused. That is honest
+  behaviour, not a bug.
+* Nothing here invents a number. The factors are the ones ISRIC publishes,
+  not approximations.
 """
 
 from __future__ import annotations
@@ -110,44 +111,48 @@ class SoilGridsProperty:
 
 #: SoilGrids properties used by this engine.
 #:
-#: The d-factor values below are those published by ISRIC for SoilGrids
-#: v2.0. They are marked ``d_factor_verified=False`` because the live
-#: documentation could not be reached during the verification pass while
-#: the API was paused. They must be confirmed against
-#: ``rest.isric.org/soilgrids/v2.0/docs`` before being promoted to
-#: verified, at which point the client begins returning numeric values.
+#: Mapped units, conversion (d-)factors and conventional units are taken
+#: verbatim from ISRIC's official "SoilGrids layers" documentation table
+#: (docs.isric.org/globaldata/soilgrids/SoilGrids_faqs_01.html), consulted
+#: 2026-09: bdod cg/cm3 ÷100 → kg/dm3; cec mmol(c)/kg ÷10 → cmol(c)/kg;
+#: cfvo cm3/dm3 ÷10 → cm3/100cm3; clay/sand/silt g/kg ÷10 → %;
+#: nitrogen cg/kg ÷100 → g/kg; soc dg/kg ÷10 → g/kg; phh2o pH×10 ÷10 → pH.
 SOILGRIDS_PROPERTIES: Dict[str, SoilGridsProperty] = {
     "clay": SoilGridsProperty(
-        "clay", "Clay content", "g/kg", 10, False, (0.0, 1000.0),
-        "Reported as g/kg after dividing the raw value by 10.",
+        "clay", "Clay content", "%", 10, True, (0.0, 1000.0),
+        "Conventional unit is % (g/100g) after dividing the raw g/kg value by 10.",
     ),
     "sand": SoilGridsProperty(
-        "sand", "Sand content", "g/kg", 10, False, (0.0, 1000.0),
-        "Reported as g/kg after dividing the raw value by 10.",
+        "sand", "Sand content", "%", 10, True, (0.0, 1000.0),
+        "Conventional unit is % (g/100g) after dividing the raw g/kg value by 10.",
     ),
     "silt": SoilGridsProperty(
-        "silt", "Silt content", "g/kg", 10, False, (0.0, 1000.0),
-        "Reported as g/kg after dividing the raw value by 10.",
+        "silt", "Silt content", "%", 10, True, (0.0, 1000.0),
+        "Conventional unit is % (g/100g) after dividing the raw g/kg value by 10.",
     ),
     "soc": SoilGridsProperty(
-        "soc", "Soil organic carbon", "dg/kg", 10, False, (0.0, 1000.0),
-        "Reported as dg/kg after dividing the raw value by 10.",
+        "soc", "Soil organic carbon", "g/kg", 10, True, (0.0, 1000.0),
+        "Conventional unit is g/kg after dividing the raw dg/kg value by 10.",
     ),
     "bdod": SoilGridsProperty(
-        "bdod", "Bulk density of the fine earth fraction", "cg/cm3", 100, False, (0.0, 300.0),
-        "Reported as cg/cm3 after dividing the raw value by 100.",
+        "bdod", "Bulk density of the fine earth fraction", "kg/dm3", 100, True, (0.0, 300.0),
+        "Conventional unit is kg/dm3 after dividing the raw cg/cm3 value by 100.",
     ),
     "phh2o": SoilGridsProperty(
-        "phh2o", "Soil pH in water", "pH", 10, False, (0.0, 14.0),
-        "Reported as pH after dividing the raw value by 10.",
+        "phh2o", "Soil pH in water", "pH", 10, True, (0.0, 140.0),
+        "Mapped unit is pH x 10; dividing by 10 returns pH.",
     ),
     "nitrogen": SoilGridsProperty(
-        "nitrogen", "Total nitrogen", "cg/kg", 100, False, (0.0, 100.0),
-        "Reported as cg/kg after dividing the raw value by 100.",
+        "nitrogen", "Total nitrogen", "g/kg", 100, True, (0.0, 100.0),
+        "Conventional unit is g/kg after dividing the raw cg/kg value by 100.",
     ),
     "cec": SoilGridsProperty(
-        "cec", "Cation exchange capacity", "mmol(c)/kg", 10, False, (0.0, 1000.0),
-        "Reported as mmol(c)/kg after dividing the raw value by 10.",
+        "cec", "Cation exchange capacity buffered at pH7", "cmol(c)/kg", 10, True, (0.0, 1000.0),
+        "Conventional unit is cmol(c)/kg after dividing the raw mmol(c)/kg value by 10.",
+    ),
+    "cfvo": SoilGridsProperty(
+        "cfvo", "Coarse fragments", "cm3/100cm3", 10, True, (0.0, 1000.0),
+        "Mapped unit is cm3/dm3 (vol per mille); dividing by 10 gives cm3/100cm3 (vol%).",
     ),
 }
 
@@ -173,36 +178,39 @@ EXTERNAL_REGISTRY["ISRIC/SOILGRIDS/V2"] = DatasetSpec(
     roles=("primary", "external"),
     bands={
         "clay": BandSpec(
-            "clay", "Clay content", "g/kg",
-            0.1, 0.0, (0.0, 1000.0), (PENDING_VERIFICATION,)),
+            "clay", "Clay content", "%",
+            0.1, 0.0, (0.0, 100.0), ()),
         "sand": BandSpec(
-            "sand", "Sand content", "g/kg",
-            0.1, 0.0, (0.0, 1000.0), (PENDING_VERIFICATION,)),
+            "sand", "Sand content", "%",
+            0.1, 0.0, (0.0, 100.0), ()),
         "silt": BandSpec(
-            "silt", "Silt content", "g/kg",
-            0.1, 0.0, (0.0, 1000.0), (PENDING_VERIFICATION,)),
+            "silt", "Silt content", "%",
+            0.1, 0.0, (0.0, 100.0), ()),
         "soc": BandSpec(
-            "soc", "Soil organic carbon", "dg/kg",
-            0.1, 0.0, (0.0, 1000.0), (PENDING_VERIFICATION,)),
+            "soc", "Soil organic carbon", "g/kg",
+            0.1, 0.0, (0.0, 1000.0), ()),
         "bdod": BandSpec(
-            "bdod", "Bulk density", "cg/cm3",
-            0.01, 0.0, (0.0, 300.0), (PENDING_VERIFICATION,)),
+            "bdod", "Bulk density", "kg/dm3",
+            0.01, 0.0, (0.0, 3.0), ()),
         "phh2o": BandSpec(
             "phh2o", "Soil pH in water", "pH",
-            0.1, 0.0, (0.0, 14.0), (PENDING_VERIFICATION,)),
+            0.1, 0.0, (0.0, 14.0), ()),
         "nitrogen": BandSpec(
-            "nitrogen", "Total nitrogen", "cg/kg",
-            0.01, 0.0, (0.0, 100.0), (PENDING_VERIFICATION,)),
+            "nitrogen", "Total nitrogen", "g/kg",
+            0.01, 0.0, (0.0, 100.0), ()),
         "cec": BandSpec(
-            "cec", "Cation exchange capacity", "mmol(c)/kg",
-            0.1, 0.0, (0.0, 1000.0), (PENDING_VERIFICATION,)),
+            "cec", "Cation exchange capacity", "cmol(c)/kg",
+            0.1, 0.0, (0.0, 100.0), ()),
+        "cfvo": BandSpec(
+            "cfvo", "Coarse fragments", "cm3/100cm3",
+            0.1, 0.0, (0.0, 100.0), ()),
     },
     caveats=(
         "This source is a spatial prediction product produced by machine learning on sparse soil profile observations. It is not a measurement of the soil at your location.",
         "Effective predictive resolution is materially coarser than the nominal 250 m grid cell.",
         "Reported uncertainty is large for most properties, and especially so for organic carbon.",
         "The REST API is documented by ISRIC as beta with no uptime guarantee. It was observed to be paused during development.",
-        "Conversion factors and depth interval strings could not be verified against live documentation during the outage and are marked pending; metrics sourced here report reduced confidence until that is resolved.",
+        "Conversion factors and conventional units were verified against ISRIC's official SoilGrids documentation (docs.isric.org, 'SoilGrids layers' table) after the earlier API outage; the mapped units and d-factors used here are ISRIC's published values.",
     ),
     citation="SoilGrids 250m v2.0, Poggio et al. 2021, ISRIC",
     docs_url="https://www.isric.org/explore/soilgrids",

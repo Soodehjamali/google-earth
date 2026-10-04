@@ -1612,6 +1612,23 @@ def _service_fake_ee(monkeypatch, histograms, image_count=1):
     monkeypatch.setattr("ee.ImageCollection", lambda _dataset_id: _Collection())
 
 
+@pytest.fixture(autouse=True)
+def _clear_service_cache():
+    """Isolate the service-level analysis cache between tests.
+
+    ``AnalysisService.create_analysis`` caches completed analyses by
+    request parameters (Phase S.4). These service tests deliberately reuse
+    one request shape with different fake Earth Engine histograms, so
+    without clearing, the first test's cached result would be served to
+    every later test and the per-test fakes would never run.
+    """
+    from app.services.cache_service import cache_service
+
+    cache_service.clear()
+    yield
+    cache_service.clear()
+
+
 def _run_service_analysis(monkeypatch, histograms, start="2023-01-01",
                           end="2023-12-31", image_count=1, area_sq_m=250000.0):
     """Run a land cover analysis through the service with a fake ``ee``."""

@@ -3,7 +3,7 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import ee
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,160 @@ logger = get_logger(__name__)
 #: Ordered so the class distribution is computed first; the executor runs
 #: them concurrently, but the ordering keeps the serialised payload stable.
 LANDCOVER_METRIC_KEYS = tuple(metric.key for metric in LANDCOVER_METRICS)
+
+#: Analysis types that route through the agriculture engine, mapped to the
+#: metric registry domains they draw from. ``vegetation`` and ``landcover``
+#: keep their dedicated handlers above; everything here is served by
+#: :meth:`AnalysisService._run_domain_analysis`.
+_ANALYSIS_TYPE_DOMAINS: Dict[str, List[str]] = {
+    "climate": ["climate"],
+    "water": ["water"],
+    "soil": ["soil"],
+    "stress": ["stress"],
+    "irrigation": ["irrigation"],
+}
+
+
+def _extract_value(outcome: Any, field: Optional[str] = None) -> Optional[Any]:
+    """Pull a usable value out of an executor outcome.
+
+    ``None`` outcome → ``None``. A dict-valued metric result exposes its
+    ``mean`` (or the requested ``field``). A numeric scalar is returned as
+    a float. A string scalar — e.g. a USDA texture class — is returned as
+    itself, because a classification is the metric's real answer and
+    dropping it would report ``None`` for a metric that did answer.
+    Anything else is ``None`` rather than a guessed number.
+    """
+    if outcome is None or getattr(outcome, "result", None) is None:
+        return None
+    value = outcome.result.value
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value.get(field or "mean")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _extract_min_max(outcome: Any) -> Dict[str, Optional[float]]:
+    """Normalise an outcome into a ``{"mean", "min", "max"}`` block.
+
+    A scalar result is reported as the same value for all three, because
+    that is what a single number means; a dict result carries its own
+    spread. ``None`` propagates rather than becoming zero.
+    """
+    if outcome is None or getattr(outcome, "result", None) is None:
+        return {"min": None, "max": None, "mean": None}
+    value = outcome.result.value
+    if value is None:
+        return {"min": None, "max": None, "mean": None}
+    if isinstance(value, dict):
+        return {
+            "mean": value.get("mean"),
+            "min": value.get("min"),
+            "max": value.get("max"),
+        }
+    if isinstance(value, (int, float)):
+        return {"mean": float(value), "min": float(value), "max": float(value)}
+    return {"min": None, "max": None, "mean": None}
+
+
+def _map_climate(outcomes: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise the climate metrics into the analysis contract."""
+    result = dict(base)
+    result["climate"] = {
+        "temperature": _extract_min_max(outcomes.get("temperature_mean")),
+        "precipitation": {"total": _extract_value(outcomes.get("precipitation"))},
+        "evapotranspiration": {
+            "total": _extract_value(outcomes.get("evapotranspiration")),
+        },
+    }
+    return result
+
+
+def _map_water(outcomes: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise the water metrics, deriving a descriptive stress level.
+
+    The stress level is a descriptive band over the NDWI mean, never a
+    diagnosis: high NDWI (more surface water) is described as low stress.
+    """
+    ndwi_stats = _extract_min_max(outcomes.get("ndwi"))
+    ndwi_mean = ndwi_stats.get("mean")
+    if ndwi_mean is None:
+        stress_level: Optional[str] = None
+    elif ndwi_mean > 0.2:
+        stress_level = "low"
+    elif ndwi_mean >= 0.0:
+        stress_level = "moderate"
+    else:
+        stress_level = "high"
+
+    result = dict(base)
+    result["water"] = {
+        "ndwi": ndwi_stats,
+        "soil_moisture": _extract_min_max(outcomes.get("soil_moisture_surface")),
+        "precipitation": {"total": _extract_value(outcomes.get("precipitation"))},
+        "stress_level": stress_level,
+    }
+    return result
+
+
+def _map_soil(outcomes: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise soil moisture and soil property metrics."""
+    texture_value = _extract_value(outcomes.get("soil_texture_class"))
+    result = dict(base)
+    result["soil"] = {
+        "soil_moisture": _extract_min_max(outcomes.get("soil_moisture_surface")),
+        "organic_carbon": _extract_min_max(outcomes.get("soil_organic_carbon")),
+        "ph": _extract_min_max(outcomes.get("soil_ph")),
+        "sand": _extract_value(outcomes.get("soil_sand_content")),
+        "clay": _extract_value(outcomes.get("soil_clay_content")),
+        "silt": _extract_value(outcomes.get("soil_silt_content")),
+        "texture": {"class": texture_value},
+    }
+    return result
+
+
+def _map_stress(outcomes: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise the stress metrics into the analysis contract."""
+    result = dict(base)
+    result["stress"] = {
+        "evaporative_fraction": _extract_min_max(
+            outcomes.get("evaporative_fraction")
+        ),
+        "vpd_anomaly": _extract_min_max(outcomes.get("vpd_anomaly")),
+        "lst_day_anomaly": _extract_min_max(outcomes.get("lst_day_anomaly")),
+    }
+    return result
+
+
+def _map_irrigation(outcomes: Dict[str, Any], base: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise the irrigation metrics into the analysis contract."""
+    result = dict(base)
+    result["irrigation"] = {
+        "precipitation_cumulative": _extract_min_max(
+            outcomes.get("precipitation_cumulative")
+        ),
+        "et_precipitation_deficit": _extract_min_max(
+            outcomes.get("et_precipitation_deficit")
+        ),
+        "precipitation_anomaly": _extract_min_max(
+            outcomes.get("precipitation_anomaly")
+        ),
+    }
+    return result
+
+
+_DOMAIN_MAPPERS = {
+    "climate": _map_climate,
+    "water": _map_water,
+    "soil": _map_soil,
+    "stress": _map_stress,
+    "irrigation": _map_irrigation,
+}
 
 
 def _geometry_area_sq_m(geometry: Dict[str, Any]) -> Optional[float]:
@@ -72,7 +226,36 @@ class AnalysisService:
         """
         analysis_id = str(uuid.uuid4())
         logger.info(f"Creating analysis {analysis_id}: {analysis_type}")
-        
+
+        # Cache is checked at this service boundary, before any Earth Engine
+        # work: an equivalent repeated request must not rebuild the geometry
+        # or re-execute a single metric (Phase S.4 contract). The cached
+        # object is the full result envelope, so a cache-hit response is
+        # field-for-field identical to a fresh one. Cache failures are
+        # logged and never fatal (Phase S.4 failure-non-fatal behaviour).
+        from app.services.cache_service import cache_service
+
+        cache_key = cache_service._make_key(
+            kind="create_analysis",
+            geometry=geometry,
+            start_date=start_date,
+            end_date=end_date,
+            analysis_type=analysis_type,
+        )
+        try:
+            cached = cache_service.get(cache_key)
+        except Exception as cache_exc:  # noqa: BLE001 - cache is never fatal
+            logger.warning(
+                "Analysis %s: cache lookup failed (%s), proceeding",
+                analysis_id,
+                type(cache_exc).__name__,
+            )
+            cached = None
+
+        if cached is not None:
+            logger.info("Analysis %s: cache hit", analysis_id)
+            return dict(cached)
+
         try:
             # Create EE geometry
             ee_geometry = create_ee_geometry(geometry)
@@ -86,13 +269,17 @@ class AnalysisService:
                 result = await self._run_landcover_analysis(
                     ee_geometry, geometry, start_date, end_date
                 )
+            elif analysis_type in _ANALYSIS_TYPE_DOMAINS:
+                result = self._run_domain_analysis(
+                    ee_geometry, geometry, start_date, end_date, analysis_type
+                )
             else:
                 result = {
                     "status": "not_implemented",
                     "message": f"Analysis type '{analysis_type}' not yet implemented",
                 }
             
-            return {
+            envelope = {
                 "id": analysis_id,
                 "analysis_type": analysis_type,
                 "status": "completed" if result.get("status") == "completed" else "failed",
@@ -102,6 +289,21 @@ class AnalysisService:
                 "result_data": result,
                 "completed_at": datetime.utcnow().isoformat(),
             }
+
+            # Only a completed analysis is worth caching; a failed or
+            # not_implemented outcome must never be served as a hit later
+            # (Phase S.4/S.5: failed analyses are not cached).
+            if envelope["status"] == "completed":
+                try:
+                    cache_service.set(cache_key, envelope)
+                except Exception as cache_exc:  # noqa: BLE001 - cache is never fatal
+                    logger.warning(
+                        "Analysis %s: cache write failed (%s)",
+                        analysis_id,
+                        type(cache_exc).__name__,
+                    )
+
+            return envelope
             
         except Exception as e:
             logger.error(f"Analysis {analysis_id} failed: {e}")
@@ -289,6 +491,117 @@ class AnalysisService:
             "status": "completed",
             "landcover": landcover,
         }
+
+    def _run_domain_analysis(
+        self,
+        ee_geometry: Any,
+        geometry: Dict[str, Any],
+        start_date: str,
+        end_date: str,
+        analysis_type: str,
+    ) -> Dict[str, Any]:
+        """Run one agriculture-engine domain and map it to the contract.
+
+        Executes every registered metric of the domain through the shared
+        executor (per-metric error isolation included), then serialises the
+        outcomes with the domain's mapper. A successful result is cached
+        under the same SHA-256 key discipline as the agriculture API;
+        cache failures are logged and never fatal.
+        """
+        import time as _time
+
+        from app.services.agriculture.types import STATUS_OK
+        from app.services.cache_service import cache_service
+
+        started = _time.perf_counter()
+        domains = _ANALYSIS_TYPE_DOMAINS[analysis_type]
+
+        from app.services.agriculture.catalog import metrics_in_domain
+
+        metric_keys: List[str] = []
+        for domain in domains:
+            metric_keys.extend(m.key for m in metrics_in_domain(domain))
+
+        cache_key = cache_service._make_key(
+            kind="domain_analysis",
+            analysis_type=analysis_type,
+            geometry=geometry,
+            start_date=start_date,
+            end_date=end_date,
+            domains=sorted(domains),
+        )
+        try:
+            cached = cache_service.get(cache_key)
+        except Exception as cache_exc:  # noqa: BLE001 - cache is never fatal
+            logger.warning(
+                "Domain analysis %s: cache lookup failed (%s), proceeding",
+                analysis_type,
+                type(cache_exc).__name__,
+            )
+            cached = None
+
+        if cached is not None:
+            logger.info("Domain analysis %s: cache hit", analysis_type)
+            return cached
+
+        mapper = _DOMAIN_MAPPERS[analysis_type]
+
+        # A point geometry has no area; the coverage denominators then work
+        # from the reduction itself rather than a fabricated area figure.
+        area_sq_m = _geometry_area_sq_m(geometry)
+
+        context = MetricContext(
+            geometry=ee_geometry,
+            start_date=start_date,
+            end_date=end_date,
+            geometry_key=json.dumps(geometry, sort_keys=True, default=str),
+            cloud_max_percent=20.0,
+            options={"area_sq_m": area_sq_m} if area_sq_m else {},
+        )
+
+        outcomes, unknown = execute_metrics(metric_keys, context)
+
+        usable = {
+            key: outcome
+            for key, outcome in outcomes.items()
+            if outcome.result is not None and outcome.result.status == STATUS_OK
+        }
+        base = {
+            "status": "completed",
+            "analysis_type": analysis_type,
+            "domains": domains,
+            "data_quality": "acceptable" if usable else "insufficient",
+            "image_count": sum(
+                (o.result.provenance.image_count or 0) if o.result.provenance else 0
+                for o in outcomes.values()
+                if o.result is not None
+            ),
+            "metadata": {
+                "metrics_executed": str(len(outcomes)),
+                "metrics_usable": str(len(usable)),
+                "unknown_metrics": str(len(unknown)),
+            },
+        }
+        result = mapper(outcomes, base)
+
+        try:
+            cache_service.set(cache_key, result)
+        except Exception as cache_exc:  # noqa: BLE001 - cache is never fatal
+            logger.warning(
+                "Domain analysis %s: cache write failed (%s)",
+                analysis_type,
+                type(cache_exc).__name__,
+            )
+
+        logger.info(
+            "Domain analysis %s completed in %.1f ms "
+            "(metrics=%d, unknown=%d)",
+            analysis_type,
+            (_time.perf_counter() - started) * 1000.0,
+            len(outcomes),
+            len(unknown),
+        )
+        return result
 
     def get_analysis_summary(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract summary from analysis result."""

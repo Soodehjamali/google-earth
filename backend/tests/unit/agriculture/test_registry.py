@@ -420,12 +420,27 @@ def test_external_registry_has_soilgrids():
 
 
 def test_external_dataset_unverified_parameters_are_marked_pending():
-    """Nothing unverified may masquerade as a confirmed value."""
+    """No band may still carry an unverified conversion parameter.
+
+    The SoilGrids d-factors were originally carried as pending during the
+    ISRIC API outage. They have since been verified against ISRIC's
+    official "SoilGrids layers" documentation, so the honest state is
+    verified: every band now carries confirmed parameters and none may
+    silently regress to the pending sentinel.
+    """
     spec = get_external_dataset("ISRIC/SOILGRIDS/V2")
-    assert not spec.is_verified, (
-        "SoilGrids conversion factors were not confirmable during the API "
-        "outage and must remain marked pending until they are."
+    pending = [
+        name
+        for name, band in spec.bands.items()
+        if PENDING_VERIFICATION in (band.scale_factor, band.offset)
+        or PENDING_VERIFICATION in band.nodata_values
+    ]
+    assert not pending, (
+        f"SoilGrids bands still carry unverified parameters: {pending}. "
+        "The factors were verified against ISRIC's official documentation; "
+        "if a new band is added, verify its factor before registering it."
     )
+    assert spec.is_verified
 
 
 def test_external_registry_is_separate_from_gee_registry():
@@ -539,3 +554,91 @@ def test_static_datasets_declare_a_time_series_resolution_or_none():
         spec = get_dataset(dataset_id)
         resolution = spec.temporal_resolution.lower()
         assert "static" in resolution, dataset_id
+
+
+# --------------------------------------------------------------------------
+# GLDAS-2.1: registered when the deferred Phase F metric was closed
+# --------------------------------------------------------------------------
+
+GLDAS_ID = "NASA/GLDAS/V021/NOAH/G025/T3H"
+
+
+def test_gldas_is_registered_under_its_catalogue_id():
+    assert has_dataset(GLDAS_ID)
+    assert get_dataset(GLDAS_ID).id == GLDAS_ID
+
+
+def test_gldas_root_zone_band_matches_the_catalogue():
+    """Name and unit are quoted from the official catalogue entry."""
+    band = get_dataset(GLDAS_ID).band("RootMoist_inst")
+    assert band.name == "RootMoist_inst"
+    assert band.unit == "kg/m2"
+    assert "root zone" in band.description.lower()
+
+
+def test_gldas_is_a_mass_per_unit_area_not_a_volume_fraction():
+    """The registry must not label this product as an m3/m3 quantity.
+
+    Presenting kg/m2 under an m3/m3 unit is the exact error that caused the
+    metric to be deferred until the decision was recorded.
+    """
+    band = get_dataset(GLDAS_ID).band("RootMoist_inst")
+    assert band.unit != "m3/m3"
+    assert band.unit != "mm"
+
+
+def test_gldas_pixel_size_and_cadence_are_the_verified_ones():
+    spec = get_dataset(GLDAS_ID)
+    assert "27830" in spec.spatial_resolution
+    assert spec.temporal_resolution == "3 hourly"
+
+
+def test_gldas_coverage_starts_in_2000():
+    spec = get_dataset(GLDAS_ID)
+    assert spec.available_from == "2000-01-01"
+    assert spec.available_to is None
+
+
+def test_gldas_is_an_observation_window_not_a_static_surface():
+    """A pre-2000 request genuinely cannot be served from this product."""
+    spec = get_dataset(GLDAS_ID)
+    assert not spec.is_static, "GLDAS is a 3-hourly time series"
+
+
+def test_gldas_is_marked_modelled():
+    assert get_dataset(GLDAS_ID).measurement_basis is MeasurementBasis.MODELLED
+
+
+def test_gldas_is_reported_as_verified():
+    """Every registered parameter was confirmed against the catalogue."""
+    assert get_dataset(GLDAS_ID).is_verified is True
+
+
+def test_gldas_declares_no_validity_range_from_an_estimated_range():
+    """The catalogue's range is flagged estimated, so it is not a filter."""
+    band = get_dataset(GLDAS_ID).band("RootMoist_inst")
+    assert band.valid_range is None
+
+
+def test_gldas_citation_is_the_published_paper():
+    citation = get_dataset(GLDAS_ID).citation
+    assert "Rodell" in citation
+    assert "Global Land Data Assimilation System" in citation
+
+
+def test_gldas_docs_url_points_at_the_catalogue_entry():
+    assert get_dataset(GLDAS_ID).docs_url.endswith(
+        "NASA_GLDAS_V021_NOAH_G025_T3H"
+    )
+
+
+def test_gldas_caveats_state_that_it_assimilates_nothing():
+    """Open-loop is the fact a caller is most likely to get wrong."""
+    joined = " ".join(get_dataset(GLDAS_ID).caveats).lower()
+    assert "open-loop" in joined
+    assert "assimilates no soil moisture observations" in joined
+
+
+def test_gldas_is_discoverable_by_its_role():
+    assert any(d.id == GLDAS_ID for d in find_by_role("modelled_root_zone"))
+

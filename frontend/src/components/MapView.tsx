@@ -6,6 +6,8 @@ import type { MapVisualization, MapLayer } from '../types'
 interface MapViewProps {
   visualization?: MapVisualization
   geometry?: GeoJSON.Geometry
+  /** Optional verbatim backend polygons (e.g. analysis grid cells). */
+  overlays?: GeoJSON.Feature[]
   center?: [number, number]
   zoom?: number
   className?: string
@@ -14,6 +16,7 @@ interface MapViewProps {
 export default function MapView({
   visualization,
   geometry,
+  overlays,
   center = [55.0, 32.0], // Default: Iran center
   zoom = 6,
   className = '',
@@ -141,6 +144,63 @@ export default function MapView({
       zoom: visualization.zoom,
     })
   }, [visualization])
+
+  // Draw optional overlay features (verbatim backend polygons).
+  // Additive only: when no overlays are given the map behaves
+  // exactly as before. Styling stays neutral; per-feature meaning
+  // lives in the surrounding table or list, never in color alone.
+  useEffect(() => {
+    const current = map.current
+    if (!current) return
+
+    const applyOverlays = () => {
+      try {
+        if (current.getLayer('spatial-cells-fill')) {
+          current.removeLayer('spatial-cells-fill')
+        }
+        if (current.getLayer('spatial-cells-outline')) {
+          current.removeLayer('spatial-cells-outline')
+        }
+        if (current.getSource('spatial-cells')) {
+          current.removeSource('spatial-cells')
+        }
+      } catch {
+        // Layers or source already absent; continue to (re-)add.
+      }
+      if (!overlays || overlays.length === 0) return
+      current.addSource('spatial-cells', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: overlays,
+        },
+      })
+      current.addLayer({
+        id: 'spatial-cells-fill',
+        type: 'fill',
+        source: 'spatial-cells',
+        paint: {
+          'fill-color': '#607d8b',
+          'fill-opacity': 0.25,
+        },
+      })
+      current.addLayer({
+        id: 'spatial-cells-outline',
+        type: 'line',
+        source: 'spatial-cells',
+        paint: {
+          'line-color': '#37474f',
+          'line-width': 1,
+        },
+      })
+    }
+
+    if (!current.loaded()) {
+      current.once('load', applyOverlays)
+      return
+    }
+    applyOverlays()
+  }, [overlays])
 
   const handleLayerToggle = (layerId: string) => {
     setActiveLayer(layerId)

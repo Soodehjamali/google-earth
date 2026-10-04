@@ -4,7 +4,7 @@ import uuid
 from datetime import date
 from typing import Optional
 
-from sqlalchemy import Date, Float, ForeignKey, String
+from sqlalchemy import Date, Float, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,12 @@ class TimeSeries(Base, TimestampMixin):
     """Time-series data point for an analysis."""
 
     __tablename__ = "timeseries"
+
+    # Indexes must match alembic migration 001_initial_tables exactly.
+    __table_args__ = (
+        Index("ix_timeseries_analysis_id", "analysis_id"),
+        Index("ix_timeseries_date", "date"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

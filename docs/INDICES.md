@@ -204,6 +204,58 @@ Dimensionless ratio
 
 ---
 
+## 6. MSI — Moisture Stress Index (Hunt and Rock)
+
+> **Derived spectral index** (computed from observed reflectance), not a
+> measured quantity. Higher values are *consistent with* greater canopy
+> water stress; they are not a fraction or percentage of dry leaves, and
+> they cannot isolate upper, middle, or lower canopy layers.
+
+### Formula
+```
+MSI = B11 / B8
+```
+
+### Required Bands
+| Band | Name | Central Wavelength |
+|------|------|-------------------|
+| B11 | SWIR 1 | 1610 nm |
+| B8 | NIR | 842 nm |
+
+### Expected Range
+| Value | Interpretation |
+|-------|---------------|
+| 0.4 to 0.8 | Well-watered canopy |
+| 0.8 to 1.2 | Transitional |
+| 1.2 to 2.0+ | Consistent with water stress (interpret alongside NDMI) |
+
+Values are a dimensionless ratio (typically 0.4–2.0 over vegetation;
+higher over bare soil). There is no validated conversion from MSI to a
+percentage of drying.
+
+### Relationship to NDMI
+MSI uses the same two bands as NDMI (Gao) from the opposite direction:
+`MSI = (1 − NDMI) / (1 + NDMI)`. MSI rises with stress where NDMI falls.
+Prefer reading the two together rather than either alone.
+
+### Unit
+Dimensionless ratio
+
+### Use Cases
+- Vegetation water stress screening (alongside NDMI)
+- Drought monitoring context
+- Canopy dryness time-series analysis
+
+### Limitations
+- Requires SWIR band (B11, 20m resolution) — coarser than NDVI
+- A canopy water stress signal, not a soil moisture measurement and not
+  a fraction of dry leaves
+- Affected by canopy structure and leaf area as well as water content
+- Cannot distinguish water stress from senescence, disease, or pest damage
+- Top-down optical sensing cannot resolve canopy layers
+
+---
+
 ## Index Comparison
 
 | Index | Bands Used | Best For | Resolution |
@@ -213,6 +265,7 @@ Dimensionless ratio
 | SAVI | B4, B8 | Sparse vegetation, soil background | 10m |
 | NDWI | B3, B8 | Water body detection | 10m |
 | NDMI | B8, B11 | Vegetation moisture content | 20m (resampled) |
+| MSI | B11, B8 | Vegetation moisture stress (rises with stress) | 20m (resampled) |
 
 ---
 

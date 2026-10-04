@@ -23,6 +23,9 @@ __all__ = [
     "ndwi",
     "ndmi",
     "mndwi",
+    "msi",
+    "vh_vv_diff",
+    "rvi",
     "safe_normalized_difference",
     "FORMULA_TEXT",
 ]
@@ -201,6 +204,85 @@ def mndwi(
     return safe_normalized_difference(green, swir1)
 
 
+def msi(swir1: Optional[float], nir: Optional[float]) -> Optional[float]:
+    """Moisture Stress Index (Hunt and Rock).
+
+    ``SWIR1 / NIR``
+
+    A simple ratio of shortwave infrared to near-infrared reflectance.
+    Higher values generally correspond to greater vegetation water
+    stress, because leaf water absorbs shortwave infrared while healthy
+    mesophyll reflects near-infrared strongly.
+
+    This is the ratio counterpart of NDMI, which uses the same two
+    bands: ``MSI = (1 - NDMI) / (1 + NDMI)``. MSI rises with stress
+    where NDMI falls.
+
+    This is a derived spectral index, not a measurement of leaf water
+    content and not a fraction of dry leaves. There is no validated
+    conversion from MSI to a percentage of drying.
+    """
+    if swir1 is None or nir is None:
+        return None
+    if isinstance(swir1, bool) or isinstance(nir, bool):
+        return None
+    if not isinstance(swir1, (int, float)) or not isinstance(nir, (int, float)):
+        return None
+    if not math.isfinite(swir1) or not math.isfinite(nir):
+        return None
+    if nir == 0:
+        return None
+    return swir1 / nir
+
+
+def vh_vv_diff(vh_db: Optional[float], vv_db: Optional[float]) -> Optional[float]:
+    """Cross-polarization ratio in the log domain (Sentinel-1 VV/VH).
+
+    ``VH_dB - VV_dB``
+
+    The Sentinel-1 GRD bands are stored in decibels, so the difference
+    of the two bands is the log-domain equivalent of the linear power
+    ratio ``VH / VV``: ``10 * log10(VH / VV) = VH_dB - VV_dB``. The two
+    representations carry identical information; this form avoids the
+    exponentiation and is numerically stable. Lower (more negative)
+    values generally mean surface-like scattering, higher values more
+    volume scattering from vegetation.
+    """
+    for value in (vh_db, vv_db):
+        if value is None or isinstance(value, bool):
+            return None
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+    assert vh_db is not None and vv_db is not None
+    return vh_db - vv_db
+
+
+def rvi(vv_db: Optional[float], vh_db: Optional[float]) -> Optional[float]:
+    """Radar Vegetation Index, dual-polarization form (Sentinel-1 VV/VH).
+
+    ``4 * VH_linear / (VV_linear + VH_linear)``
+
+    where the linear powers are recovered from decibels as
+    ``10 ** (dB / 10)``. This is the standard dual-pol adaptation of
+    the RVI for Sentinel-1. It is 0 for a bare surface and rises with
+    volume scattering toward 2 for ideal volume scatterers; crops
+    typically read 0.3 to 1.0. It is a structure-sensitive indicator,
+    not a measurement of leaf water.
+    """
+    for value in (vv_db, vh_db):
+        if value is None or isinstance(value, bool):
+            return None
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return None
+    assert vv_db is not None and vh_db is not None
+    vv_linear = 10.0 ** (vv_db / 10.0)
+    vh_linear = 10.0 ** (vh_db / 10.0)
+    denominator = vv_linear + vh_linear
+    if denominator == 0:
+        return None
+    return 4.0 * vh_linear / denominator
+
+
 #: Human-readable formula text, surfaced in provenance so every value can
 #: be traced to the expression that produced it.
 FORMULA_TEXT = {
@@ -212,6 +294,7 @@ FORMULA_TEXT = {
     "ndwi": "(B3 - B8) / (B3 + B8)",
     "ndmi": "(B8 - B11) / (B8 + B11)",
     "mndwi": "(B3 - B11) / (B3 + B11)",
+    "msi": "(B11 / B8)",
 }
 
 #: Ordered red, near-infrared, blue, green, red edge, SWIR1 by band name,
@@ -225,6 +308,7 @@ BAND_ROLES = {
     "ndwi": ("B3", "B8"),
     "ndmi": ("B8", "B11"),
     "mndwi": ("B3", "B11"),
+    "msi": ("B11", "B8"),
 }
 
 #: Expected plausible value range per index, used to flag a result that is
@@ -238,6 +322,7 @@ EXPECTED_RANGE: dict = {
     "ndwi": (-1.0, 1.0),
     "ndmi": (-1.0, 1.0),
     "mndwi": (-1.0, 1.0),
+    "msi": (0.0, 5.0),
 }
 
 #: Typical range for vegetated land, used for interpretation only. These
@@ -251,4 +336,46 @@ TYPICAL_VEGETATION_RANGE: dict = {
     "ndwi": (-0.5, 0.1),
     "ndmi": (0.0, 0.5),
     "mndwi": (-0.5, 0.0),
+    "msi": (0.4, 2.0),
+}
+
+
+#: Sentinel-1 radar formulas. Kept in separate registries from the
+#: optical indices above because the bands live in a different dataset
+#: (``COPERNICUS/S1_GRD``), carry different units (decibels) and obey
+#: different physics. Merging them into the optical tables would let a
+#: Sentinel-2 band check silently accept a radar band name.
+RADAR_FORMULA_TEXT = {
+    "vv": "VV (dB)",
+    "vh": "VH (dB)",
+    "vh_vv": "(VH - VV) dB",
+    "rvi": "4 * VH_linear / (VV_linear + VH_linear)",
+}
+
+#: Band roles for the radar formulas, in computation order.
+RADAR_BAND_ROLES = {
+    "vv": ("VV",),
+    "vh": ("VH",),
+    "vh_vv": ("VH", "VV"),
+    "rvi": ("VH", "VV"),
+}
+
+#: Plausible value ranges. VV/VH/VH-VV bounds follow the collection's
+#: documented decibel span; dual-pol RVI is mathematically confined to
+#: [0, 2] for non-negative powers (2 for ideal volume scattering where
+#: VH equals VV).
+RADAR_EXPECTED_RANGE: dict = {
+    "vv": (-30.0, 5.0),
+    "vh": (-35.0, 0.0),
+    "vh_vv": (-25.0, 5.0),
+    "rvi": (0.0, 2.0),
+}
+
+#: Typical range over vegetated land: guides for a human reader, never
+#: thresholds for a diagnosis.
+RADAR_TYPICAL_RANGE: dict = {
+    "vv": (-16.0, -6.0),
+    "vh": (-24.0, -12.0),
+    "vh_vv": (-14.0, -4.0),
+    "rvi": (0.3, 1.0),
 }
