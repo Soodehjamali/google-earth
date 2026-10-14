@@ -96,7 +96,7 @@ export function formatCoordinates(
 ): string {
   if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
     if (options?.labeled) {
-      return options?.compact ? 'Lat: 0.0000° N, Lon: 0.0000° E' : 'عرض (Lat): 0.0000° N | طول (Lon): 0.0000° E';
+      return options?.compact ? 'عرض: 0.0000° N، طول: 0.0000° E' : 'عرض: 0.0000° N | طول: 0.0000° E';
     }
     return '0.0000° N, 0.0000° E';
   }
@@ -107,9 +107,9 @@ export function formatCoordinates(
 
   if (options?.labeled) {
     if (options?.compact) {
-      return `Lat: ${latStr}, Lon: ${lonStr}`;
+      return `عرض: ${latStr}، طول: ${lonStr}`;
     }
-    return `عرض (Lat): ${latStr} | طول (Lon): ${lonStr}`;
+    return `عرض: ${latStr} | طول: ${lonStr}`;
   }
   return `${latStr}, ${lonStr}`;
 }

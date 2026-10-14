@@ -52,17 +52,17 @@ describe('Step 2 & Step 7: FormattedNumber, Minus Signs, and Coordinate Labeling
     const std = formatCoordinates(32.4279, 53.6880);
     assert.strictEqual(std, '32.4279° N, 53.6880° E');
 
-    // Explicit Persian + Latin labels
+    // Explicit Persian labels (عرض / طول) with LTR numbers (never bare '53.6880, 32.4279')
     const labeledFull = formatCoordinates(32.4279, 53.6880, { labeled: true });
-    assert.strictEqual(labeledFull, 'عرض (Lat): 32.4279° N | طول (Lon): 53.6880° E');
+    assert.strictEqual(labeledFull, 'عرض: 32.4279° N | طول: 53.6880° E');
 
-    // Explicit compact Lat / Lon labels (never bare '53.6880, 32.4279')
+    // Explicit compact Persian labels (عرض / طول)
     const labeledCompact = formatCoordinates(32.4279, 53.6880, { labeled: true, compact: true });
-    assert.strictEqual(labeledCompact, 'Lat: 32.4279° N, Lon: 53.6880° E');
+    assert.strictEqual(labeledCompact, 'عرض: 32.4279° N، طول: 53.6880° E');
     assert.doesNotMatch(labeledCompact, /^[0-9.]+, [0-9.]+$/);
 
     // Southern and Western hemispheres
     const southern = formatCoordinates(-34.5678, -58.3816, { labeled: true, compact: true });
-    assert.strictEqual(southern, 'Lat: 34.5678° S, Lon: 58.3816° W');
+    assert.strictEqual(southern, 'عرض: 34.5678° S، طول: 58.3816° W');
   });
 });

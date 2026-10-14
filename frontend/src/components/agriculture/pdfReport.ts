@@ -15,6 +15,7 @@ import type { NormalizedReportModel } from './reportModel.ts';
 import { isoGregorianToJalali, formatJalaliAscii } from '../../utils/date/index.ts';
 import { generateOrchardHeatmapSnapshot } from './mapSnapshot.ts';
 import { toPersianDigits } from './persianDate.ts';
+import { formatCoordinates } from './geocoding.ts';
 
 /**
  * Creates deterministic filename based on Jalali dates.
@@ -98,7 +99,7 @@ export function renderReportHtml(model: NormalizedReportModel): string {
           <div>• وضعیت کلی شواهد: <strong>${metadata.overallSufficiencyFa}</strong></div>
           <div>• نوع هندسه: <strong>${parcelSpecs.geometryType}</strong> ${parcelSpecs.vertexCount ? `(${parcelSpecs.vertexCount} نقطه راس)` : ''}</div>
           <div>• مساحت برآوردشده: <strong>${parcelSpecs.areaHectares ? `${parcelSpecs.areaHectares} هکتار` : 'مبتنی بر محدوده'}</strong></div>
-          <div>• مختصات مرکز: <span style="font-family: monospace;">${parcelSpecs.centroidCoords ? `Lat: ${parcelSpecs.centroidCoords[1].toFixed(4)}° N, Lon: ${parcelSpecs.centroidCoords[0].toFixed(4)}° E` : '—'}</span></div>
+          <div>• مختصات مرکز: <span dir="ltr" style="font-family: monospace; unicode-bidi: isolate;">${parcelSpecs.centroidCoords ? formatCoordinates(parcelSpecs.centroidCoords[1], parcelSpecs.centroidCoords[0], { labeled: true, compact: true }) : '—'}</span></div>
           <div>• حداکثر پوشش ابر مجاز: <strong>${metadata.cloudMaxPercent !== undefined ? `${metadata.cloudMaxPercent}%` : 'استاندارد (۲۰%)'}</strong></div>
         </div>
       </div>
@@ -161,7 +162,7 @@ export function renderReportHtml(model: NormalizedReportModel): string {
                   <td style="padding: 6px 8px;">${z.reasonFa}</td>
                   <td style="padding: 6px 8px; text-align: center; font-weight: 700;">${z.priorityFa}</td>
                   <td style="padding: 6px 8px; text-align: center; font-family: monospace; color: #616161;">
-                    ${z.centerCoordinates ? `Lat: ${z.centerCoordinates[1].toFixed(4)}° N, Lon: ${z.centerCoordinates[0].toFixed(4)}° E` : '—'}
+                    ${z.centerCoordinates ? `<span dir="ltr" style="unicode-bidi: isolate;">${formatCoordinates(z.centerCoordinates[1], z.centerCoordinates[0], { labeled: true, compact: true })}</span>` : '—'}
                   </td>
                 </tr>
               `,

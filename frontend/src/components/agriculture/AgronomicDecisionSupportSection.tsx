@@ -13,6 +13,7 @@ import { buildNormalizedReportModel } from './reportModel.ts';
 import { exportReportToPdf, openPrintableReport } from './pdfReport.ts';
 import { generateOrchardHeatmapSnapshot } from './mapSnapshot.ts';
 import { agricultureApi } from '../../api/agriculture.ts';
+import { formatCoordinates } from './geocoding.ts';
 
 interface AgronomicDecisionSupportSectionProps {
   result: AgriculturalAnalysisResponse;
@@ -716,9 +717,13 @@ export default function AgronomicDecisionSupportSection({
                             color: '#616161',
                           }}
                         >
-                          {zone.centerCoordinates
-                            ? `Lat: ${zone.centerCoordinates[1].toFixed(4)}° N, Lon: ${zone.centerCoordinates[0].toFixed(4)}° E`
-                            : '—'}
+                          {zone.centerCoordinates ? (
+                            <span dir="ltr" style={{ unicodeBidi: 'isolate' }}>
+                              {formatCoordinates(zone.centerCoordinates[1], zone.centerCoordinates[0], { labeled: true, compact: true })}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                       </tr>
                     );

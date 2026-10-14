@@ -237,12 +237,12 @@ export default function DomainPage({ pageKey }: DomainPageProps) {
           <div className="d-flex align-items-center gap-2">
             <span>💾</span>
             <span style={{ fontSize: '0.88rem' }}>
-              <strong>گزارش بازیابی‌شده از تاریخچه دائمی:</strong> شاخص‌های حوزه «{meta.labelFa}» مستقیماً از دیتابیس بارگذاری شده و هیچ درخواست مجددی به موتور گوگل ارث (GEE) ارسال نشده است.
+              <strong>گزارش بازیابی‌شده از تاریخچه دائمی:</strong> شاخص‌های حوزه «{meta.labelFa}» از دیتابیس بارگذاری شده و مجدداً محاسبه نمی‌شوند (بدون اجرای مجدد GEE)، اما تایل‌های نقشه هنگام مشاهده به‌صورت پویا بازتولید می‌گردند.
             </span>
           </div>
           <div className="d-flex align-items-center gap-2">
             <span className="badge badge-good" style={{ padding: '4px 8px' }}>
-              بدون اجرای مجدد GEE
+              محاسبات دیتابیس (بدون اجرای مجدد GEE) • بازتولید پویای تایل‌های نقشه
             </span>
             <code style={{ fontSize: '0.78rem', color: '#2e7d32' }}>
               {toPersianDigits(parentContext?.savedAnalysisId?.slice(0, 8) || '')}
