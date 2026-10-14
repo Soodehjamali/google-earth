@@ -997,7 +997,7 @@ async def run_agriculture_analysis(
                 pass
 
         raise AppException(
-            message=reason,
+            message=f"Analysis failed: {type(e).__name__}",
             code=code,
             reason=reason,
             status_code=500,
