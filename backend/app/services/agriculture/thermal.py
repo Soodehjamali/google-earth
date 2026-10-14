@@ -39,6 +39,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.registry import get_dataset
 from app.services.agriculture.quality import (
     LANDSAT_THRESHOLDS,
@@ -84,6 +85,7 @@ MODIS_LST_8DAY = "MODIS/061/MOD11A2"
 MODIS_LST_DAILY = "MODIS/061/MOD11A1"
 
 LANDSAT_THERMAL = "LANDSAT/LC08/C02/T1_L2"
+LANDSAT9_THERMAL = "LANDSAT/LC09/C02/T1_L2"
 
 #: The 1 km grid both MODIS LST products are published on.
 MODIS_LST_SCALE = 1000
@@ -121,6 +123,7 @@ def _reduce_modis_lst(
     contribute. Masking is done in the image rather than by filtering the
     result, because a partly cloudy pixel must not contribute partly.
     """
+    context = scope_context_for_dataset(context, dataset_id)
     collection = (
         ee_module.ImageCollection(dataset_id)
         .filterDate(context.start_date, context.end_date)
@@ -375,14 +378,14 @@ class DiurnalTemperatureRangeMetric(Metric):
     key = "surface_temperature_range"
     display_name = "Day-Night Surface Temperature Range"
     display_name_fa = "اختلاف دمای سطح روز و شب"
-    unit = "K"
+    unit = "degC"
     domain = MetricDomain.THERMAL
     dataset_ids = (MODIS_LST_8DAY, MODIS_LST_DAILY)
     measurement_basis = MeasurementBasis.DERIVED
     default_scale = MODIS_LST_WORKING_SCALE
     description = (
         "The difference between daytime and nighttime land surface "
-        "temperature, in Kelvin. A measure of how the surface partitions "
+        "temperature, in degrees Celsius. A measure of how the surface partitions "
         "incoming energy."
     )
     limitations = (
@@ -390,8 +393,7 @@ class DiurnalTemperatureRangeMetric(Metric):
         "The two retrievals come from different overpass times, roughly "
         "10:30 and 22:30 local solar time, so this is not a true daily "
         "maximum minus minimum.",
-        "Expressed in Kelvin because a difference has no meaningful "
-        "Celsius reading when it is zero.",
+        "A temperature difference in Kelvin equals a difference in Celsius (ΔT K = ΔT °C); reported in °C for consistency with other thermal metrics.",
         "Cloud contamination on either retrieval biases the difference, "
         "and it does so in opposite directions for day and night.",
     )
@@ -507,19 +509,18 @@ class LandsatSurfaceTemperatureMetric(Metric):
     display_name_fa = "دمای سطح زمین (لندست)"
     unit = "degC"
     domain = MetricDomain.THERMAL
-    dataset_ids = (LANDSAT_THERMAL,)
+    dataset_ids = (LANDSAT_THERMAL, LANDSAT9_THERMAL)
     measurement_basis = MeasurementBasis.PRODUCT
     default_scale = 100  # the true thermal resolution, not the 30 m grid
     description = (
-        "Land surface temperature from Landsat 8, at roughly 100 m. "
+        "Land surface temperature from Landsat 8 and Landsat 9, at roughly 100 m. "
         "Offered for within-field detail rather than routine monitoring."
     )
     limitations = (
         _CANOPY_TEMPERATURE_DISCLAIMER,
         _EMISSIVITY_DISCLAIMER,
-        "Landsat 8 revisits every 16 days, so a short requested period "
-        "may contain no scene. With two sensors (Landsat 8 and 9) the "
-        "effective revisit is roughly 8 days.",
+        "Landsat 8 and 9 revisit every 8 days combined. Short requested periods "
+        "may contain no scene under persistent cloud cover.",
         "The thermal band is acquired at 100 m and delivered resampled "
         "to 30 m. This metric reduces at 100 m so that the provenance "
         "reports the resolution the data actually supports.",
@@ -544,6 +545,16 @@ class LandsatSurfaceTemperatureMetric(Metric):
             .filterBounds(context.geometry)
             .filter(ee.Filter.lt("CLOUD_COVER", context.cloud_max_percent))
         )
+        try:
+            l9_col = (
+                ee.ImageCollection(LANDSAT9_THERMAL)
+                .filterDate(context.start_date, context.end_date)
+                .filterBounds(context.geometry)
+                .filter(ee.Filter.lt("CLOUD_COVER", context.cloud_max_percent))
+            )
+            collection = collection.merge(l9_col)
+        except Exception:
+            pass
 
         image_count = int(collection.size().getInfo())
         scale = self.effective_scale(context)
@@ -597,6 +608,12 @@ class LandsatSurfaceTemperatureMetric(Metric):
             extra_limitations=(
                 _CANOPY_TEMPERATURE_DISCLAIMER,
                 _EMISSIVITY_DISCLAIMER,
+                (
+                    "Context note: Landsat radiometric surface temperature is acquired during "
+                    "morning overpass (approx 10:15 AM local solar time under clear skies) with native "
+                    f"thermal resolution of {LANDSAT_THERMAL_NATIVE_SCALE} m (resampled to {scale} m in USGS L2 products). "
+                    "It represents skin radiometric temperature, not air temperature or internal crop core temperature."
+                ),
                 f"The reduction uses a {scale} m scale, which is the true "
                 f"thermal resolution of {LANDSAT_THERMAL_NATIVE_SCALE} m "
                 "rounded to the delivered grid. The 30 m pixel spacing of "

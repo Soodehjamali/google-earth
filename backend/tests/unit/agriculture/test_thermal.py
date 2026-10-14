@@ -668,29 +668,27 @@ def test_day_and_night_retrievals_are_different_bands(fake_ee):
 
 
 def test_range_is_the_day_minus_night_difference(fake_ee):
-    """310 K day, 280 K night is a 30 K range."""
+    """310 K day, 280 K night is a 30 °C range (ΔT K = ΔT °C)."""
     fake_ee(modis_fixture(days=10, day_k=310.0, night_k=280.0))
     result = DiurnalTemperatureRangeMetric().compute(make_context())
 
     assert result.status == STATUS_OK, result.message
     assert result.value == pytest.approx(30.0)
-    assert result.unit == "K"
+    assert result.unit == "degC"
 
 
-def test_range_is_reported_in_kelvin_not_celsius(fake_ee):
-    """A difference has no meaningful Celsius reading when it is zero."""
-    assert DiurnalTemperatureRangeMetric().unit == "K"
+def test_range_is_reported_in_celsius_for_unit_consistency(fake_ee):
+    """Normalized to degC for consistency across temperature metrics."""
+    assert DiurnalTemperatureRangeMetric().unit == "degC"
 
 
-def test_range_is_not_the_celsius_difference(fake_ee):
-    """Subtracting Celsius values would give the same number, but the
-    unit label matters: reporting '30 degC' for a temperature interval
-    invites reading it as an absolute temperature.
+def test_range_unit_normalized_to_celsius(fake_ee):
+    """Subtracting Kelvin or Celsius values gives the identical interval;
+    reported in degC to maintain uniform temperature units across the product.
     """
     fake_ee(modis_fixture(day_k=310.0, night_k=280.0))
     result = DiurnalTemperatureRangeMetric().compute(make_context())
-    assert result.unit == "K"
-    assert "degC" not in result.unit
+    assert result.unit == "degC"
 
 
 def test_range_reads_both_bands(fake_ee):
