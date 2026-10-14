@@ -243,7 +243,10 @@ class FakeProfileEE:
     def _peek_scenes(self) -> int:
         if not self._queue:
             raise AssertionError("fake profile queue exhausted on size()")
-        return int(self._queue[0]["scenes"])
+        scenes = int(self._queue[0]["scenes"])
+        if scenes == 0:
+            self._queue.popleft()
+        return scenes
 
     def _pop_stats(self, scale: int = 10) -> Dict[str, Any]:
         if not self._queue:

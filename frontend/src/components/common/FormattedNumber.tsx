@@ -3,7 +3,7 @@ import {
   formatNumberValue,
   normalizeUnit,
   type FormattedNumberResult,
-} from './formattedNumber.ts';
+} from './numberFormatting.ts';
 
 export { formatNumberValue, normalizeUnit, type FormattedNumberResult };
 

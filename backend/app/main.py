@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -73,12 +74,28 @@ app.add_middleware(
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    """Handle custom application exceptions."""
+    """Handle custom application exceptions with stable codes and clean reasons."""
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.message,
+            "code": getattr(exc, "code", "ERR_INTERNAL_SERVER_ERROR"),
+            "reason": getattr(exc, "reason", exc.message),
             "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors with stable code ERR_VALIDATION_FAILED."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Request validation failed",
+            "code": "ERR_VALIDATION_FAILED",
+            "reason": "Invalid or missing parameters in request body",
+            "detail": {"errors": exc.errors()},
         },
     )
 
@@ -88,14 +105,16 @@ async def generic_exception_handler(request: Request, exc: Exception):
     """Handle uncaught exceptions.
 
     The full traceback goes to the server logs only; clients receive a
-    generic message so internals never leak in responses.
+    stable error code and clean generic reason so internals never leak.
     """
     logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": {},
+            "code": "ERR_INTERNAL_SERVER_ERROR",
+            "reason": "An unexpected server error occurred during processing",
+            "detail": {"error_type": type(exc).__name__},
         },
     )
 

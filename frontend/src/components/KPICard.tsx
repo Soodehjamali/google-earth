@@ -1,5 +1,5 @@
 import React from 'react';
-import FormattedNumber from './common/FormattedNumber';
+import FormattedNumber from './common/FormattedNumber.tsx';
 
 interface KPICardProps {
   title: string

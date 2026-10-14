@@ -24,19 +24,24 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
+    AnalysisNotFoundError,
     AppException,
     DateRangeError,
     GeometryError,
     ValidationError,
 )
 from app.core.logging import get_logger
+from app.db.session import get_db
 from app.schemas.agriculture import (
     AgriculturalAnalysisResponse,
     AgricultureAnalysisRequest,
     AgricultureHealthResponse,
+    AgricultureHistoryItemSummary,
+    AgricultureHistoryListResponse,
     DomainSummaryResponse,
     EvidenceBundleResponse,
     EvidenceConflictResponse,
@@ -45,11 +50,28 @@ from app.schemas.agriculture import (
     ProvenanceResponse,
     SynthesisOnlyRequest,
     SynthesisStatementResponse,
+    SpatialLayerRequest,
+    SpatialLayerResponse,
     SpatialSectionModel,
     TemporalSectionModel,
     ValidationSectionModel,
+    HistoricalComparisonRequest,
+    HistoricalComparisonResponse,
+    SoilIntelligenceRequest,
+    SoilIntelligenceResponse,
+    PestDiseaseInspectionRequest,
+    PestDiseaseInspectionResponse,
 )
 from app.services.cache_service import cache_service
+from app.services.agriculture.history_store import (
+    record_analysis_start,
+    record_analysis_completion,
+    record_analysis_failure,
+    get_analysis_history_list,
+    get_analysis_history_item,
+    delete_analysis_history_item,
+)
+
 from app.services.agriculture.evidence import (
     EvidenceBundle,
     EvidenceItem,
@@ -128,6 +150,14 @@ def _serialize_provenance(prov: Optional[Provenance]) -> Optional[ProvenanceResp
         limitations=list(prov.limitations),
         caveats=list(prov.caveats),
         citation=prov.citation,
+        geometry_type=prov.geometry_type,
+        support_radius_m=prov.support_radius_m,
+        support_area_sq_m=prov.support_area_sq_m,
+        support_family=prov.support_family,
+        support_policy=prov.support_policy,
+        support_native_resolution_m=prov.support_native_resolution_m,
+        original_geometry=prov.original_geometry,
+        support_inputs=prov.support_inputs,
         computed_at=prov.computed_at,
     )
 
@@ -162,6 +192,8 @@ def _serialize_evidence_item(item: EvidenceItem) -> EvidenceItemResponse:
             else None
         ),
         band_means=dict(item.band_means) if item.band_means else None,
+        unavailable_reason=item.unavailable_reason,
+        unavailable_message=item.unavailable_message,
     )
 
 
@@ -253,6 +285,7 @@ def _serialize_domain_summary(summary: DomainSummary) -> DomainSummaryResponse:
         else str(summary.sufficiency),
         limitations=list(summary.limitations),
         has_usable_evidence=bool(summary.has_usable_evidence),
+        vegetation_regime=summary.vegetation_regime,
     )
 
 
@@ -305,6 +338,8 @@ def _serialize_synthesis(
         unavailable_metric_keys=list(synthesis.unavailable_metric_keys()),
         limitations=list(synthesis.limitations),
         metadata=dict(synthesis.metadata),
+        vegetation_regime=synthesis.vegetation_regime,
+        vegetation_regime_explanation=synthesis.metadata.get("regime_explanation"),
     )
 
 
@@ -397,11 +432,15 @@ def _build_analysis_cache_key(data: AgricultureAnalysisRequest) -> str:
     """Build a deterministic cache key for an agriculture analysis request.
 
     Incorporates every input that affects the result: geometry, date range,
-    requested domains, cloud tolerance, and temporal resolution.  Uses the
-    same SHA-256 hashing approach as ``MetricContext.cache_key()``.
+    requested domains, cloud tolerance, temporal resolution, and the Point
+    support policy version — so a response cached under one meaning of a
+    Point request can never be replayed under another.  Uses the same
+    SHA-256 hashing approach as ``MetricContext.cache_key()``.
     """
     import hashlib
     import json as _json
+
+    from app.services.agriculture.support import POINT_SUPPORT_POLICY_VERSION
 
     geometry_dict = data.geometry.model_dump()
     payload = {
@@ -411,6 +450,7 @@ def _build_analysis_cache_key(data: AgricultureAnalysisRequest) -> str:
         "domains": sorted(data.domains) if data.domains else None,
         "cloud_max_percent": data.cloud_max_percent,
         "ground_truth": _ground_truth_fingerprint(data.ground_truth),
+        "point_support_policy": POINT_SUPPORT_POLICY_VERSION,
     }
     blob = _json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -467,7 +507,7 @@ def _collect_validation_analyses(
         for item in items:
             try:
                 payload = (
-                    item.model_dump()
+                    item.model_dump(mode="json")
                     if hasattr(item, "model_dump")
                     else dict(item)
                 )
@@ -636,25 +676,44 @@ async def agriculture_health() -> AgricultureHealthResponse:
 )
 async def run_agriculture_analysis(
     data: AgricultureAnalysisRequest,
+    db: Optional[AsyncSession] = Depends(get_db),
 ) -> AgriculturalAnalysisResponse:
     """Run a full agricultural analysis.
 
     Accepts geometry and date range, executes the metric stack,
     builds evidence, runs synthesis, and returns structured output.
-
-    The response preserves:
-- domain summaries with synthesis statements
-- underlying evidence bundles
-- provenance for every metric
-- unavailable metrics with reasons
-- quality and status information
-- limitations and scientific basis
+    Persists full result permanently in PostgreSQL for instant retrieval.
     """
     _validate_request(data)
 
-    request_id = str(uuid.uuid4())
+    target_uuid: uuid.UUID
+    if data.request_id:
+        try:
+            target_uuid = uuid.UUID(data.request_id)
+        except (ValueError, TypeError):
+            target_uuid = uuid.uuid4()
+    else:
+        target_uuid = uuid.uuid4()
+
+    request_id = str(target_uuid)
     total_start = time.perf_counter()
     logger.info(f"Agriculture analysis {request_id}: {data.start_date} to {data.end_date}")
+
+    session: Optional[AsyncSession] = db if isinstance(db, AsyncSession) else None
+    if session:
+        try:
+            existing_rec, is_completed = await record_analysis_start(
+                session, data, target_uuid
+            )
+            if is_completed and existing_rec.result_data:
+                logger.info(
+                    f"Agriculture analysis {request_id}: retrieved completed result from DB (idempotent replay)"
+                )
+                return AgriculturalAnalysisResponse(**existing_rec.result_data)
+        except Exception as db_init_err:
+            logger.warning(
+                f"Agriculture analysis {request_id}: DB start record failed ({type(db_init_err).__name__}), proceeding"
+            )
 
     # Check cache before executing any metrics
     cache_key = _build_analysis_cache_key(data)
@@ -678,7 +737,28 @@ async def run_agriculture_analysis(
             response = _attach_ground_truth_validation(
                 response, data.ground_truth, request_id
             )
+        if (not data.domains or any(d in ("pest_disease", "inspection") for d in data.domains)) and response.pest_disease_inspection is None:
+            try:
+                from app.services.agriculture.pest_disease_inspection import inspect_pest_disease_risk
+
+                response.pest_disease_inspection = inspect_pest_disease_risk(
+                    data.start_date,
+                    data.end_date,
+                    response.evidence_bundles or {},
+                    response.temporal,
+                    data.ground_truth,
+                    request_id,
+                )
+            except Exception as pe:
+                logger.warning(f"Pest/disease inspection on cache failed ({type(pe).__name__})")
+        if session:
+            try:
+                await record_analysis_completion(session, target_uuid, response)
+            except Exception as db_comp_err:
+                logger.error(f"Could not persist cache-hit completion for {request_id}: {db_comp_err}")
+                response.limitations.append("Database persistence degraded: analysis was not saved to permanent history")
         return response
+
 
     try:
         # Build EE geometry
@@ -708,6 +788,12 @@ async def run_agriculture_analysis(
             end_date=data.end_date,
             geometry_key=f"{geometry_dict}",
             cloud_max_percent=data.cloud_max_percent,
+            # Declared so the Point support policy can engage. Nothing
+            # else in the request changes: the policy reads only this
+            # field, and only when it holds a Point.
+            requested_geometry=geometry_dict,
+            original_geometry=ee_geometry,
+            support_plan={},
         )
 
         # The metric stack and the temporal/spatial builders make blocking
@@ -793,6 +879,31 @@ async def run_agriculture_analysis(
             )
             response.spatial = None
 
+        # Soil intelligence (Phase P-AGRI-SOIL)
+        # Additive computation of real soil moisture and SoilGrids 2.0 properties.
+        # Computed when domains is None/empty (all domains) or explicitly includes "soil".
+        if not data.domains or "soil" in data.domains:
+            try:
+                from app.services.agriculture.soil_intelligence import (
+                    compute_soil_intelligence,
+                )
+
+                soil_payload = await asyncio.to_thread(
+                    compute_soil_intelligence,
+                    geometry_dict,
+                    data.start_date,
+                    data.end_date,
+                    False,  # Parent analysis endpoint handles its own caching
+                )
+                if soil_payload:
+                    response.soil_intelligence = SoilIntelligenceResponse.model_validate(soil_payload)
+            except Exception as soil_exc:
+                logger.warning(
+                    f"Agriculture analysis {request_id}: soil intelligence "
+                    f"skipped ({type(soil_exc).__name__}: {soil_exc})"
+                )
+                response.soil_intelligence = None
+
         # Cache only successful analysis results that carry real provider
         # evidence (Phase A1): an EE outage surfaces as HTTP 200 with every
         # metric unavailable, and caching that would serve the outage shape
@@ -819,6 +930,37 @@ async def run_agriculture_analysis(
                 response, data.ground_truth, request_id
             )
 
+        if not data.domains or any(d in ("pest_disease", "inspection") for d in data.domains):
+            try:
+                from app.services.agriculture.pest_disease_inspection import inspect_pest_disease_risk
+
+                response.pest_disease_inspection = inspect_pest_disease_risk(
+                    data.start_date,
+                    data.end_date,
+                    response.evidence_bundles or {},
+                    response.temporal,
+                    data.ground_truth,
+                    request_id,
+                )
+            except Exception as pe:
+                logger.warning(f"Pest/disease inspection failed ({type(pe).__name__})")
+
+        geom_dict = (
+            data.geometry.model_dump()
+            if hasattr(data.geometry, "model_dump")
+            else dict(data.geometry)
+        )
+        response.geometry = geom_dict
+        if getattr(data, "name", None):
+            response.location_name = data.name
+
+        if session:
+            try:
+                await record_analysis_completion(session, target_uuid, response)
+            except Exception as db_comp_err:
+                logger.error(f"Could not persist completion to DB for {request_id}: {db_comp_err}")
+                response.limitations.append("Database persistence degraded: analysis was not saved to permanent history")
+
         elapsed_ms = (time.perf_counter() - total_start) * 1000.0
         logger.info(
             f"Agriculture analysis {request_id}: completed "
@@ -827,16 +969,150 @@ async def run_agriculture_analysis(
         )
         return response
 
-    except AppException:
+    except AppException as ae:
+        if session:
+            try:
+                await record_analysis_failure(session, target_uuid, ae.reason or ae.message)
+            except Exception:
+                pass
         raise
     except Exception as e:
         elapsed_ms = (time.perf_counter() - total_start) * 1000.0
-        logger.error(f"Agriculture analysis {request_id} failed ({elapsed_ms:.1f}ms): {e}")
+        logger.error(f"Agriculture analysis {request_id} failed ({elapsed_ms:.1f}ms): {e}", exc_info=True)
+        err_str = str(e)
+        if "Earth Engine" in err_str or "ee." in getattr(type(e), "__module__", "") or "EEException" in type(e).__name__:
+            code = "ERR_GEE_UNAVAILABLE"
+            reason = "Earth Engine service failed to process satellite imagery"
+        elif isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+            code = "ERR_GEE_TIMEOUT"
+            reason = "Satellite data processing timed out"
+        else:
+            code = "ERR_INTERNAL_SERVER_ERROR"
+            reason = "An unexpected error occurred during agricultural analysis"
+
+        if session:
+            try:
+                await record_analysis_failure(session, target_uuid, reason)
+            except Exception:
+                pass
+
         raise AppException(
-            message=f"Analysis failed: {type(e).__name__}",
+            message=reason,
+            code=code,
+            reason=reason,
             status_code=500,
-            detail={"request_id": request_id, "error_type": type(e).__name__},
+            detail={
+                "request_id": request_id,
+                "error_type": type(e).__name__,
+                "technical_message": err_str,
+            },
         )
+
+
+# ---------------------------------------------------------------------------
+# History persistence endpoints (Phase P0-HISTORY)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/history",
+    response_model=AgricultureHistoryListResponse,
+    tags=["Agriculture"],
+)
+async def list_agriculture_history(
+    skip: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(20, ge=1, le=100, description="Page limit"),
+    location_id: Optional[uuid.UUID] = Query(None, description="Filter by location ID"),
+    db: AsyncSession = Depends(get_db),
+) -> AgricultureHistoryListResponse:
+    """Retrieve paginated list of saved agricultural analysis history."""
+    return await get_analysis_history_list(
+        db=db,
+        skip=skip,
+        limit=limit,
+        location_id=location_id,
+    )
+
+
+@router.get(
+    "/history/{analysis_id}",
+    response_model=AgriculturalAnalysisResponse,
+    tags=["Agriculture"],
+)
+async def get_agriculture_history_detail(
+    analysis_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> AgriculturalAnalysisResponse:
+    """Retrieve full saved agricultural analysis report by persistent ID.
+
+    DECISION RULE: Decoupled from Google Earth Engine. Reads directly from
+    persisted database records with zero GEE re-execution.
+    """
+    record = await get_analysis_history_item(db=db, analysis_id=analysis_id)
+    if not record:
+        raise AnalysisNotFoundError(str(analysis_id))
+
+    if record.status == "failed":
+        raise AppException(
+            message="Analysis failed",
+            code="ERR_ANALYSIS_FAILED",
+            reason="This analysis run was recorded as failed in history",
+            status_code=400,
+            detail={
+                "status": "failed",
+                "error_message": record.error_message,
+                "analysis_id": str(record.id),
+            },
+        )
+
+    if record.status != "completed" or not record.result_data:
+        raise AppException(
+            message="Analysis is not yet completed",
+            code="ERR_ANALYSIS_IN_PROGRESS",
+            reason="Analysis processing is not yet completed",
+            status_code=409,
+            detail={
+                "status": record.status,
+                "analysis_id": str(record.id),
+            },
+        )
+
+    # Deserialize directly from JSONB - pure offline retrieval
+    try:
+        data = dict(record.result_data)
+        if record.location:
+            data["geometry"] = record.location.geometry
+            if record.location.name:
+                data["location_name"] = record.location.name
+            if record.location.area_sq_meters is not None:
+                data["area_sq_meters"] = record.location.area_sq_meters
+        return AgriculturalAnalysisResponse.model_validate(data)
+    except Exception as exc:
+        logger.error(f"Failed to parse stored result_data for analysis {analysis_id}: {exc}")
+        raise AppException(
+            message="Stored analysis data schema is incompatible",
+            code="ERR_SCHEMA_INCOMPATIBLE",
+            reason="Stored analysis record format could not be deserialized",
+            status_code=500,
+            detail={"technical_message": str(exc)},
+        )
+
+
+@router.delete(
+    "/history/{analysis_id}",
+    tags=["Agriculture"],
+)
+async def delete_agriculture_history_entry(
+    analysis_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Manually delete a single agricultural analysis record from history."""
+    deleted = await delete_analysis_history_item(db=db, analysis_id=analysis_id)
+    if not deleted:
+        raise AnalysisNotFoundError(str(analysis_id))
+
+    return {"deleted": True, "id": str(analysis_id)}
+
 
 
 @router.post(
@@ -886,6 +1162,135 @@ async def run_synthesis_from_evidence(
             status_code=500,
             detail={"request_id": request_id, "error_type": type(e).__name__},
         )
+
+
+@router.post(
+    "/spatial-layer",
+    response_model=SpatialLayerResponse,
+    tags=["Agriculture"],
+)
+async def get_spatial_layer(
+    data: SpatialLayerRequest,
+) -> SpatialLayerResponse:
+    """Generate a real Earth Engine raster map tile layer for spatial MVP visualization.
+
+    Supports 'ndvi', 'lst_day', 'soil_moisture', and 'sar_vh'.
+    Returns real XYZ tile URL template from Google Earth Engine.
+    """
+    from app.services.agriculture.spatial_layer import generate_spatial_layer
+
+    if asyncio.get_running_loop() is not None:
+        return await asyncio.to_thread(generate_spatial_layer, data)
+    return generate_spatial_layer(data)
+
+
+@router.post(
+    "/historical-comparison",
+    response_model=HistoricalComparisonResponse,
+    tags=["Agriculture"],
+)
+async def get_historical_comparison(
+    data: HistoricalComparisonRequest,
+) -> HistoricalComparisonResponse:
+    """Generate 10-year same-period historical comparison across real satellite observations.
+
+    Supports exact seasonal same-period comparisons over the preceding 10 years.
+    Never fabricates missing years or values.
+    """
+    from app.services.agriculture.history import generate_historical_comparison
+
+    if asyncio.get_running_loop() is not None:
+        return await asyncio.to_thread(generate_historical_comparison, data)
+    return generate_historical_comparison(data)
+
+
+@router.post(
+    "/soil-intelligence",
+    response_model=SoilIntelligenceResponse,
+    tags=["Agriculture"],
+)
+async def get_soil_intelligence(
+    data: SoilIntelligenceRequest,
+) -> SoilIntelligenceResponse:
+    """Compute real GEE soil moisture and SoilGrids 2.0 multi-depth properties.
+
+    Strictly uses real Earth Engine satellite and gridded datasets.
+    Never fabricates, hallucinates, or estimates uncalibrated soil nutrients.
+    """
+    from app.services.agriculture.soil_intelligence import compute_soil_intelligence
+
+    geom_dict = (
+        data.geometry.model_dump()
+        if hasattr(data.geometry, "model_dump")
+        else dict(data.geometry)
+    )
+    if asyncio.get_running_loop() is not None:
+        payload = await asyncio.to_thread(
+            compute_soil_intelligence,
+            geom_dict,
+            data.start_date,
+            data.end_date,
+        )
+    else:
+        payload = compute_soil_intelligence(
+            geom_dict,
+            data.start_date,
+            data.end_date,
+        )
+    return SoilIntelligenceResponse.model_validate(payload)
+
+
+@router.post(
+    "/pest-disease-inspection",
+    response_model=PestDiseaseInspectionResponse,
+    tags=["Agriculture"],
+)
+async def get_pest_disease_inspection(
+    data: PestDiseaseInspectionRequest,
+) -> PestDiseaseInspectionResponse:
+    """Run multi-sensor pest & disease risk screening and anomaly inspection.
+
+    Performs optical (NDVI, NDRE, NDMI, MSI), radar (Sentinel-1 SAR), and thermal (LST, Tair)
+    anomaly evaluation, temporal persistence checks, and biotic vs abiotic compatibility screening.
+    Never fabricates data; never provides uncalibrated pathogen diagnosis or chemical spray prescriptions.
+    """
+    from app.services.agriculture.pest_disease_inspection import inspect_pest_disease_risk
+
+    analysis_req = AgricultureAnalysisRequest(
+        geometry=data.geometry,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        domains=["vegetation", "water", "thermal", "crop", "climate", "soil", "stress"],
+        cloud_max_percent=data.cloud_max_percent,
+        ground_truth=data.ground_truth,
+    )
+
+    analysis_resp = await run_agriculture_analysis(analysis_req)
+
+    bundles = analysis_resp.evidence_bundles or {}
+    temporal_sec = analysis_resp.temporal
+    ground_truth = data.ground_truth or []
+
+    if asyncio.get_running_loop() is not None:
+        result = await asyncio.to_thread(
+            inspect_pest_disease_risk,
+            data.start_date,
+            data.end_date,
+            bundles,
+            temporal_sec,
+            ground_truth,
+            analysis_resp.request_id,
+        )
+    else:
+        result = inspect_pest_disease_risk(
+            data.start_date,
+            data.end_date,
+            bundles,
+            temporal_sec,
+            ground_truth,
+            analysis_resp.request_id,
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -977,7 +1382,7 @@ def _build_evidence_bundles(
     evidence that actually exists and is usable is added; nothing is
     fabricated and no item is duplicated.
     """
-    from app.services.agriculture.synthesis import DEFAULT_RULES
+    from app.services.agriculture.synthesis import ALL_SYNTHESIS_RULES
 
     domain_groups: Dict[str, List[EvidenceItem]] = {}
     by_key: Dict[str, EvidenceItem] = {}
@@ -1006,7 +1411,7 @@ def _build_evidence_bundles(
     # declaration order. Derived from the rules themselves, never
     # hardcoded, so a rule edit automatically updates its bundle.
     rule_inputs: Dict[str, List[str]] = {}
-    for rule in DEFAULT_RULES:
+    for rule in ALL_SYNTHESIS_RULES:
         wanted = rule_inputs.setdefault(rule.domain.value, [])
         for needed in rule.inputs:
             if needed not in wanted:

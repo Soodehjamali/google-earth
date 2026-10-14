@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatNumberValue, normalizeUnit } from '../../common/formattedNumber.ts';
+import { formatNumberValue, normalizeUnit } from '../../common/numberFormatting.ts';
 import { formatCoordinates } from '../geocoding.ts';
 
 describe('Step 2 & Step 7: FormattedNumber, Minus Signs, and Coordinate Labeling', () => {
