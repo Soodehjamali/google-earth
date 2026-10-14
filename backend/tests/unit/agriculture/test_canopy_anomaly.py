@@ -598,3 +598,50 @@ def test_no_sentinel1_or_proxy_machinery():
     for metric in CANOPY_MOISTURE_METRICS:
         assert metric.measurement_basis is not MeasurementBasis.PROXY
         assert metric.measurement_basis is not MeasurementBasis.INFERENCE
+
+
+# ==========================================================================
+# Regression tests for GEE empty composite & baseline years (Phase 1)
+# ==========================================================================
+
+
+def test_spectral_index_empty_composite_guard_regression(fake_s2):
+    """Regression test: when Sentinel-2 scene count is 0, NDMIMetric returns
+    insufficient_data immediately without evaluating band expressions or reduce_index
+    (which previously raised EEException: No band named 'B8')."""
+    fake_s2([_win(None, scenes=0)])
+    from app.services.agriculture.water import NDMIMetric
+    result = NDMIMetric().compute(make_context())
+    assert result.status == STATUS_INSUFFICIENT_DATA
+    assert result.value is None
+    assert "No Sentinel-2 scenes matched" in result.message
+
+
+def test_baseline_anomaly_skips_zero_scene_baseline_years_regression(fake_s2):
+    """Regression test: baseline years with 0 imagery are skipped. When fewer than
+    CANOPY_ANOMALY_MIN_YEARS (3) are available, returns insufficient_data with an honest reason;
+    when >= 3 are available, succeeds using the valid baseline years."""
+    # Scenario A: 8 zero-scene years + 2 valid years (contributed = 2 < 3)
+    outcomes_insufficient = (
+        [_win(0.20, scenes=5)]  # requested window
+        + [_win(0.30, scenes=5)] * 2  # 2 contributing baseline years
+        + [_win(None, scenes=0)] * 8  # 8 zero-scene baseline years
+    )
+    fake_s2(outcomes_insufficient)
+    result = NDMIAnomalyMetric().compute(make_context())
+    assert result.status == STATUS_INSUFFICIENT_DATA
+    assert result.value is None
+    assert "Only 2 of the 10 preceding-year baseline windows contributed usable data" in result.message
+
+    # Scenario B: 6 zero-scene years + 4 valid years (contributed = 4 >= 3)
+    outcomes_sufficient = (
+        [_win(0.20, scenes=5)]  # requested window
+        + [_win(0.30, scenes=5)] * 4  # 4 contributing baseline years (mean = 0.30)
+        + [_win(None, scenes=0)] * 6  # 6 zero-scene baseline years
+    )
+    fake_s2(outcomes_sufficient)
+    result2 = NDMIAnomalyMetric().compute(make_context())
+    assert result2.status == STATUS_OK
+    assert result2.value == pytest.approx(0.20 - 0.30)
+    assert any("4 contributing baseline year(s)" in c for c in result2.provenance.caveats)
+

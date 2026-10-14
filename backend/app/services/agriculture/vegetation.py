@@ -204,14 +204,7 @@ class _SpectralIndexMetric(Metric):
             context, ee, self.required_bands
         )
 
-        expression = self.build_expression(composite, ee)
-        index_image = expression.rename(self.index_name)
-
-        stats = _reduce_index(
-            index_image, self.index_name, context, ee, scale
-        )
-
-        # Guard against the composite having produced nothing at all.
+        # Guard against the composite having produced nothing at all before evaluating band expressions.
         if image_count == 0:
             return MetricResult.insufficient(
                 metric_key=self.key,
@@ -223,6 +216,13 @@ class _SpectralIndexMetric(Metric):
                 ),
                 unit=self.unit,
             )
+
+        expression = self.build_expression(composite, ee)
+        index_image = expression.rename(self.index_name)
+
+        stats = _reduce_index(
+            index_image, self.index_name, context, ee, scale
+        )
 
         quality = assess_quality(
             image_count=image_count,

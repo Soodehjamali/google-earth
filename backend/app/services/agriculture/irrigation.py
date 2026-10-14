@@ -478,7 +478,12 @@ class _BaselineAnomalyMetric(Metric):
         per_year_values: List[Optional[float]] = []
         for _years_back, win_start, win_end in windows:
             shifted = _shift_context(context, win_start, win_end)
-            value, _count, _quality = self._window_value(shifted, ee)
+            try:
+                value, count, _quality = self._window_value(shifted, ee)
+                if count == 0:
+                    value = None
+            except Exception:
+                value = None
             per_year_values.append(value)
 
         contributed = sum(1 for value in per_year_values if value is not None)
