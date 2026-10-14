@@ -114,7 +114,12 @@ def _create_test_app() -> FastAPI:
 
         return JSONResponse(
             status_code=exc.status_code,
-            content={"error": exc.message, "detail": exc.detail},
+            content={
+                "error": exc.message,
+                "code": getattr(exc, "code", "ERR_INTERNAL_SERVER_ERROR"),
+                "reason": getattr(exc, "reason", exc.message),
+                "detail": exc.detail,
+            },
         )
 
     @app.exception_handler(Exception)
@@ -177,6 +182,9 @@ class TestAnalysisDoesNotBlockEventLoop:
             ), patch(
                 "app.services.agriculture.spatial_section.build_spatial_section",
                 return_value=None,
+            ), patch(
+                "app.services.agriculture.soil_intelligence.compute_soil_intelligence",
+                return_value=None,
             ):
                 task = loop.create_task(
                     run_agriculture_analysis(
@@ -236,6 +244,9 @@ class TestAnalysisDoesNotBlockEventLoop:
         ), patch(
             "app.services.agriculture.spatial_section.build_spatial_section",
             return_value=None,
+        ), patch(
+            "app.services.agriculture.soil_intelligence.compute_soil_intelligence",
+            return_value=None,
         ):
             req = AgricultureAnalysisRequest(**ANALYSIS_BODY)
             response1 = await run_agriculture_analysis(req)
@@ -268,7 +279,12 @@ class TestExecutorExceptionPropagation:
                 "/api/v1/agriculture/analysis", json=ANALYSIS_BODY
             )
             assert resp.status_code == 500
-            assert resp.json()["error"] == "Analysis failed: RuntimeError"
+            data = resp.json()
+            assert data["code"] == "ERR_INTERNAL_SERVER_ERROR"
+            assert data["reason"] == "An unexpected error occurred during agricultural analysis"
+            # Ensure raw exception text is strictly prevented from leaking into response body
+            assert "EE exploded mid-flight" not in resp.text
+            assert "RuntimeError" not in resp.text
 
     def test_raised_exception_result_is_not_cached(self) -> None:
         """A failing execution must leave no cache entry behind."""
@@ -302,6 +318,9 @@ class TestResponseUnchanged:
             return_value=None,
         ), patch(
             "app.services.agriculture.spatial_section.build_spatial_section",
+            return_value=None,
+        ), patch(
+            "app.services.agriculture.soil_intelligence.compute_soil_intelligence",
             return_value=None,
         ):
             client = TestClient(_create_test_app())
