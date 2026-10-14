@@ -80,20 +80,29 @@ function isWindowed(
   return typeof item.window_start === 'string';
 }
 
-/** Short axis label for a window start; invalid input passes through. */
+/** Short axis label for a window start in Persian/Jalali; invalid input passes through. */
 export function formatShortDate(iso: string): string {
   if (typeof iso !== 'string' || iso.length < 7) return String(iso ?? '');
-  const parsed = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  const parsed = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return iso;
-  const month = parsed.toLocaleDateString('en-US', {
-    month: 'short',
-    timeZone: 'UTC',
-  });
-  const year = parsed.toLocaleDateString('en-US', {
-    year: '2-digit',
-    timeZone: 'UTC',
-  });
-  return `${month} ${year}`;
+  try {
+    const formatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+      month: 'short',
+      year: '2-digit',
+      timeZone: 'UTC',
+    });
+    return formatter.format(parsed);
+  } catch {
+    const month = parsed.toLocaleDateString('en-US', {
+      month: 'short',
+      timeZone: 'UTC',
+    });
+    const year = parsed.toLocaleDateString('en-US', {
+      year: '2-digit',
+      timeZone: 'UTC',
+    });
+    return `${month} ${year}`;
+  }
 }
 
 /** Finite numbers only — non-finite backend values become gaps. */
@@ -219,6 +228,27 @@ export function baselineLevels(
     min: isFiniteNumber(baseline.minimum) ? baseline.minimum : null,
     max: isFiniteNumber(baseline.maximum) ? baseline.maximum : null,
   };
+}
+
+/**
+ * Decimal places for Y-axis tick labels, chosen so neighbouring ticks stay
+ * distinguishable. A fixed one-decimal format collapses a series like NDVI
+ * (0.0513-0.0523) into five identical "0.1" labels. Presentation only: the
+ * plotted values are untouched.
+ */
+export function axisDecimals(values: ReadonlyArray<number | null>): number {
+  const finite = values.filter(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value),
+  );
+  if (finite.length === 0) return 1;
+  const span = Math.max(...finite) - Math.min(...finite);
+  if (span <= 0) {
+    const magnitude = Math.abs(finite[0]);
+    return magnitude >= 100 ? 0 : magnitude >= 1 ? 2 : 3;
+  }
+  // ~4 ticks across the span: step needs enough digits to differ.
+  const step = span / 4;
+  return Math.max(0, Math.min(6, Math.ceil(-Math.log10(step))));
 }
 
 /** True when at least one datum carries a finite value. */

@@ -202,6 +202,10 @@ class EvidenceItem:
     #: name. Populated only by the probability metric, from its own
     #: authoritative means structure — never parsed from warning strings.
     band_means: Optional[Dict[str, Optional[float]]] = None
+    #: The metric's own reason code and user-safe message when it produced
+    #: no value. Carried verbatim so the UI can say why, never rewritten.
+    unavailable_reason: Optional[str] = None
+    unavailable_message: Optional[str] = None
 
     @classmethod
     def from_result(cls, result: MetricResult) -> EvidenceItem:
@@ -253,6 +257,12 @@ class EvidenceItem:
             ),
             band_means=(
                 dict(result.band_means) if result.band_means else None
+            ),
+            unavailable_reason=(
+                result.reason if result.status != "ok" else None
+            ),
+            unavailable_message=(
+                result.message if result.status != "ok" else None
             ),
         )
 
@@ -366,6 +376,8 @@ def _categorise_unit(unit: str) -> UnitCategory:
     mapping: Dict[str, UnitCategory] = {
         "index": UnitCategory.INDEX,
         "fraction": UnitCategory.FRACTION,
+        "m3/m3": UnitCategory.FRACTION,
+        "m³/m³": UnitCategory.FRACTION,
         "mm": UnitCategory.LENGTH_MM,
         "mm/period": UnitCategory.LENGTH_MM,
         "mm/day": UnitCategory.LENGTH_MM,
@@ -899,6 +911,24 @@ def _build_default_registry() -> RelationshipRegistry:
             )
         )
 
+    # Competing root-zone soil moisture models
+    registry.register(
+        RelationshipSpec(
+            metric_a="soil_moisture_rootzone",
+            metric_b="soil_moisture_rootzone_era5",
+            expected=ExpectedRelationship.SAME_DIRECTION,
+            scientific_basis=(
+                "Both metrics estimate volumetric root-zone soil moisture (m³/m³) "
+                "over the same temporal window and are expected to be mutually consistent."
+            ),
+            limitations=(
+                "SMAP L4 is an assimilation model combining satellite L-band radiometry with "
+                "NASA Catchment LSM; ERA5-Land is an open-loop reanalysis model using ECMWF HTESSEL. "
+                "Substantial divergence reflects structural model physics and parameter differences.",
+            ),
+        )
+    )
+
     thermal_veg = (
         ("land_surface_temperature_day", "ndvi"),
         ("land_surface_temperature_day", "evi"),
@@ -1066,6 +1096,34 @@ def detect_conflict(
         )
 
     if relationship is not None:
+        # Competing model discrepancy check (Phase P-AGRI-1.5)
+        keys = {item_a.metric_key, item_b.metric_key}
+        if keys == {"soil_moisture_rootzone", "soil_moisture_rootzone_era5"}:
+            if item_a.value is not None and item_b.value is not None:
+                va, vb = float(item_a.value), float(item_b.value)
+                diff = abs(va - vb)
+                ratio = max(va, vb) / max(min(va, vb), 1e-4)
+                if diff > 0.05 or ratio > 2.0:
+                    smap_val = va if item_a.metric_key == "soil_moisture_rootzone" else vb
+                    era5_val = vb if item_a.metric_key == "soil_moisture_rootzone" else va
+                    return EvidenceConflict(
+                        metric_a=item_a.metric_key,
+                        metric_b=item_b.metric_key,
+                        status=ConsistencyStatus.CONFLICTING,
+                        explanation=(
+                            f"Model discrepancy: SMAP L4 ({smap_val:.3f} m³/m³) and "
+                            f"ERA5-Land ({era5_val:.3f} m³/m³) diverge substantially by "
+                            f"{ratio:.1f}× (absolute difference {diff:.3f} m³/m³)."
+                        ),
+                        possible_explanations=(
+                            "Different land surface model physics (NASA Catchment LSM vs ECMWF HTESSEL).",
+                            "SMAP L4 assimilates satellite L-band radiometry; ERA5-Land is driven by atmospheric forcing.",
+                            "Differing soil depth assumptions or pedotransfer hydraulic parameters.",
+                        ),
+                        evidence_a=item_a,
+                        evidence_b=item_b,
+                    )
+
         direction = check_directional_consistency(
             item_a,
             item_b,

@@ -189,7 +189,37 @@ export interface AgricultureAnalysisRequest {
   domains?: string[] | null;
   cloud_max_percent?: number;
   ground_truth?: GroundTruthObservationInput[] | null;
+  name?: string | null;
+  request_id?: string | null;
+  location_id?: string | null;
 }
+
+export interface AgricultureHistoryItemSummary {
+  id: string;
+  location_id: string;
+  location_name: string | null;
+  geometry_type: string;
+  latitude: number | null;
+  longitude: number | null;
+  area_sq_meters: number | null;
+  start_date: string;
+  end_date: string;
+  status: 'completed' | 'running' | 'failed' | string;
+  created_at: string;
+  completed_at: string | null;
+  overall_sufficiency: string | null;
+  synthesis_status: string | null;
+  error_message: string | null;
+  model_version?: string | null;
+}
+
+export interface AgricultureHistoryListResponse {
+  items: AgricultureHistoryItemSummary[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
 
 /**
  * Reference observation record (P6.1 GroundTruthObservation-compatible).
@@ -265,6 +295,28 @@ export interface ProvenanceResponse {
   caveats: string[];
   citation: string;
   computed_at?: string | null;
+  /**
+   * Point-support disclosure. Present only when the request geometry
+   * was a Point, which has no area of its own; absent for a Polygon.
+   */
+  geometry_type?: string | null;
+  support_radius_m?: number | null;
+  support_area_sq_m?: number | null;
+  support_family?: string | null;
+  support_policy?: string | null;
+  support_native_resolution_m?: number | null;
+  original_geometry?: { type?: string; coordinates?: unknown } | null;
+  support_inputs?: SupportInputDTO[] | null;
+}
+
+/** One support region a derived value was built from. */
+export interface SupportInputDTO {
+  dataset_id?: string | null;
+  family?: string | null;
+  radius_m?: number | null;
+  area_sq_m?: number | null;
+  native_resolution_m?: number | null;
+  point_queryable?: boolean | null;
 }
 
 export interface SpatialStatsDTO {
@@ -317,6 +369,9 @@ export interface EvidenceItemResponse {
   stats?: SpatialStatsDTO | null;
   class_histogram?: ClassHistogramDTO | null;
   band_means?: Record<string, number | null> | null;
+  /** Why the metric produced no value, verbatim from the metric. */
+  unavailable_reason?: string | null;
+  unavailable_message?: string | null;
 }
 
 export interface EvidenceConflictResponse {
@@ -368,8 +423,10 @@ export interface DomainSummaryResponse {
   unavailable_evidence: string[];
   sufficiency: string;
   limitations: string[];
+  conflicts?: string[];
   /** True when the bundle held ≥1 usable evidence item (finite value, not unavailable, usable quality) — independent of statement generation (F-CONTRACT-FIX-1). */
   has_usable_evidence?: boolean;
+  vegetation_regime?: string | null;
 }
 
 export interface AgriculturalAnalysisResponse {
@@ -378,6 +435,9 @@ export interface AgriculturalAnalysisResponse {
   time_end?: string | null;
   spatial_context?: string | null;
   generated_at?: string | null;
+  geometry?: AgricultureGeometry | null;
+  location_name?: string | null;
+  area_sq_meters?: number | null;
   domain_summaries: Record<string, DomainSummaryResponse>;
   cross_domain_statements: SynthesisStatementResponse[];
   overall_sufficiency: string;
@@ -394,12 +454,19 @@ export interface AgriculturalAnalysisResponse {
   unavailable_metric_keys?: string[];
   limitations: string[];
   metadata: Record<string, string>;
+  /** Additive P-AGRI-1 vegetation regime classification (e.g. non_vegetated, vegetated, uncertain). */
+  vegetation_regime?: string | null;
+  vegetation_regime_explanation?: string | null;
   /** Additive P5.3 temporal intelligence; null when the response predates it. */
   temporal?: TemporalSectionPayload | null;
   /** Additive P5.3-S spatial intelligence; null when no metric is spatially supported or cached response predates spatial contract. */
   spatial?: SpatialSectionPayload | null;
   /** Additive P6.3 ground-truth validation; null when no reference observations were supplied. */
   validation?: ValidationSection | null;
+  /** Additive P-AGRI-SOIL soil intelligence; deterministic soil moisture and SoilGrids 2.0 properties. */
+  soil_intelligence?: SoilIntelligenceResponse | null;
+  /** Additive P1 pest & disease risk screening and multi-sensor inspection. */
+  pest_disease_inspection?: PestDiseaseInspectionResponse | null;
 }
 
 export interface ErrorResponse {
@@ -1407,6 +1474,10 @@ export interface ValidationResult {
   metric_relationship: string;
   states_agree: boolean | null;
   values_comparable: boolean | null;
+  difference?: number | null;
+  relative_difference_percent?: number | null;
+  validation_status_code?: string | null;
+  sample_count?: number;
   status: string;
   linkage_reason: string;
   contract_version: string;
@@ -1423,4 +1494,438 @@ export interface ValidationSection {
   contract_version: string;
   engine_version: string;
 }
+
+// ---------------------------------------------------------------------------
+// Spatial Heatmap Layer (Phase P-AGRI-3 & P-AGRI-4)
+// ---------------------------------------------------------------------------
+
+export type SpatialMetricType = 'ndvi' | 'lst_day' | 'soil_moisture' | 'sar_vh' | 'ndmi' | 'ndre' | 'msi' | 'soil_soc' | 'soil_ph' | 'soil_clay' | 'soil_sand' | 'soil_cec' | 'soil_nitrogen';
+
+export type SpatialConceptType = 'vegetation_condition' | 'thermal_stress' | 'surface_dryness' | 'soil_organic_carbon' | 'soil_acidity_ph' | 'soil_texture_clay';
+
+export interface SpatialLayerRequest {
+  metric?: SpatialMetricType;
+  concept?: SpatialConceptType;
+  geometry: GeoJSON.Geometry | AgricultureGeometry;
+  start_date: string;
+  end_date: string;
+  cloud_max_percent?: number;
+  support_radius_m?: number;
+}
+
+export interface SpatialLayerResponse {
+  metric: string;
+  display_name: string;
+  source_dataset: string;
+  tile_url_template: string | null;
+  min_val: number;
+  max_val: number;
+  unit: string;
+  palette: string[];
+  native_resolution_m: number;
+  spatial_resolution: string;
+  geometry_type: string;
+  support_radius_m?: number | null;
+  support_area_sq_m?: number | null;
+  start_date: string;
+  end_date: string;
+  status: 'available' | 'unavailable';
+  unavailable_reason?: string | null;
+  limitations: string[];
+  bounds?: [number, number, number, number] | null;
+  // Phase P-AGRI-4 Additive Agricultural Interpretation fields
+  concept?: string | null;
+  concept_name?: string | null;
+  concept_name_fa?: string | null;
+  interpretation?: string | null;
+  interpretation_fa?: string | null;
+  qualitative_legend?: string[] | null;
+  scientific_caution?: string | null;
+  scientific_caution_fa?: string | null;
+}
+
+export type LandUseType = 'field_crop' | 'orchard' | 'pistachio' | 'other';
+
+// ---------------------------------------------------------------------------
+// 10-Year Same-Period Historical Comparison (Phase P-AGRI-HIST-10Y)
+// ---------------------------------------------------------------------------
+
+export type HistoricalYearStatus = 'current' | 'available' | 'partial' | 'unavailable';
+
+export interface HistoricalYearRecord {
+  year: number;
+  start_date: string;
+  end_date: string;
+  status: HistoricalYearStatus;
+  scene_count: number;
+  metrics: Record<string, number | null>;
+}
+
+export type HistoricalTrendDirection =
+  | 'improving'
+  | 'declining'
+  | 'stable'
+  | 'variable'
+  | 'increasing'
+  | 'decreasing'
+  | 'insufficient_evidence';
+
+export type HistoricalSufficiency = 'sufficient' | 'partial' | 'insufficient';
+
+export interface HistoricalMetricTrend {
+  metric_key: string;
+  display_name: string;
+  display_name_fa: string;
+  unit: string;
+  current_value: number | null;
+  baseline_median: number | null;
+  baseline_mean: number | null;
+  delta_from_baseline: number | null;
+  trend_direction: HistoricalTrendDirection;
+  trend_slope_per_year: number | null;
+  trend_label_fa: string;
+  trend_label_en: string;
+  sufficiency: HistoricalSufficiency;
+  scientific_summary_fa: string;
+  scientific_summary_en: string;
+}
+
+export interface HistoricalComparisonResponse {
+  requested_period: {
+    start_date: string;
+    end_date: string;
+  };
+  same_period_label_fa: string;
+  same_period_label_en: string;
+  domain?: string | null;
+  available_metrics: string[];
+  years: HistoricalYearRecord[];
+  trends: Record<string, HistoricalMetricTrend>;
+  limitations: string[];
+}
+
+export interface HistoricalComparisonRequest {
+  geometry: GeoJSON.Geometry | AgricultureGeometry;
+  start_date: string;
+  end_date: string;
+  domain?: string;
+  metric_keys?: string[];
+  cloud_max_percent?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Soil Intelligence (Phase P-AGRI-SOIL)
+// ---------------------------------------------------------------------------
+
+export interface SoilMoistureLayer {
+  band: string;
+  depth_en: string;
+  depth_fa: string;
+  depth_top_cm: number;
+  depth_bottom_cm: number;
+  value: number | null;
+  unit: string;
+  status: string;
+  source: string;
+  dataset: string;
+  scale_m: number;
+  modelled: boolean;
+}
+
+export interface SoilMoistureReading {
+  value: number | null;
+  unit: string;
+  depth: string;
+  depth_fa: string;
+  source: string;
+  dataset: string;
+  scale_m: number;
+  status: string;
+  measurement_basis: string;
+  scientific_status?: string;
+  scientific_status_fa?: string | null;
+  validation_status?: string;
+  validation_note_fa?: string | null;
+  data_status?: string;
+}
+
+export interface SoilMoistureResponse {
+  surface?: SoilMoistureReading | null;
+  rootzone?: SoilMoistureReading | null;
+  multilayer_era5: SoilMoistureLayer[];
+  coarse_warning: boolean;
+  spatial_resolution_m: number;
+  limitations: string[];
+}
+
+export interface SoilPropertyDepth {
+  depth_code: string;
+  depth_en: string;
+  depth_fa: string;
+  depth_top_cm: number;
+  depth_bottom_cm: number;
+  thickness_cm: number;
+  value: number | null;
+  unit: string;
+  status: string;
+}
+
+export interface SoilPropertyRecord {
+  property_key: string;
+  name_fa: string;
+  name_en: string;
+  unit: string;
+  root_zone_value: number | null;
+  root_zone_depth: string;
+  root_zone_depth_fa: string;
+  depth_profiles: SoilPropertyDepth[];
+  source: string;
+  dataset_id: string;
+  scale_m: number;
+  reference_period: string;
+  reference_period_fa: string;
+  status: string;
+  is_modelled_baseline: boolean;
+  reason?: string | null;
+}
+
+export interface SoilWaterRetention {
+  field_capacity_33kpa: number | null;
+  wilting_point_1500kpa: number | null;
+  available_water_capacity: number | null;
+  unit: string;
+  depth: string;
+  depth_fa: string;
+  source: string;
+  dataset_id: string;
+  scale_m: number;
+  status: string;
+}
+
+export interface SoilTextureClassification {
+  class_en: string;
+  class_fa: string;
+  sand_percent?: number | null;
+  silt_percent?: number | null;
+  clay_percent?: number | null;
+  method: string;
+  status: string;
+}
+
+export interface UnavailableNutrient {
+  key: string;
+  name_fa: string;
+  name_en: string;
+  status: string;
+  scientific_status?: string;
+  validation_status?: string;
+  reason: string;
+  message_fa: string;
+  message_en: string;
+  satellite_estimable: boolean;
+  next_action?: string;
+  next_action_fa?: string;
+}
+
+export interface SoilMetricAvailabilityItem {
+  metric_key: string;
+  label_en: string;
+  label_fa: string;
+  value?: number | null;
+  unit?: string | null;
+  source?: string | null;
+  dataset_id?: string | null;
+  variable?: string | null;
+  band?: string | null;
+  status: string;
+  data_status?: string;
+  scientific_status?: string;
+  scientific_status_fa?: string | null;
+  validation_status: string;
+  validation_note_fa?: string | null;
+  availability_message_fa?: string | null;
+  depth?: string | null;
+  depth_cm?: number[] | null;
+  spatial_resolution?: string | null;
+  spatial_resolution_m?: number | null;
+  temporal_resolution?: string | null;
+  temporal_period?: string | null;
+  is_ground_truth?: boolean;
+  requires_lab_validation?: boolean;
+  reason?: string | null;
+  reason_fa?: string | null;
+  limitations?: string[];
+  next_action?: string | null;
+  next_action_fa?: string | null;
+}
+
+export interface SoilObservation {
+  observation_id: string;
+  latitude: number;
+  longitude: number;
+  sample_date: string;
+  depth_top_cm: number;
+  depth_bottom_cm: number;
+  pH?: number | null;
+  EC?: number | null;
+  total_n?: number | null;
+  available_p?: number | null;
+  exchangeable_k?: number | null;
+  nitrate?: number | null;
+  laboratory?: string | null;
+  method?: string | null;
+  quality?: string | null;
+  notes?: string | null;
+  source_type: string;
+  is_derived: boolean;
+}
+
+export interface SoilLaboratoryFramework {
+  is_lab_calibrated: boolean;
+  ml_nutrient_mapping_status: string;
+  message_fa: string;
+  message_en: string;
+  supported_sample_fields: string[];
+}
+
+export interface SoilIntelligenceResponse {
+  start_date: string;
+  end_date: string;
+  moisture: SoilMoistureResponse;
+  properties: {
+    soc?: SoilPropertyRecord;
+    phh2o?: SoilPropertyRecord;
+    clay?: SoilPropertyRecord;
+    sand?: SoilPropertyRecord;
+    silt?: SoilPropertyRecord;
+    cec?: SoilPropertyRecord;
+    nitrogen?: SoilPropertyRecord;
+    water_retention?: SoilWaterRetention;
+    texture_classification?: SoilTextureClassification;
+    [key: string]: any;
+  };
+  unavailable_nutrients: UnavailableNutrient[];
+  data_availability_matrix?: SoilMetricAvailabilityItem[];
+  laboratory_framework: SoilLaboratoryFramework;
+  limitations: string[];
+}
+
+export interface SoilIntelligenceRequest {
+  geometry: GeoJSON.Geometry | AgricultureGeometry;
+  start_date: string;
+  end_date: string;
+}
+
+// ---------------------------------------------------------------------------
+// Ground Truth & Field Observations (Phase P1)
+// ---------------------------------------------------------------------------
+
+export interface GroundTruthObservation {
+  observation_id: string;
+  variable: string;
+  value?: number | null;
+  unit?: string;
+  state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  observed_on?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  source: string;
+  method: string;
+  quality?: string;
+  status?: string;
+  metric_key?: string | null;
+  domain?: string | null;
+  cell_id?: string | null;
+  crop_type?: string | null;
+  growth_stage?: string | null;
+  condition_summary?: string | null;
+  observed_stress?: string | null;
+  pest_observation?: string | null;
+  disease_observation?: string | null;
+  irrigation_status?: string | null;
+  soil_observation?: string | null;
+  laboratory_result?: string | null;
+  yield_observation?: number | null;
+  notes?: string | null;
+  is_derived?: boolean;
+  is_test_fixture?: boolean;
+  contract_version?: string;
+  provenance?: Record<string, unknown>;
+  limitations?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Pest / Disease Inspection & Risk Screening (Phase P1)
+// ---------------------------------------------------------------------------
+
+export type PestDiseaseRiskLevel = 'none' | 'low' | 'moderate' | 'elevated' | 'high' | 'insufficient';
+
+export type PestDiseasePatternType =
+  | 'no_significant_anomaly_detected'
+  | 'vegetation_stress_pattern'
+  | 'moisture_stress_pattern'
+  | 'persistent_vegetation_decline'
+  | 'possible_biotic_stress_compatible_pattern'
+  | 'possible_abiotic_stress_compatible_pattern'
+  | 'mixed_conflicting_evidence'
+  | 'insufficient_evidence';
+
+export interface SensorEvidenceDetail {
+  sensor_family: 'optical' | 'radar' | 'thermal' | 'ground_truth' | string;
+  metric_key: string;
+  display_name_fa: string;
+  value?: number | null;
+  baseline_value?: number | null;
+  anomaly_z_score?: number | null;
+  status: string;
+  indication: string;
+  weight_in_assessment: number;
+  notes_fa: string;
+}
+
+export interface BioticAbioticAssessment {
+  compatible_stress_type: 'biotic' | 'abiotic' | 'mixed' | 'indeterminate' | 'none' | string;
+  biotic_compatibility_score: number;
+  abiotic_compatibility_score: number;
+  spatial_uniformity: string;
+  weather_correlation: string;
+  canopy_structural_decay: string;
+  reasoning_fa: string;
+  reasoning_en: string;
+}
+
+export interface PestDiseaseInspectionResponse {
+  request_id?: string | null;
+  start_date: string;
+  end_date: string;
+  overall_risk_level: PestDiseaseRiskLevel;
+  risk_level_fa: string;
+  pattern_type: PestDiseasePatternType;
+  pattern_title_fa: string;
+  pattern_summary_fa: string;
+  evidence_hierarchy_level: number;
+  evidence_hierarchy_title_fa: string;
+  evidence_hierarchy_description_fa: string;
+  optical_evidence: SensorEvidenceDetail[];
+  radar_evidence: SensorEvidenceDetail[];
+  thermal_evidence: SensorEvidenceDetail[];
+  biotic_abiotic_assessment: BioticAbioticAssessment;
+  ground_truth_corroboration: Record<string, any>;
+  temporal_persistence: Record<string, any>;
+  scientific_disclaimer_fa: string;
+  scientific_disclaimer_en: string;
+  recommended_field_actions_fa: string[];
+  limitations: string[];
+}
+
+export interface PestDiseaseInspectionRequest {
+  geometry: GeoJSON.Geometry | AgricultureGeometry;
+  start_date: string;
+  end_date: string;
+  ground_truth?: GroundTruthObservation[] | any[];
+  cloud_max_percent?: number;
+}
+
 

@@ -95,6 +95,11 @@ KNOWN_SOURCES: Tuple[str, ...] = (
     "farmer_observation",
     "uav_derived_observation",
     "manually_verified_reference",
+    "field_sensor",
+    "drone_multispectral",
+    "extension_officer_inspection",
+    "laboratory_soil_test",
+    "laboratory_pathology",
 )
 
 #: Variables a reference observation may record.  Biological entries
@@ -107,6 +112,24 @@ REFERENCE_VARIABLES: Tuple[str, ...] = (
     "observed_pest_presence",
     "observed_pest_absence",
     "observed_management_event",
+    "crop_condition",
+    "canopy_cover",
+    "vegetation_index",
+    "ndvi",
+    "evi",
+    "ndre",
+    "ndmi",
+    "ndwi",
+    "msi",
+    "lst",
+    "soil_moisture",
+    "sar_vh",
+    "sar_vv",
+    "rvi",
+    "crop_yield",
+    "soil_ph",
+    "soil_ec",
+    "field_inspection",
     "unknown",
     "not_assessed",
 )
@@ -118,6 +141,8 @@ REFERENCE_STATES: Tuple[str, ...] = (
     "absent",
     "unknown",
     "not_assessed",
+    "healthy",
+    "stressed",
 )
 
 #: Temporal match vocabulary.
@@ -206,8 +231,52 @@ class GroundTruthObservation:
     metric_key: Optional[str] = None
     domain: Optional[str] = None
     cell_id: Optional[str] = None
+    crop_type: Optional[str] = None
+    growth_stage: Optional[str] = None
+    condition_summary: Optional[str] = None
+    observed_stress: Optional[str] = None
+    pest_observation: Optional[str] = None
+    disease_observation: Optional[str] = None
+    irrigation_status: Optional[str] = None
+    soil_observation: Optional[str] = None
+    laboratory_result: Optional[str] = None
+    yield_observation: Optional[float] = None
+    notes: Optional[str] = None
+    is_derived: bool = False
+    is_test_fixture: bool = False
     provenance: Dict[str, Any] = field(default_factory=dict)
     limitations: Tuple[str, ...] = ()
+
+    @property
+    def is_real_ground_truth(self) -> bool:
+        """True only when this observation is genuine field data, not synthetic/test fixture."""
+        if self.is_test_fixture or self.is_derived:
+            return False
+        source_l = (self.source or "").lower()
+        for k in ("fixture", "synthetic", "mock", "demo", "simulat", "test"):
+            if k in source_l:
+                return False
+        quality_l = (self.quality or "").lower()
+        for k in ("test", "synthetic", "mock", "demo", "simulat"):
+            if k in quality_l:
+                return False
+        notes_l = (self.notes or "").lower()
+        for k in ("fixture", "synthetic", "mock", "demo", "simulat", "not real", "test data"):
+            if k in notes_l:
+                return False
+        obs_id_l = (self.observation_id or "").lower()
+        for k in ("mock", "fixture", "synthetic", "sample", "test_gt", "gt-test", "gt-sample"):
+            if k in obs_id_l:
+                return False
+        prov = self.provenance or {}
+        if (
+            prov.get("is_test_fixture")
+            or prov.get("synthetic")
+            or prov.get("is_mock")
+            or prov.get("is_demo")
+        ):
+            return False
+        return True
 
     def refusal_reasons(self) -> Tuple[str, ...]:
         """Machine-readable reasons this record cannot be used."""
@@ -270,6 +339,19 @@ class GroundTruthObservation:
             "metric_key": self.metric_key,
             "domain": self.domain,
             "cell_id": self.cell_id,
+            "crop_type": self.crop_type,
+            "growth_stage": self.growth_stage,
+            "condition_summary": self.condition_summary,
+            "observed_stress": self.observed_stress,
+            "pest_observation": self.pest_observation,
+            "disease_observation": self.disease_observation,
+            "irrigation_status": self.irrigation_status,
+            "soil_observation": self.soil_observation,
+            "laboratory_result": self.laboratory_result,
+            "yield_observation": self.yield_observation,
+            "notes": self.notes,
+            "is_derived": self.is_derived,
+            "is_test_fixture": self.is_test_fixture,
             "contract_version": GROUND_TRUTH_VERSION,
             "provenance": dict(self.provenance),
             "limitations": list(self.limitations),
@@ -296,6 +378,19 @@ class GroundTruthObservation:
             metric_key=payload.get("metric_key"),
             domain=payload.get("domain"),
             cell_id=payload.get("cell_id"),
+            crop_type=payload.get("crop_type"),
+            growth_stage=payload.get("growth_stage"),
+            condition_summary=payload.get("condition_summary"),
+            observed_stress=payload.get("observed_stress"),
+            pest_observation=payload.get("pest_observation"),
+            disease_observation=payload.get("disease_observation"),
+            irrigation_status=payload.get("irrigation_status"),
+            soil_observation=payload.get("soil_observation"),
+            laboratory_result=payload.get("laboratory_result"),
+            yield_observation=payload.get("yield_observation"),
+            notes=payload.get("notes"),
+            is_derived=bool(payload.get("is_derived", False)),
+            is_test_fixture=bool(payload.get("is_test_fixture", False)),
             provenance=dict(payload.get("provenance", {})),
             limitations=tuple(payload.get("limitations", ())),
         )

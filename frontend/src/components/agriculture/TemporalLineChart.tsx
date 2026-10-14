@@ -9,8 +9,9 @@ import {
   YAxis,
 } from 'recharts';
 import type { BaselineLevels, TemporalDatum } from './temporalChart.ts';
-import { stateTone } from './temporalChart.ts';
+import { axisDecimals, stateTone } from './temporalChart.ts';
 import { formatEvidenceValue } from './parse.ts';
+import { formatPersianRangeString } from './persianDate.ts';
 
 interface TemporalLineChartProps {
   data: TemporalDatum[];
@@ -55,7 +56,8 @@ function ChartTooltip(tooltipProps: unknown): React.ReactElement | null {
   const datum = props.payload[0]?.payload;
   if (!datum) return null;
   const rows: Array<[string, string]> = [];
-  rows.push(['Period', datum.period]);
+  rows.push(['دوره (شمسی)', formatPersianRangeString(datum.period)]);
+  rows.push(['Period (ISO)', datum.period]);
   rows.push([
     'Value',
     datum.value === null ? 'No observation (gap)' : `${formatEvidenceValue(datum.value)} ${datum.unit}`,
@@ -118,6 +120,7 @@ export default function TemporalLineChart({
   baseline = null,
   ariaLabel,
 }: TemporalLineChartProps): React.ReactElement {
+  const decimals = axisDecimals(data.map((datum) => datum.value));
   return (
     <div dir="ltr" role="img" aria-label={ariaLabel}>
       <ResponsiveContainer width="100%" height={height}>
@@ -126,7 +129,8 @@ export default function TemporalLineChart({
           <XAxis dataKey="label" tick={{ fontSize: 12 }} />
           <YAxis
             tick={{ fontSize: 12 }}
-            tickFormatter={(value: number) => formatEvidenceValue(value, 1)}
+            tickFormatter={(value: number) => formatEvidenceValue(value, decimals)}
+            width={decimals > 2 ? 64 : 56}
             domain={['auto', 'auto']}
           />
           <Tooltip content={<ChartTooltip />} />

@@ -96,12 +96,36 @@ export default function SpatialSection({ spatial }: SpatialSectionProps) {
         <span className="card-title">🗺️ شبکه مکانی — Spatial Grid</span>
       </div>
       <div className="card-body">
+        {cells.length === 0 && gridRows === 0 && gridCols === 0 && (
+          <div className="info-banner spatial-unavailable" data-testid="spatial-unavailable">
+            <span>ℹ️</span>
+            <div>
+              <strong>
+                شبکه مکانی برای این درخواست محاسبه نشد — No spatial grid for this request
+              </strong>
+              <div>
+                A single point has no extent to divide into cells, so no grid,
+                per-cell observations or area summaries were produced. Nothing was
+                invented in their place; the area-based values above describe the
+                support window around the point instead. To see spatial variation,
+                submit a polygon.
+              </div>
+              {limitations.length > 0 && (
+                <div className="text-muted" style={{ marginTop: 4 }}>
+                  Backend reason: {limitations.join(' ')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="text-muted" style={{ fontSize: '0.8rem', marginBottom: 8 }}>
-          <span>
-            Grid {gridRows} × {gridCols} · {cells.length}{' '}
-            {cells.length === 1 ? 'cell' : 'cells'} · {observations.length}{' '}
-            observations
-          </span>
+          {(cells.length > 0 || gridRows > 0 || gridCols > 0) && (
+            <span>
+              Grid {gridRows} × {gridCols} · {cells.length}{' '}
+              {cells.length === 1 ? 'cell' : 'cells'} · {observations.length}{' '}
+              observations
+            </span>
+          )}
           {(spatial.window_start || spatial.window_end) && (
             <span>
               {' · '}
@@ -220,7 +244,7 @@ export default function SpatialSection({ spatial }: SpatialSectionProps) {
           <div className="empty-state" style={{ padding: '16px' }}>
             <div className="empty-state-desc">
               {cells.length === 0
-                ? 'No grid cells in this response.'
+                ? 'No grid cells in this response (see the explanation above).'
                 : 'No cells match the selected filters.'}
             </div>
           </div>
@@ -259,7 +283,8 @@ export default function SpatialSection({ spatial }: SpatialSectionProps) {
           </div>
         )}
 
-        {limitations.length > 0 && (
+        {limitations.length > 0 &&
+          !(cells.length === 0 && gridRows === 0 && gridCols === 0) && (
           <div className="text-muted" style={{ fontSize: '0.75rem', marginTop: 8 }}>
             {limitations.map((line, index) => (
               <div key={index}>{line}</div>

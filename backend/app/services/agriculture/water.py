@@ -43,6 +43,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.quality import (
     MODIS_THRESHOLDS,
     REANALYSIS_THRESHOLDS,
@@ -310,6 +311,9 @@ def _reduce_mod16(
     days; dividing its sum by eight would understate the daily rate by up
     to 37 percent for that period.
     """
+    # Reduce over the support region of the grid actually read, even when
+    # the calling metric's primary dataset is on a different grid.
+    context = scope_context_for_dataset(context, dataset_id)
     collection = (
         ee_module.ImageCollection(dataset_id)
         .filterDate(context.start_date, context.end_date)
@@ -1190,6 +1194,13 @@ class ERA5PotentialEvaporationMetric(Metric):
     @property
     def source_bands(self) -> Tuple[str, ...]:
         return ("potential_evaporation_sum",)
+
+    def metadata(self) -> dict:
+        metadata = super().metadata()
+        metadata["available"] = False
+        metadata["unavailable_code"] = self.unavailable_code
+        metadata["unavailable_reason"] = self.unavailable_reason
+        return metadata
 
     def compute(self, context: MetricContext) -> MetricResult:
         dataset = self.primary_dataset()

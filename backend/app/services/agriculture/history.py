@@ -145,6 +145,7 @@ __all__ = [
     "ALL_HISTORY_METRICS",
     "HISTORY_BASELINE_YEARS",
     "HISTORY_MIN_YEARS",
+    "generate_historical_comparison",
 ]
 
 
@@ -2851,3 +2852,607 @@ UNAVAILABLE_HISTORY_METRICS: Tuple[Metric, ...] = (
 ALL_HISTORY_METRICS: Tuple[Metric, ...] = (
     HISTORY_METRICS + UNAVAILABLE_HISTORY_METRICS
 )
+
+
+# ==========================================================================
+# 10-Year Same-Period Historical Comparison Service (Phase P-AGRI-HIST-10Y)
+# ==========================================================================
+
+import hashlib
+import json
+from datetime import datetime
+
+from app.schemas.agriculture import (
+    HistoricalComparisonRequest,
+    HistoricalComparisonResponse,
+    HistoricalMetricTrend,
+    HistoricalYearRecord,
+    PointGeometry,
+    PolygonGeometry,
+)
+from app.services.cache_service import cache_service
+from app.services.earth_engine import initialize_earth_engine
+
+HISTORICAL_CACHE_TTL = 43200
+
+HIST_METRIC_META: Dict[str, Dict[str, Any]] = {
+    "ndvi": {
+        "display_name": "NDVI (Vegetation Index)",
+        "display_name_fa": "شاخص پوشش گیاهی (NDVI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "evi": {
+        "display_name": "EVI (Enhanced Vegetation Index)",
+        "display_name_fa": "شاخص پوشش گیاهی پیشرفته (EVI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "ndre": {
+        "display_name": "NDRE (Red Edge Chlorophyll)",
+        "display_name_fa": "شاخص لبه قرمز کلروفیل (NDRE)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "savi": {
+        "display_name": "SAVI (Soil-Adjusted Vegetation Index)",
+        "display_name_fa": "شاخص تعدیل‌شده خاک (SAVI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "msavi": {
+        "display_name": "MSAVI (Modified Soil-Adjusted Index)",
+        "display_name_fa": "شاخص اصلاح‌شده خاک (MSAVI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "ndmi": {
+        "display_name": "NDMI (Canopy Moisture Index)",
+        "display_name_fa": "شاخص رطوبت کانوپی (NDMI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "ndwi": {
+        "display_name": "NDWI (Water Index)",
+        "display_name_fa": "شاخص محتوای آب (NDWI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": True,
+    },
+    "msi": {
+        "display_name": "MSI (Moisture Stress Index)",
+        "display_name_fa": "شاخص تنش رطوبتی (MSI)",
+        "unit": "index",
+        "dataset": "COPERNICUS/S2_SR_HARMONIZED",
+        "higher_is_better": False,  # Higher MSI means more moisture stress
+    },
+    "lst_day": {
+        "display_name": "Day Land Surface Temperature",
+        "display_name_fa": "دمای روزانه سطح زمین (LST)",
+        "unit": "°C",
+        "dataset": "MODIS/061/MOD11A2",
+        "higher_is_better": False,
+    },
+    "temperature_mean": {
+        "display_name": "Mean Air Temperature (2m)",
+        "display_name_fa": "میانگین دمای هوا (۲ متر)",
+        "unit": "°C",
+        "dataset": "ECMWF/ERA5_LAND/DAILY_AGGR",
+        "higher_is_better": None,
+    },
+    "precipitation": {
+        "display_name": "Total Precipitation",
+        "display_name_fa": "مجموع بارش",
+        "unit": "mm",
+        "dataset": "ECMWF/ERA5_LAND/DAILY_AGGR",
+        "higher_is_better": True,
+    },
+    "sar_vh": {
+        "display_name": "Sentinel-1 Radar VH Backscatter",
+        "display_name_fa": "پراکندگی راداری سنتینل-۱ (VH)",
+        "unit": "dB",
+        "dataset": "COPERNICUS/S1_GRD",
+        "higher_is_better": True,
+    },
+    "soil_moisture": {
+        "display_name": "Root-Zone Soil Moisture (0–100 cm)",
+        "display_name_fa": "رطوبت خاک ناحیه ریشه (۰ تا ۱۰۰ سانتی‌متر)",
+        "unit": "m³/m³",
+        "dataset": "ECMWF/ERA5_LAND/DAILY_AGGR",
+        "higher_is_better": True,
+    },
+}
+
+HIST_DOMAIN_METRICS: Dict[str, List[str]] = {
+    "vegetation": ["ndvi", "evi", "ndre", "savi", "msavi"],
+    "water": ["ndmi", "ndwi", "msi"],
+    "stress": ["msi", "ndmi", "lst_day"],
+    "thermal": ["lst_day", "temperature_mean"],
+    "climate": ["temperature_mean", "precipitation"],
+    "radar": ["sar_vh"],
+    "phenology": ["ndvi", "ndre"],
+    "soil": ["soil_moisture"],
+    "history": ["ndvi", "ndmi", "ndre", "msi"],
+}
+
+
+def _build_hist_cache_key(request: HistoricalComparisonRequest, metrics: List[str]) -> str:
+    """Deterministic MD5 cache key for historical requests."""
+    geom_dict = (
+        request.geometry.model_dump()
+        if hasattr(request.geometry, "model_dump")
+        else dict(request.geometry)
+    )
+    payload = {
+        "geom": geom_dict,
+        "start": request.start_date,
+        "end": request.end_date,
+        "domain": request.domain,
+        "metrics": sorted(metrics),
+        "cloud": request.cloud_max_percent,
+    }
+    raw = json.dumps(payload, sort_keys=True)
+    return f"agri:hist10y:{hashlib.md5(raw.encode('utf-8')).hexdigest()}"
+
+
+def _format_same_period_label(start_d: date, end_d: date) -> Tuple[str, str]:
+    """Format same-period labels in English and Jalali."""
+    months_en = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    en_label = f"{months_en[start_d.month - 1]} {start_d.day} – {months_en[end_d.month - 1]} {end_d.day}"
+    try:
+        from app.utils.dates import gregorian_to_jalali
+        j_start = gregorian_to_jalali(start_d)
+        j_end = gregorian_to_jalali(end_d)
+        fa_months = [
+            "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+            "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
+        ]
+        fa_label = f"{j_start.day} {fa_months[j_start.month - 1]} تا {j_end.day} {fa_months[j_end.month - 1]}"
+    except Exception:
+        fa_label = f"{start_d.month}/{start_d.day} تا {end_d.month}/{end_d.day}"
+    return fa_label, en_label
+
+
+def _compute_hist_ee_geometry(request: HistoricalComparisonRequest, ee: Any) -> Tuple[Any, float]:
+    """Convert request geometry to EE geometry and compute scale."""
+    geom = request.geometry
+    if isinstance(geom, PointGeometry) or (isinstance(geom, dict) and geom.get("type") == "Point"):
+        coords = geom.coordinates if hasattr(geom, "coordinates") else geom["coordinates"]
+        lon, lat = coords[0], coords[1]
+        region = ee.Geometry.Point([lon, lat]).buffer(60)
+        return region, 10.0
+    elif isinstance(geom, PolygonGeometry) or (isinstance(geom, dict) and geom.get("type") == "Polygon"):
+        coords = geom.coordinates if hasattr(geom, "coordinates") else geom["coordinates"]
+        return ee.Geometry.Polygon(coords), 10.0
+    else:
+        coords_raw = geom.coordinates if hasattr(geom, "coordinates") else geom.get("coordinates", [0, 0])
+        if isinstance(coords_raw[0], (int, float)):
+            region = ee.Geometry.Point([coords_raw[0], coords_raw[1]]).buffer(60)
+            return region, 10.0
+        return ee.Geometry.Polygon(coords_raw), 10.0
+
+
+def _calculate_10y_trend(
+    years_data: List[Tuple[int, Optional[float]]],
+    meta: Dict[str, Any],
+) -> HistoricalMetricTrend:
+    """Calculate Theil-Sen trend and baseline comparison for a metric."""
+    metric_key = meta.get("metric", "")
+    valid_points = [(yr, val) for yr, val in years_data if val is not None and not math.isnan(val)]
+
+    # Needs at least 3 years to compute any defensible trend
+    if len(valid_points) < 3:
+        current_val = years_data[0][1] if years_data and years_data[0][1] is not None else None
+        return HistoricalMetricTrend(
+            metric_key=metric_key,
+            display_name=meta.get("display_name", metric_key),
+            display_name_fa=meta.get("display_name_fa", metric_key),
+            unit=meta.get("unit", ""),
+            current_value=current_val,
+            trend_direction="insufficient_evidence",
+            trend_label_fa="شواهد ناکافی (کمتر از ۳ سال داده)",
+            trend_label_en="Insufficient evidence (< 3 observations)",
+            sufficiency="insufficient",
+            scientific_summary_fa="تعداد مشاهدات تاریخی برای تعیین روند معتبر کافی نیست.",
+            scientific_summary_en="Historical observations are insufficient to characterize a trend.",
+        )
+
+    sorted_pts = sorted(valid_points, key=lambda x: x[0])
+    years = [p[0] for p in sorted_pts]
+    values = [p[1] for p in sorted_pts]
+
+    current_yr = years_data[0][0]
+    hist_values = [p[1] for p in sorted_pts if p[0] != current_yr]
+    current_val = next((val for yr, val in years_data if yr == current_yr and val is not None), None)
+
+    median_val = float(np.median(hist_values)) if hist_values else (float(np.median(values)) if values else None)
+    mean_val = float(np.mean(hist_values)) if hist_values else (float(np.mean(values)) if values else None)
+
+    delta = None
+    if current_val is not None and median_val is not None:
+        delta = round(current_val - median_val, 4)
+
+    days_mock = [date(y, 1, 1) for y in years]
+    daily_slope = theil_sen_slope(days_mock, values)
+    yearly_slope = (daily_slope * 365.25) if daily_slope is not None else None
+
+    val_spread = float(np.std(values)) if len(values) >= 2 else 0.0
+    higher_is_better = meta.get("higher_is_better", True)
+
+    if yearly_slope is None or val_spread == 0:
+        trend_dir = "stable"
+        label_fa = "پایدار"
+        label_en = "Stable"
+    else:
+        total_span = (years[-1] - years[0])
+        implied_shift = abs(yearly_slope * total_span)
+        if implied_shift < 0.15 * val_spread:
+            trend_dir = "stable"
+            label_fa = "پایدار"
+            label_en = "Stable"
+        elif yearly_slope > 0:
+            if higher_is_better is True:
+                trend_dir = "improving"
+                label_fa = "رو به بهبود"
+                label_en = "Improving"
+            elif higher_is_better is False:
+                trend_dir = "declining"
+                label_fa = "افزایش تنش (نامساعد)"
+                label_en = "Increasing stress"
+            else:
+                trend_dir = "increasing"
+                label_fa = "افزایشی"
+                label_en = "Increasing"
+        else:
+            if higher_is_better is True:
+                trend_dir = "declining"
+                label_fa = "رو به کاهش"
+                label_en = "Declining"
+            elif higher_is_better is False:
+                trend_dir = "improving"
+                label_fa = "کاهش تنش (بهبود)"
+                label_en = "Decreasing stress"
+            else:
+                trend_dir = "decreasing"
+                label_fa = "کاهشی"
+                label_en = "Decreasing"
+
+    if delta is not None and median_val is not None:
+        if abs(delta) < 0.01:
+            comparison_fa = "نزدیک به میانه ۱۰ ساله"
+            comparison_en = "near the 10-year historical median"
+        elif delta > 0:
+            comparison_fa = f"{abs(delta):.3f} بالاتر از میانه ۱۰ ساله"
+            comparison_en = f"{abs(delta):.3f} above the 10-year median"
+        else:
+            comparison_fa = f"{abs(delta):.3f} پایین‌تر از میانه ۱۰ ساله"
+            comparison_en = f"{abs(delta):.3f} below the 10-year median"
+    else:
+        comparison_fa = "پایه تاریخی ناکافی"
+        comparison_en = "insufficient historical baseline"
+
+    curr_val_str = f"{current_val:.3f}" if current_val is not None else "—"
+    summary_fa = (
+        f"روند ۱۰ ساله دوره مشابه: {label_fa}. "
+        f"مقدار دوره جاری ({curr_val_str}) {comparison_fa} است."
+    )
+    summary_en = (
+        f"10-year same-period trend: {label_en}. "
+        f"Current period value ({curr_val_str}) is {comparison_en}."
+    )
+
+    return HistoricalMetricTrend(
+        metric_key=metric_key,
+        display_name=meta.get("display_name", metric_key),
+        display_name_fa=meta.get("display_name_fa", metric_key),
+        unit=meta.get("unit", ""),
+        current_value=round(current_val, 4) if current_val is not None else None,
+        baseline_median=round(median_val, 4) if median_val is not None else None,
+        baseline_mean=round(mean_val, 4) if mean_val is not None else None,
+        delta_from_baseline=delta,
+        trend_direction=trend_dir,
+        trend_slope_per_year=round(yearly_slope, 5) if yearly_slope is not None else None,
+        trend_label_fa=label_fa,
+        trend_label_en=label_en,
+        sufficiency="sufficient" if len(valid_points) >= 6 else "partial",
+        scientific_summary_fa=summary_fa,
+        scientific_summary_en=summary_en,
+    )
+
+
+def generate_historical_comparison(
+    request: HistoricalComparisonRequest,
+) -> HistoricalComparisonResponse:
+    """Generate 10-year same-period historical comparison using real GEE satellite data.
+
+    Preserves exact calendar windows across the preceding 10 years.
+    Never fabricates missing years or values.
+    """
+    try:
+        start_d = datetime.strptime(request.start_date, "%Y-%m-%d").date()
+        end_d = datetime.strptime(request.end_date, "%Y-%m-%d").date()
+    except Exception as exc:
+        raise ValueError(f"Invalid date format: {exc}")
+
+    if start_d >= end_d:
+        raise ValueError("start_date must be strictly before end_date")
+
+    windows: List[Tuple[int, date, date]] = [(0, start_d, end_d)]
+    for y in range(1, 10):
+        try:
+            w_s, w_e = shift_window_years(start_d, end_d, y)
+            windows.append((y, w_s, w_e))
+        except Exception as exc:
+            logger.warning(f"Failed to shift window by {y} years: {exc}")
+
+    fa_label, en_label = _format_same_period_label(start_d, end_d)
+
+    domain_key = (request.domain or "vegetation").lower()
+    if request.metric_keys:
+        metrics_to_run = [m for m in request.metric_keys if m in HIST_METRIC_META]
+    elif domain_key in HIST_DOMAIN_METRICS:
+        metrics_to_run = HIST_DOMAIN_METRICS[domain_key]
+    else:
+        metrics_to_run = HIST_DOMAIN_METRICS["vegetation"]
+
+    if not metrics_to_run:
+        metrics_to_run = ["ndvi"]
+
+    limitations = [
+        "داده‌های تاریخی بازتاب‌دهنده میانگین‌های ماهواره‌ای دوره مشابه در سال‌های گذشته هستند و علت بیولوژیکی تغییرات را اثبات نمی‌کنند.",
+        "در سال‌های با پوشش ابری بالا یا عدم حضور ماهواره (پیش از سال ۲۰۱۷ در برخی سنجنده‌ها)، داده به صورت صریح ناموجود (Unavailable) گزارش شده است.",
+    ]
+    if domain_key == "soil":
+        limitations.append("⛔ داده‌های شیمیایی خاک (شوری، عناصر، pH) در داده‌های ماهواره‌ای تاریخی موجود نیست و نیازمند آزمون خاک است.")
+    if domain_key == "productivity":
+        limitations.append("⛔ برآورد تناژ یا عملکرد محصول در داده‌های تاریخی کالیبره نشده و غیرفعال است.")
+
+    cache_key = _build_hist_cache_key(request, metrics_to_run)
+    try:
+        cached = cache_service.get(cache_key)
+        if cached:
+            logger.info(f"Historical comparison cache hit for {cache_key}")
+            return HistoricalComparisonResponse.model_validate(cached)
+    except Exception as exc:
+        logger.warning(f"Cache lookup failed: {exc}")
+
+    try:
+        initialize_earth_engine()
+        import ee
+    except Exception as exc:
+        logger.error(f"Earth Engine init failed: {exc}")
+        records = [
+            HistoricalYearRecord(
+                year=w_s.year,
+                start_date=w_s.isoformat(),
+                end_date=w_e.isoformat(),
+                status="unavailable",
+                scene_count=0,
+                metrics={m: None for m in metrics_to_run},
+            )
+            for idx, w_s, w_e in windows
+        ]
+        return HistoricalComparisonResponse(
+            requested_period={"start_date": request.start_date, "end_date": request.end_date},
+            same_period_label_fa=fa_label,
+            same_period_label_en=en_label,
+            domain=domain_key,
+            available_metrics=metrics_to_run,
+            years=records,
+            trends={},
+            limitations=["Earth Engine service unavailable."],
+        )
+
+    region, scale = _compute_hist_ee_geometry(request, ee)
+
+    s2_metrics = [m for m in metrics_to_run if HIST_METRIC_META[m]["dataset"] == "COPERNICUS/S2_SR_HARMONIZED"]
+    other_metrics = [m for m in metrics_to_run if HIST_METRIC_META[m]["dataset"] != "COPERNICUS/S2_SR_HARMONIZED"]
+
+    year_eval_dict = {}
+
+    for idx, w_s, w_e in windows:
+        yr_key = str(w_s.year)
+        w_dict = {}
+
+        if s2_metrics:
+            col = (
+                ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                .filterBounds(region)
+                .filterDate(w_s.isoformat(), w_e.isoformat())
+                .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", request.cloud_max_percent))
+            )
+            cnt = col.size()
+            w_dict["s2_count"] = cnt
+
+            def add_all_indices(img: Any) -> Any:
+                ndvi = img.normalizedDifference(["B8", "B4"]).rename("ndvi")
+                ndmi = img.normalizedDifference(["B8", "B11"]).rename("ndmi")
+                ndwi = img.normalizedDifference(["B3", "B8"]).rename("ndwi")
+                ndre = img.normalizedDifference(["B8A", "B5"]).rename("ndre")
+                msi = img.select("B11").divide(img.select("B8")).rename("msi")
+                evi = img.expression(
+                    "2.5 * ((b('B8') - b('B4')) / (b('B8') + 6 * b('B4') - 7.5 * b('B2') + 1))"
+                ).rename("evi")
+                savi = img.expression(
+                    "((b('B8') - b('B4')) / (b('B8') + b('B4') + 0.5)) * 1.5"
+                ).rename("savi")
+                msavi = img.expression(
+                    "(2 * b('B8') + 1 - sqrt(pow((2 * b('B8') + 1), 2) - 8 * (b('B8') - b('B4')))) / 2"
+                ).rename("msavi")
+                return img.addBands([ndvi, ndmi, ndwi, ndre, msi, evi, savi, msavi])
+
+            masked_zeros = ee.Image.constant(0).mask(ee.Image.constant(0))
+            dummy_img = ee.Image([masked_zeros.rename(m) for m in s2_metrics])
+            med = ee.Image(
+                ee.Algorithms.If(
+                    cnt.gt(0),
+                    col.map(add_all_indices).median(),
+                    dummy_img,
+                )
+            )
+            reduced = med.select(s2_metrics).reduceRegion(
+                reducer=ee.Reducer.mean(),
+                geometry=region,
+                scale=scale,
+                bestEffort=True,
+                maxPixels=1000000,
+            )
+            for m in s2_metrics:
+                w_dict[m] = reduced.get(m)
+
+        for m in other_metrics:
+            if m == "lst_day":
+                m_col = (
+                    ee.ImageCollection("MODIS/061/MOD11A2")
+                    .filterBounds(region)
+                    .filterDate(w_s.isoformat(), w_e.isoformat())
+                )
+                m_cnt = m_col.size()
+                m_dummy = ee.Image.constant(0).mask(ee.Image.constant(0)).rename("LST_Day_1km")
+                m_img = ee.Image(
+                    ee.Algorithms.If(
+                        m_cnt.gt(0),
+                        m_col.select("LST_Day_1km").mean().multiply(0.02).subtract(273.15),
+                        m_dummy,
+                    )
+                )
+                w_dict[m] = m_img.reduceRegion(
+                    reducer=ee.Reducer.mean(), geometry=region, scale=1000
+                ).get("LST_Day_1km")
+            elif m == "temperature_mean":
+                c_col = (
+                    ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+                    .filterBounds(region)
+                    .filterDate(w_s.isoformat(), w_e.isoformat())
+                )
+                c_img = c_col.select("temperature_2m").mean().subtract(273.15)
+                w_dict[m] = c_img.reduceRegion(
+                    reducer=ee.Reducer.mean(), geometry=region, scale=11132
+                ).get("temperature_2m")
+            elif m == "precipitation":
+                p_col = (
+                    ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+                    .filterBounds(region)
+                    .filterDate(w_s.isoformat(), w_e.isoformat())
+                )
+                p_img = p_col.select("total_precipitation_sum").sum().multiply(1000.0)
+                w_dict[m] = p_img.reduceRegion(
+                    reducer=ee.Reducer.mean(), geometry=region, scale=11132
+                ).get("total_precipitation_sum")
+            elif m == "sar_vh":
+                s1_col = (
+                    ee.ImageCollection("COPERNICUS/S1_GRD")
+                    .filterBounds(region)
+                    .filterDate(w_s.isoformat(), w_e.isoformat())
+                    .filter(ee.Filter.eq("instrumentMode", "IW"))
+                )
+                s1_cnt = s1_col.size()
+                s1_dummy = ee.Image.constant(0).mask(ee.Image.constant(0)).rename("VH")
+                s1_img = ee.Image(
+                    ee.Algorithms.If(
+                        s1_cnt.gt(0),
+                        s1_col.select("VH").mean(),
+                        s1_dummy,
+                    )
+                )
+                w_dict[m] = s1_img.reduceRegion(
+                    reducer=ee.Reducer.mean(), geometry=region, scale=10
+                ).get("VH")
+            elif m == "soil_moisture":
+                sm_col = (
+                    ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
+                    .filterBounds(region)
+                    .filterDate(w_s.isoformat(), w_e.isoformat())
+                )
+                # Weighted root-zone average 0-100 cm: layer 1 (7cm) + layer 2 (21cm) + layer 3 (72cm)
+                sm_img = sm_col.select([
+                    "volumetric_soil_water_layer_1",
+                    "volumetric_soil_water_layer_2",
+                    "volumetric_soil_water_layer_3",
+                ]).mean()
+                rz_expr = sm_img.expression(
+                    "(l1 * 7.0 + l2 * 21.0 + l3 * 72.0) / 100.0",
+                    {
+                        "l1": sm_img.select("volumetric_soil_water_layer_1"),
+                        "l2": sm_img.select("volumetric_soil_water_layer_2"),
+                        "l3": sm_img.select("volumetric_soil_water_layer_3"),
+                    },
+                ).rename("soil_moisture")
+                w_dict[m] = rz_expr.reduceRegion(
+                    reducer=ee.Reducer.first(), geometry=region.centroid(1), scale=11132
+                ).get("soil_moisture")
+
+        year_eval_dict[yr_key] = ee.Dictionary(w_dict)
+
+    try:
+        combined_dict = ee.Dictionary(year_eval_dict).getInfo()
+    except Exception as exc:
+        logger.error(f"GEE batched evaluation failed: {exc}")
+        combined_dict = {}
+
+    year_records: List[HistoricalYearRecord] = []
+    metric_series: Dict[str, List[Tuple[int, Optional[float]]]] = {m: [] for m in metrics_to_run}
+
+    for idx, w_s, w_e in windows:
+        yr = w_s.year
+        yr_key = str(yr)
+        raw_vals = combined_dict.get(yr_key, {})
+        scene_count = int(raw_vals.get("s2_count", 0))
+
+        record_metrics: Dict[str, Optional[float]] = {}
+        for m in metrics_to_run:
+            val = raw_vals.get(m)
+            if val is not None and isinstance(val, (int, float)) and not math.isnan(val):
+                record_metrics[m] = round(float(val), 4)
+            else:
+                record_metrics[m] = None
+            metric_series[m].append((yr, record_metrics[m]))
+
+        has_any_val = any(v is not None for v in record_metrics.values())
+        if idx == 0:
+            status = "current"
+        elif has_any_val:
+            status = "available" if scene_count >= 5 else "partial"
+        else:
+            status = "unavailable"
+
+        year_records.append(
+            HistoricalYearRecord(
+                year=yr,
+                start_date=w_s.isoformat(),
+                end_date=w_e.isoformat(),
+                status=status,
+                scene_count=scene_count,
+                metrics=record_metrics,
+            )
+        )
+
+    trends: Dict[str, HistoricalMetricTrend] = {}
+    for m in metrics_to_run:
+        meta = {**HIST_METRIC_META[m], "metric": m}
+        trends[m] = _calculate_10y_trend(metric_series[m], meta)
+
+    response = HistoricalComparisonResponse(
+        requested_period={"start_date": request.start_date, "end_date": request.end_date},
+        same_period_label_fa=fa_label,
+        same_period_label_en=en_label,
+        domain=domain_key,
+        available_metrics=metrics_to_run,
+        years=year_records,
+        trends=trends,
+        limitations=limitations,
+    )
+
+    try:
+        cache_service.set(cache_key, response.model_dump())
+    except Exception as exc:
+        logger.warning(f"Failed to cache historical comparison: {exc}")
+
+    return response
+

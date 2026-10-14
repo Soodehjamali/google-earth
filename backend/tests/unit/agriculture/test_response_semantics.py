@@ -401,7 +401,7 @@ class TestSynthesisPreserved:
         )
 
     def test_default_rule_count_untouched(self) -> None:
-        assert len(DEFAULT_RULES) == 18
+        assert len(DEFAULT_RULES) == 24  # 18 baseline + 6 P-AGRI-1 regime-aware rules
 
     def test_legacy_to_dict_fields_present_and_new_fields_additive(self) -> None:
         engine = SynthesisEngine()

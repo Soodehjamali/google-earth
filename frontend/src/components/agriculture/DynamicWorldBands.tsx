@@ -7,7 +7,7 @@ import {
   isDynamicWorldMetric,
 } from './evidenceDetails.ts';
 
-const BAND_LABELS: Record<string, string> = {
+export const BAND_LABELS: Record<string, string> = {
   water: 'Water',
   trees: 'Trees',
   grass: 'Grass',

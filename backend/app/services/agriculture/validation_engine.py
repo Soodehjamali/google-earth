@@ -36,7 +36,9 @@ from app.services.agriculture.ground_truth import (
     STATUS_INSUFFICIENT_ANALYSIS,
     STATUS_INSUFFICIENT_REFERENCE,
     STATUS_MATCHED,
+    STATUS_MISMATCHED,
     STATUS_NOT_VALIDATED,
+    STATUS_UNAVAILABLE,
     GroundTruthObservation,
     ValidationTarget,
     build_target_id,
@@ -419,6 +421,17 @@ def _verbatim_provenance(payload: Mapping[str, Any], keys: Sequence[str]) -> Dic
     return {key: payload[key] for key in keys if key in payload and payload[key] is not None}
 
 
+def _normalize_iso_date(value: Any) -> str:
+    """Safely convert date, datetime, or date string to YYYY-MM-DD."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()[:10]
+    if isinstance(value, str):
+        return value[:10]
+    return ""
+
+
 def from_scalar_evidence(item: Mapping[str, Any], domain: str = "") -> NormalizedAnalysis:
     """Adapt an evidence-item-shaped record (scalar evidence, §7A)."""
     if not isinstance(item, Mapping):
@@ -431,12 +444,14 @@ def from_scalar_evidence(item: Mapping[str, Any], domain: str = "") -> Normalize
             kind="scalar_evidence", supported=False, reason="missing metric_key"
         )
     resolved_domain = domain if isinstance(domain, str) and domain else item.get("domain", "")
+    cell = item.get("cell_id")
     return NormalizedAnalysis(
         kind="scalar_evidence",
         metric_key=metric,
         domain=resolved_domain if isinstance(resolved_domain, str) else "",
-        window_start=item.get("temporal_start", "") if isinstance(item.get("temporal_start", ""), str) else "",
-        window_end=item.get("temporal_end", "") if isinstance(item.get("temporal_end", ""), str) else "",
+        window_start=_normalize_iso_date(item.get("temporal_start")),
+        window_end=_normalize_iso_date(item.get("temporal_end")),
+        cell_id=cell if isinstance(cell, str) and cell else None,
         value=item.get("value"),
         unit=item.get("unit", "") if isinstance(item.get("unit", ""), str) else "",
         state=item.get("status") if isinstance(item.get("status"), str) else None,
@@ -458,10 +473,9 @@ def from_temporal_point(
         return NormalizedAnalysis(
             kind="temporal_point", supported=False, reason="missing metric_key"
         )
-    window_start = point.get("window_start", "")
-    window_end = point.get("window_end", "")
-    if not isinstance(window_start, str) or not window_start \
-            or not isinstance(window_end, str) or not window_end:
+    window_start = _normalize_iso_date(point.get("window_start"))
+    window_end = _normalize_iso_date(point.get("window_end"))
+    if not window_start or not window_end:
         return NormalizedAnalysis(
             kind="temporal_point", supported=False, reason="missing window"
         )
@@ -491,14 +505,13 @@ def from_cell_observation(observation: Mapping[str, Any]) -> NormalizedAnalysis:
             kind="cell_observation", supported=False, reason="unreadable cell observation"
         )
     metric = observation.get("metric_key", "")
-    window_start = observation.get("window_start", "")
-    window_end = observation.get("window_end", "")
+    window_start = _normalize_iso_date(observation.get("window_start"))
+    window_end = _normalize_iso_date(observation.get("window_end"))
     if not isinstance(metric, str) or not metric:
         return NormalizedAnalysis(
             kind="cell_observation", supported=False, reason="missing metric_key"
         )
-    if not isinstance(window_start, str) or not window_start \
-            or not isinstance(window_end, str) or not window_end:
+    if not window_start or not window_end:
         return NormalizedAnalysis(
             kind="cell_observation", supported=False, reason="missing window"
         )
@@ -656,6 +669,10 @@ class ValidationResult:
     metric_relationship: str = ""
     states_agree: Optional[bool] = None
     values_comparable: bool = False
+    difference: Optional[float] = None
+    relative_difference_percent: Optional[float] = None
+    validation_status_code: Optional[str] = None
+    sample_count: int = 1
     status: str = STATUS_NOT_VALIDATED
     linkage_reason: str = ""
     provenance: Dict[str, Any] = field(default_factory=dict)
@@ -687,6 +704,10 @@ class ValidationResult:
             "metric_relationship": self.metric_relationship,
             "states_agree": self.states_agree,
             "values_comparable": self.values_comparable,
+            "difference": self.difference,
+            "relative_difference_percent": self.relative_difference_percent,
+            "validation_status_code": self.validation_status_code,
+            "sample_count": self.sample_count,
             "status": self.status,
             "linkage_reason": self.linkage_reason,
             "contract_version": GROUND_TRUTH_VERSION,
@@ -722,6 +743,10 @@ class ValidationResult:
             metric_relationship=str(payload.get("metric_relationship", "")),
             states_agree=payload.get("states_agree"),
             values_comparable=bool(payload.get("values_comparable", False)),
+            difference=payload.get("difference"),
+            relative_difference_percent=payload.get("relative_difference_percent"),
+            validation_status_code=payload.get("validation_status_code"),
+            sample_count=int(payload.get("sample_count", 1)),
             status=str(payload.get("status", STATUS_NOT_VALIDATED)),
             linkage_reason=str(payload.get("linkage_reason", "")),
             provenance=dict(payload.get("provenance", {})),
@@ -768,6 +793,45 @@ def make_result(
         {k: v for k, v in analysis.provenance.items() if k not in provenance}
     )
 
+    difference: Optional[float] = None
+    relative_difference_percent: Optional[float] = None
+    validation_status_code: Optional[str] = None
+
+    if (
+        assessment.values_comparable
+        and isinstance(analysis.value, (int, float))
+        and isinstance(observation.value, (int, float))
+    ):
+        diff = float(analysis.value) - float(observation.value)
+        difference = round(diff, 4)
+        if abs(float(observation.value)) > 1e-6:
+            relative_difference_percent = round((abs(diff) / abs(float(observation.value))) * 100.0, 2)
+        else:
+            relative_difference_percent = 0.0
+
+    if status == STATUS_MATCHED:
+        if relative_difference_percent is not None:
+            if relative_difference_percent <= 15.0:
+                validation_status_code = "validated"
+            elif relative_difference_percent <= 35.0:
+                validation_status_code = "partially_validated"
+            else:
+                validation_status_code = "divergent"
+        elif assessment.states_agree is True:
+            validation_status_code = "validated"
+        elif assessment.states_agree is False:
+            validation_status_code = "divergent"
+        else:
+            validation_status_code = "partially_validated"
+    elif status in (STATUS_INSUFFICIENT_REFERENCE, STATUS_INSUFFICIENT_ANALYSIS, STATUS_NOT_VALIDATED):
+        validation_status_code = "insufficient_evidence"
+    elif status == STATUS_UNAVAILABLE:
+        validation_status_code = "unavailable"
+    elif status == STATUS_MISMATCHED:
+        validation_status_code = "divergent"
+    else:
+        validation_status_code = "insufficient_evidence"
+
     return ValidationResult(
         validation_id=build_validation_id(target.target_id),
         target_id=target.target_id,
@@ -793,6 +857,9 @@ def make_result(
         metric_relationship=metric_relationship,
         states_agree=assessment.states_agree,
         values_comparable=assessment.values_comparable,
+        difference=difference,
+        relative_difference_percent=relative_difference_percent,
+        validation_status_code=validation_status_code,
         status=status,
         linkage_reason=target.linkage_reason
         if relationship_note == target.relationship

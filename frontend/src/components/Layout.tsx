@@ -48,6 +48,7 @@ const navItems: NavEntry[] = [
       { path: '/agriculture/stress-irrigation', label: 'تنش و آبیاری', labelEn: 'Stress & Irrigation', icon: '🚿' },
       { path: '/agriculture/terrain', label: 'توپوگرافی', labelEn: 'Terrain', icon: '⛰️' },
       { path: '/agriculture/history', label: 'تاریخچه', labelEn: 'History', icon: '🕓' },
+      { path: '/agriculture/pest-disease', label: 'پایش آفت، بیماری و اعتبارسنجی', labelEn: 'Pest/Disease & Ground Truth', icon: '🔬' },
     ],
   },
   { path: '/historical', label: 'تحلیل تاریخی', labelEn: 'Historical Analysis', icon: '📈' },
@@ -72,11 +73,24 @@ export default function Layout({ children }: LayoutProps) {
         <nav className="sidebar" aria-label="Main navigation">
           <ul className="nav-list">
             {navItems.map((item) => {
+              let storedAnalysisId: string | null = null;
+              try {
+                storedAnalysisId = localStorage.getItem('active_agriculture_analysis_id');
+              } catch {
+                storedAnalysisId = null;
+              }
+              const analysisId = new URLSearchParams(location.search).get('analysis_id') || storedAnalysisId;
+
               if (!item.children) {
+                const itemTo =
+                  analysisId && (item.path === '/agriculture' || item.path === '/reports')
+                    ? `${item.path}?analysis_id=${encodeURIComponent(analysisId)}`
+                    : item.path;
+
                 return (
                   <li key={item.path}>
                     <NavLink
-                      to={item.path}
+                      to={itemTo}
                       className={({ isActive }) =>
                         `nav-link ${isActive ? 'active' : ''}`
                       }
@@ -89,17 +103,22 @@ export default function Layout({ children }: LayoutProps) {
                       </div>
                     </NavLink>
                   </li>
-                )
+                );
               }
 
               const groupActive =
                 location.pathname === item.path ||
-                location.pathname.startsWith(`${item.path}/`)
+                location.pathname.startsWith(`${item.path}/`);
+
+              const parentTo =
+                analysisId && item.path === '/agriculture'
+                  ? `${item.path}?analysis_id=${encodeURIComponent(analysisId)}`
+                  : item.path;
 
               return (
                 <li key={item.path} className={`nav-group ${groupActive ? 'nav-group-active' : ''}`}>
                   <NavLink
-                    to={item.path}
+                    to={parentTo}
                     end
                     className={({ isActive }) =>
                       `nav-link nav-group-link ${isActive || groupActive ? 'active' : ''}`
@@ -112,26 +131,33 @@ export default function Layout({ children }: LayoutProps) {
                     </div>
                   </NavLink>
                   <ul className="nav-sublist" aria-label={item.labelEn}>
-                    {item.children.map((child) => (
-                      <li key={child.path}>
-                        <NavLink
-                          to={child.path}
-                          end={child.end}
-                          className={({ isActive }) =>
-                            `nav-link nav-sublink ${isActive ? 'active' : ''}`
-                          }
-                        >
-                          <span className="nav-icon">{child.icon}</span>
-                          <div className="nav-text">
-                            <span className="nav-label-fa">{child.label}</span>
-                            <span className="nav-label-en">{child.labelEn}</span>
-                          </div>
-                        </NavLink>
-                      </li>
-                    ))}
+                    {item.children.map((child) => {
+                      const childTo =
+                        analysisId && child.path.startsWith('/agriculture')
+                          ? `${child.path}?analysis_id=${encodeURIComponent(analysisId)}`
+                          : child.path;
+
+                      return (
+                        <li key={child.path}>
+                          <NavLink
+                            to={childTo}
+                            end={child.end}
+                            className={({ isActive }) =>
+                              `nav-link nav-sublink ${isActive ? 'active' : ''}`
+                            }
+                          >
+                            <span className="nav-icon">{child.icon}</span>
+                            <div className="nav-text">
+                              <span className="nav-label-fa">{child.label}</span>
+                              <span className="nav-label-en">{child.labelEn}</span>
+                            </div>
+                          </NavLink>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </li>
-              )
+              );
             })}
           </ul>
         </nav>

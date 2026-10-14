@@ -478,6 +478,14 @@ def evaluate_cell(
         context,
         geometry=cell_geometry,
         geometry_key=cell_cache_key(context, cell_id),
+        # The cell, not the request, is now the geometry under test, so
+        # the Point support policy must not re-scope this context back
+        # to the parent's support region.
+        requested_geometry=None,
+        original_geometry=cell_geometry,
+        support_plan=None,
+        support_spec=None,
+        support_log=None,
     )
     try:
         result = metric_cls().compute(sub_context)

@@ -99,6 +99,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.quality import (
     QualityThresholds,
     assess_quality,
@@ -427,6 +428,10 @@ def _reduce_soilgrids_layers(
         able to see that a layer is missing in order to refuse the
         aggregate.
     """
+    # SoilGrids is a 250 m grid. A derived metric whose primary dataset is
+    # point-queryable (SMAP L4) must still reduce this layer over a support
+    # region, never over the bare Point.
+    context = scope_context_for_dataset(context, SOILGRIDS)
     dataset = get_dataset(SOILGRIDS)
     bands = list(layer_bands)
 

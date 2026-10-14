@@ -503,3 +503,37 @@ class TestSerialization:
         assert result.target_id == target.target_id
         assert result.status == target.status
         assert result.linkage_reason == target.linkage_reason
+
+    def test_from_scalar_evidence_with_date_objects(self):
+        from datetime import date
+        raw_evidence = {
+            "metric_key": "ndvi",
+            "temporal_start": date(2024, 5, 1),
+            "temporal_end": date(2024, 5, 31),
+            "value": 0.35,
+            "unit": "index",
+            "cell_id": "r1c1",
+            "status": "available",
+        }
+        normalized = from_scalar_evidence(raw_evidence, domain="vegetation")
+        assert normalized.window_start == "2024-05-01"
+        assert normalized.window_end == "2024-05-31"
+        assert normalized.cell_id == "r1c1"
+
+        gt_raw = _raw(
+            observed_on="2024-05-15",
+            window_start="2024-05-01",
+            window_end="2024-05-31",
+            metric_key="ndvi",
+            value=0.30,
+            unit="index",
+            cell_id="r1c1",
+        )
+        collection = _collection(gt_raw)
+        report = validate([normalized], collection)
+        assert len(report.results) == 1
+        res = report.results[0]
+        assert res.status == STATUS_MATCHED
+        assert res.difference == 0.05
+        assert res.sample_count == 1
+        assert res.validation_status_code == "partially_validated"

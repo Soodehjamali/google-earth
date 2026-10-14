@@ -1,5 +1,6 @@
 import type { TemporalProfilePoint } from '../../types/index.ts';
 import { asArray, asRecord, isFiniteNumber } from './parse.ts';
+import { profileFor } from './temporalChart.ts';
 
 /**
  * Year-over-year grouping over backend monthly profile points (P1).
@@ -138,9 +139,7 @@ export function metricProfileOf(
 } | null {
   const bag = asRecord(temporal);
   if (!bag) return null;
-  const profiles = asRecord(bag.profiles);
-  if (!profiles) return null;
-  const profile = asRecord(profiles[metricKey]);
+  const profile = profileFor(temporal, metricKey);
   if (!profile) return null;
   const points = asArray(profile.points)
     .map((entry) => asRecord(entry))
@@ -161,14 +160,29 @@ export function metricProfileOf(
   return { points, unit };
 }
 
+/** All ten monthly profile metrics supported by the engine. */
+export const ALL_TEMPORAL_METRICS = [
+  'ndvi',
+  'ndmi',
+  'ndre',
+  'msi',
+  'vv',
+  'vh',
+  'vh_vv',
+  'rvi',
+  'land_surface_temperature_day',
+  'temperature_mean',
+];
+
 /**
- * Comparison metrics carrying at least one finite backend point, in
- * preferred order. Only these keys are offered by the metric
- * selector; a metric with no usable data never appears as an option.
+ * Filter candidates to those carrying at least one finite backend point.
  */
-export function usableComparisonMetrics(temporal: unknown): string[] {
+export function usableTemporalMetrics(
+  temporal: unknown,
+  candidateKeys: readonly string[] = ALL_TEMPORAL_METRICS,
+): string[] {
   const out: string[] = [];
-  for (const key of COMPARISON_METRICS) {
+  for (const key of candidateKeys) {
     const profile = metricProfileOf(temporal, key);
     if (!profile) continue;
     if (profile.points.some((point) => point.value !== null)) {
@@ -176,4 +190,13 @@ export function usableComparisonMetrics(temporal: unknown): string[] {
     }
   }
   return out;
+}
+
+/**
+ * Comparison metrics carrying at least one finite backend point, in
+ * preferred order. Only these keys are offered by the metric
+ * selector; a metric with no usable data never appears as an option.
+ */
+export function usableComparisonMetrics(temporal: unknown): string[] {
+  return usableTemporalMetrics(temporal, COMPARISON_METRICS);
 }

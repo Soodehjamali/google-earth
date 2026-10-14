@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   AgricultureAnalysisRequest,
   AgricultureGeometry,
   GroundTruthObservationInput,
+  LandUseType,
 } from '../../types';
 import { DOMAIN_META } from '../../types';
 import {
@@ -25,8 +26,33 @@ import {
   type ApiDomain,
   type DomainGroupOption,
 } from './request';
+import {
+  formatJalaliAscii,
+  isoGregorianToJalali,
+  toPersianDigits,
+  validateJalaliDateRange,
+} from '../../utils/date/index.ts';
+import JalaliDatePicker from './JalaliDatePicker.tsx';
 
-export type GeometryInputMode = 'gps' | 'geojson';
+/**
+ * Formats elapsed seconds into natural Persian representation.
+ * e.g. "۱۵ ثانیه" or "۲ دقیقه و ۴۵ ثانیه"
+ */
+export function formatElapsedFa(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) {
+    return `${toPersianDigits(s)} ثانیه`;
+  }
+  return `${toPersianDigits(m)} دقیقه و ${toPersianDigits(s)} ثانیه`;
+}
+import {
+  calculatePolygonAreaSqMeters,
+  calculatePolygonCenter,
+  validatePolygonCoordinates,
+} from './polygon';
+
+export type GeometryInputMode = 'draw' | 'gps' | 'geojson';
 
 interface AnalysisRequestFormProps {
   loading?: boolean;
@@ -47,6 +73,16 @@ interface AnalysisRequestFormProps {
     center: [number, number],
   ) => void;
   onError?: (message: string | null) => void;
+  // Field boundary polygon props (Phase P-AGRI Field Boundary)
+  confirmedPolygon?: GeoJSON.Polygon | null;
+  isPolygonConfirmed?: boolean;
+  onPolygonClear?: () => void;
+  onPolygonEdit?: () => void;
+  onModeChange?: (mode: GeometryInputMode) => void;
+  initialMode?: GeometryInputMode;
+  // Land Use Context (Phase P-AGRI-DSS-1)
+  landUse?: LandUseType;
+  onLandUseChange?: (type: LandUseType) => void;
 }
 
 /**
@@ -64,16 +100,42 @@ export default function AnalysisRequestForm({
   onSubmit,
   onPreviewChange,
   onError,
+  confirmedPolygon = null,
+  isPolygonConfirmed = false,
+  onPolygonClear,
+  onPolygonEdit,
+  onModeChange,
+  initialMode = 'draw',
+  landUse,
+  onLandUseChange,
 }: AnalysisRequestFormProps) {
-  const [mode, setMode] = useState<GeometryInputMode>('gps');
+  const [internalLandUse, setInternalLandUse] = useState<LandUseType>('field_crop');
+  const currentLandUse = landUse ?? internalLandUse;
+
+  const handleLandUseSelect = (type: LandUseType) => {
+    setInternalLandUse(type);
+    onLandUseChange?.(type);
+  };
+  const [mode, setMode] = useState<GeometryInputMode>(initialMode);
   const [latitude, setLatitude] = useState('32.4279');
   const [longitude, setLongitude] = useState('53.6880');
   const [geojsonInput, setGeojsonInput] = useState('');
-  const [startDate, setStartDate] = useState(initialStartDate);
-  const [endDate, setEndDate] = useState(initialEndDate);
+  const initialStartJalali = useMemo(() => {
+    const p = isoGregorianToJalali(initialStartDate);
+    return p ? formatJalaliAscii(p) : '1404/03/11';
+  }, [initialStartDate]);
+
+  const initialEndJalali = useMemo(() => {
+    const p = isoGregorianToJalali(initialEndDate);
+    return p ? formatJalaliAscii(p) : '1404/06/10';
+  }, [initialEndDate]);
+
+  const [startJalali, setStartJalali] = useState(initialStartJalali);
+  const [endJalali, setEndJalali] = useState(initialEndJalali);
   const [selectedDomains, setSelectedDomains] = useState<ReadonlySet<string>>(
     () => new Set<string>(fixedDomains ?? API_DOMAINS),
   );
+  const [locationName, setLocationName] = useState<string>('');
   const [cloudInput, setCloudInput] = useState(String(CLOUD_DEFAULT));
   const [formError, setFormError] = useState<string | null>(null);
   const [gtOpen, setGtOpen] = useState(false);
@@ -81,8 +143,33 @@ export default function AnalysisRequestForm({
     useState<GroundTruthObservationInput>(blankGroundTruthDraft);
   const [gtRecords, setGtRecords] = useState<GroundTruthObservationInput[]>([]);
   const [gtError, setGtError] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!loading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startTime = Date.now();
+    setElapsedSeconds(0);
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [loading]);
+
+  const handleModeChange = (newMode: GeometryInputMode) => {
+    setMode(newMode);
+    onModeChange?.(newMode);
+  };
 
   function resolveGeometry(): AgricultureGeometry | undefined {
+    if (mode === 'draw') {
+      if (confirmedPolygon && isPolygonConfirmed) {
+        return confirmedPolygon as AgricultureGeometry;
+      }
+      return undefined;
+    }
     if (mode === 'gps') {
       const parsed = parseGpsInput(latitude, longitude);
       return 'geometry' in parsed ? parsed.geometry : undefined;
@@ -94,6 +181,9 @@ export default function AnalysisRequestForm({
   const previewGeometry = resolveGeometry();
 
   function previewCenter(): [number, number] {
+    if (mode === 'draw' && confirmedPolygon && confirmedPolygon.coordinates[0]) {
+      return calculatePolygonCenter(confirmedPolygon.coordinates[0] as [number, number][]);
+    }
     if (mode === 'gps') {
       const lat = parseFloat(latitude);
       const lng = parseFloat(longitude);
@@ -110,10 +200,10 @@ export default function AnalysisRequestForm({
   // Display-only map preview for the parent. Runs in an effect (never during
   // render); the parent skips state updates when the payload is unchanged.
   useEffect(() => {
-    onPreviewChange?.(previewGeometry, previewCenter());
+    onPreviewChange?.(resolveGeometry(), previewCenter());
     // Intentionally keyed on raw inputs, not the derived objects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, latitude, longitude, geojsonInput]);
+  }, [mode, latitude, longitude, geojsonInput, confirmedPolygon, isPolygonConfirmed]);
 
   function toggleDomain(domain: ApiDomain) {
     if (fixedDomains) return;
@@ -186,7 +276,20 @@ export default function AnalysisRequestForm({
     reportError(null);
 
     let geometry: AgricultureGeometry;
-    if (mode === 'gps') {
+    if (mode === 'draw') {
+      if (!confirmedPolygon || !isPolygonConfirmed) {
+        reportError(
+          'لطفاً قبل از تحلیل، محدوده زمین را روی نقشه رسم و تأیید کنید. — Please draw and confirm a valid field boundary on the map before analysis.',
+        );
+        return;
+      }
+      const val = validatePolygonCoordinates(confirmedPolygon.coordinates[0]);
+      if (!val.valid) {
+        reportError(val.error || 'چندضلعی نامعتبر است — Invalid polygon');
+        return;
+      }
+      geometry = confirmedPolygon as AgricultureGeometry;
+    } else if (mode === 'gps') {
       const parsed = parseGpsInput(latitude, longitude);
       if (!('geometry' in parsed)) {
         reportError(parsed.error);
@@ -202,7 +305,13 @@ export default function AnalysisRequestForm({
       geometry = parsed.geometry;
     }
 
-    const validationError = validateAnalysisInputs(geometry, startDate, endDate);
+    const dateRangeCheck = validateJalaliDateRange(startJalali, endJalali);
+    if (!dateRangeCheck.isValid) {
+      reportError(dateRangeCheck.errorFa);
+      return;
+    }
+
+    const validationError = validateAnalysisInputs(geometry, dateRangeCheck.startGregorian!, dateRangeCheck.endGregorian!);
     if (validationError) {
       reportError(validationError);
       return;
@@ -215,11 +324,12 @@ export default function AnalysisRequestForm({
     onSubmit(
       buildAgricultureRequest({
         geometry,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: dateRangeCheck.startGregorian!,
+        end_date: dateRangeCheck.endGregorian!,
         selectedDomains: effectiveDomains,
         cloud_max_percent: cloudInput,
         groundTruth: gtRecords,
+        name: locationName.trim() || undefined,
       }),
     );
   }
@@ -228,7 +338,7 @@ export default function AnalysisRequestForm({
   const cloudValue = clampCloudPercent(cloudInput);
 
   return (
-    <div className="card">
+    <div className="card" data-testid="analysis-request-form">
       <div className="card-header">
         <span className="card-title">📍 پارامترهای تحلیل</span>
       </div>
@@ -240,23 +350,184 @@ export default function AnalysisRequestForm({
           </div>
         )}
 
+        <div className="form-group" style={{ marginBottom: 14 }}>
+          <label className="form-label" htmlFor="location-name-input">
+            🏷️ نام لوکیشن / نام باغ (اختیاری) — Orchard / Location Name
+          </label>
+          <input
+            id="location-name-input"
+            data-testid="location-name-input"
+            type="text"
+            className="form-control"
+            placeholder="مثلاً: باغ پسته شمالی، قطعه شماره ۱"
+            value={locationName}
+            onChange={(e) => setLocationName(e.target.value)}
+            disabled={loading}
+            style={{ fontSize: '0.9rem' }}
+          />
+        </div>
+
         <div className="form-group">
-          <label className="form-label">نوع ورودی</label>
-          <div className="flex gap-1">
+          <label className="form-label">روش انتخاب محدوده — Location Selection Mode</label>
+          <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
             <button
-              className={`btn btn-sm ${mode === 'gps' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setMode('gps')}
+              type="button"
+              data-testid="mode-draw-btn"
+              className={`btn btn-sm ${mode === 'draw' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleModeChange('draw')}
+              disabled={loading}
             >
-              📍 مختصات GPS
+              ✏️ رسم محدوده روی نقشه (Draw field)
             </button>
             <button
+              type="button"
+              data-testid="mode-gps-btn"
+              className={`btn btn-sm ${mode === 'gps' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleModeChange('gps')}
+              disabled={loading}
+            >
+              📍 مختصات GPS (Point)
+            </button>
+            <button
+              type="button"
+              data-testid="mode-geojson-btn"
               className={`btn btn-sm ${mode === 'geojson' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setMode('geojson')}
+              onClick={() => handleModeChange('geojson')}
+              disabled={loading}
             >
               📐 GeoJSON
             </button>
           </div>
         </div>
+
+        {mode === 'draw' && (
+          <div
+            data-testid="draw-field-panel"
+            style={{
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'var(--bg-secondary, #f8fbfd)',
+              border: '1px solid var(--border-color, #cfe2ff)',
+              marginBottom: 14,
+            }}
+          >
+            {isPolygonConfirmed && confirmedPolygon ? (
+              <div data-testid="draw-field-confirmed">
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    color: '#2e7d32',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  <span>✓</span>
+                  <span>محدوده زمین تأیید شد — User-defined field boundary</span>
+                </div>
+                {confirmedPolygon.coordinates && confirmedPolygon.coordinates[0] && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: '0.85rem',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                      gap: 8,
+                    }}
+                  >
+                    <div>
+                      <span className="text-muted">مساحت: </span>
+                      <strong>
+                        {(
+                          calculatePolygonAreaSqMeters(
+                            confirmedPolygon.coordinates[0] as [number, number][],
+                          ) / 10000
+                        ).toFixed(2)}{' '}
+                        هکتار
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted">متر مربع: </span>
+                      <strong>
+                        {Math.round(
+                          calculatePolygonAreaSqMeters(
+                            confirmedPolygon.coordinates[0] as [number, number][],
+                          ),
+                        ).toLocaleString()}{' '}
+                        m²
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-muted">تعداد رئوس: </span>
+                      <strong>
+                        {confirmedPolygon.coordinates[0].length - 1} نقطه
+                      </strong>
+                    </div>
+                  </div>
+                )}
+                <div
+                  className="text-muted"
+                  style={{
+                    fontSize: '0.78rem',
+                    marginTop: 8,
+                    borderTop: '1px solid #e0e0e0',
+                    paddingTop: 6,
+                  }}
+                >
+                  ℹ️ مرز زمین صرفاً بر اساس رسم دستی کاربر روی نقشه است (بدون ادعای تشخیص خودکار ماهواره‌ای).
+                </div>
+                <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                  {onPolygonEdit && (
+                    <button
+                      type="button"
+                      data-testid="form-edit-polygon-btn"
+                      className="btn btn-sm btn-outline"
+                      onClick={onPolygonEdit}
+                      disabled={loading}
+                    >
+                      🔄 ویرایش مجدد روی نقشه
+                    </button>
+                  )}
+                  {onPolygonClear && (
+                    <button
+                      type="button"
+                      data-testid="form-clear-polygon-btn"
+                      className="btn btn-sm btn-outline"
+                      style={{ color: '#c62828' }}
+                      onClick={onPolygonClear}
+                      disabled={loading}
+                    >
+                      🗑️ پاک کردن
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div data-testid="draw-field-pending">
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    color: '#1565c0',
+                    marginBottom: 4,
+                  }}
+                >
+                  ✏️ رسم محدوده زمین روی نقشه
+                </div>
+                <p style={{ margin: 0, fontSize: '0.82rem', lineHeight: 1.5, color: '#455a64' }}>
+                  ۱. روی دکمه <strong>«رسم محدوده»</strong> در جعبه‌ابزار بالای نقشه کلیک کنید.<br />
+                  ۲. با کلیک‌های متوالی روی تصویر ماهواره‌ای، دور زمین مرز بکشید.<br />
+                  ۳. برای بستن چندضلعی، روی نقطه زرد شروع یا دوبار کلیک کنید.<br />
+                  ۴. پس از بررسی مرز، دکمه سبز <strong>«تأیید محدوده»</strong> را بزنید.
+                </p>
+                <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: 8 }}>
+                  وضعیت: هنوز محدوده‌ای تأیید نشده است. لطفاً ابتدا دور زمین خط بکشید و تأیید کنید.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {mode === 'gps' && (
           <div className="form-row">
@@ -297,25 +568,73 @@ export default function AnalysisRequestForm({
           </div>
         )}
 
+        {/* Land Use / Crop Context Selection (Phase P-AGRI-DSS-1) */}
+        <div className="form-group" style={{ marginBottom: 14 }}>
+          <label className="form-label" style={{ fontWeight: 600 }}>
+            🌱 نوع کاربری و زمینه زراعی — Land Use & Crop Type
+          </label>
+          <div className="flex gap-1" style={{ flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              data-testid="landuse-field-crop"
+              className={`btn btn-sm ${currentLandUse === 'field_crop' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleLandUseSelect('field_crop')}
+              disabled={loading}
+            >
+              🌾 زمین زراعی
+            </button>
+            <button
+              type="button"
+              data-testid="landuse-orchard"
+              className={`btn btn-sm ${currentLandUse === 'orchard' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleLandUseSelect('orchard')}
+              disabled={loading}
+            >
+              🌳 باغ عمومی
+            </button>
+            <button
+              type="button"
+              data-testid="landuse-pistachio"
+              className={`btn btn-sm ${currentLandUse === 'pistachio' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleLandUseSelect('pistachio')}
+              disabled={loading}
+            >
+              🥜 باغ پسته
+            </button>
+            <button
+              type="button"
+              data-testid="landuse-other"
+              className={`btn btn-sm ${currentLandUse === 'other' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => handleLandUseSelect('other')}
+              disabled={loading}
+            >
+              🗺️ سایر / نامشخص
+            </button>
+          </div>
+          <div className="text-muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>
+            زمینه زراعی برای شخصی‌سازی لایه پشتیبانی تصمیم (DSS) استفاده می‌شود و تغییری در داده‌های ارسالی API ایجاد نمی‌کند.
+          </div>
+        </div>
+
         <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">تاریخ شروع</label>
-            <input
-              type="date"
-              className="form-input"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">تاریخ پایان</label>
-            <input
-              type="date"
-              className="form-input"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
+          <JalaliDatePicker
+            label="شروع بازه (تقویم شمسی)"
+            dataTestId="start-date-jalali-picker"
+            valueJalali={startJalali}
+            onChange={(j) => {
+              setStartJalali(j);
+            }}
+            disabled={loading}
+          />
+          <JalaliDatePicker
+            label="پایان بازه (تقویم شمسی)"
+            dataTestId="end-date-jalali-picker"
+            valueJalali={endJalali}
+            onChange={(j) => {
+              setEndJalali(j);
+            }}
+            disabled={loading}
+          />
         </div>
 
         {showDomainSelection && !fixedDomains && domainGroups && (
@@ -325,6 +644,7 @@ export default function AnalysisRequestForm({
               <button
                 className={`btn btn-sm ${allSelected ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={toggleAllDomains}
+                disabled={loading}
               >
                 {allSelected ? '✓ همه حوزه‌ها' : 'همه حوزه‌ها'}
               </button>
@@ -336,6 +656,7 @@ export default function AnalysisRequestForm({
                     className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => toggleGroup(group)}
                     title={`domains: ${group.domains.join(', ')}`}
+                    disabled={loading}
                   >
                     {group.icon} {group.labelFa}
                   </button>
@@ -375,6 +696,7 @@ export default function AnalysisRequestForm({
               <button
                 className={`btn btn-sm ${allSelected ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={toggleAllDomains}
+                disabled={loading}
               >
                 {allSelected ? '✓ همه حوزه‌ها' : 'همه حوزه‌ها'}
               </button>
@@ -386,6 +708,7 @@ export default function AnalysisRequestForm({
                     key={domain}
                     className={`btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => toggleDomain(domain)}
+                    disabled={loading}
                   >
                     {meta?.icon ?? ''} {meta?.labelFa ?? domain}
                   </button>
@@ -411,6 +734,7 @@ export default function AnalysisRequestForm({
             step={1}
             value={cloudValue}
             onChange={(e) => setCloudInput(e.target.value)}
+            disabled={loading}
             className="opacity-slider"
           />
         </div>
@@ -430,12 +754,59 @@ export default function AnalysisRequestForm({
           )}
         </button>
 
+        {loading && (
+          <div
+            data-testid="long-analysis-banner"
+            style={{
+              marginTop: 12,
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'var(--bg-secondary, #f0f7ff)',
+              border: '1px solid #90caf9',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+              <strong style={{ fontSize: '0.92rem', color: '#1565c0' }}>
+                تحلیل در حال انجام است
+              </strong>
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#37474f', lineHeight: 1.5 }}>
+              این تحلیل با داده‌های ماهواره‌ای واقعی انجام می‌شود و ممکن است چند دقیقه زمان ببرد.
+            </div>
+            <div
+              data-testid="elapsed-time-counter"
+              style={{
+                fontSize: '0.8rem',
+                color: '#455a64',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: '#ffffff',
+                padding: '4px 10px',
+                borderRadius: 4,
+                border: '1px solid #e0e0e0',
+                width: 'fit-content',
+              }}
+            >
+              <span>⏱️ زمان سپری‌شده:</span>
+              <strong style={{ fontFamily: 'monospace' }}>
+                {formatElapsedFa(elapsedSeconds)}
+              </strong>
+            </div>
+          </div>
+        )}
+
         <div className="form-group mt-2">
           <button
             type="button"
             className="btn btn-sm btn-secondary w-full"
             onClick={() => setGtOpen((prev) => !prev)}
             aria-expanded={gtOpen}
+            disabled={loading}
           >
             {gtOpen ? '▼' : '▶'} 📋 مشاهده مرجع / Ground Truth (اختیاری)
             {gtRecords.length > 0 && ` — ${gtRecords.length} مورد`}

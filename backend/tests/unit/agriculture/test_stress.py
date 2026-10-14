@@ -12,7 +12,7 @@ governing risks, each of which has dedicated tests:
 2. **Unit and scale integrity.** ET and PET are 8-day sums with a
    declared scale factor already applied by the shared reduction helper;
    LST is stored as raw counts with a 0.02 factor; SoilGrids layers are
-   raw integers with a 0.001 factor; SMAP is a volume fraction. The
+   already scaled to cm3/cm3 by Earth Engine; SMAP is a volume fraction. The
    stress layer must consume already-physical values and never apply a
    second conversion.
 
@@ -443,14 +443,16 @@ def _install_ee(monkeypatch, fake: FakeEE) -> None:
 # --- fixture value sets ----------------------------------------------------
 
 
-def _soilgrids_raw(layer_values: Sequence[float]) -> Dict[str, int]:
-    """Raw stored integers for one SoilGrids depth profile.
+def _soilgrids_raw(layer_values: Sequence[float]) -> Dict[str, float]:
+    """One SoilGrids depth profile, as Earth Engine serves it.
 
-    SoilGrids declares a 0.001 scale factor, so a physical 0.32 cm3/cm3
-    is stored as 320.
+    Earth Engine applies the catalogue's 0.001 band scale when the asset
+    is read, so the reduction already holds physical cm3/cm3 (verified
+    live: a desert field-capacity pixel reads 0.209). The registry must
+    not scale a second time.
     """
     return {
-        f"val_{depth}_mean": int(round(value / 0.001))
+        f"val_{depth}_mean": float(value)
         for (depth, _), value in zip(ROOT_ZONE_INTERVALS, layer_values)
     }
 
@@ -989,9 +991,9 @@ class TestSoilWaterContentRatio:
         assert result.value is None
 
     def test_the_scale_factor_is_applied_exactly_once(self, monkeypatch):
-        # SoilGrids is stored as integers scaled by 0.001. A second
-        # application would move the field capacity by three orders of
-        # magnitude and the ratio with it.
+        # Earth Engine has already applied SoilGrids' 0.001 scale. A
+        # second application would move the field capacity by three
+        # orders of magnitude and the ratio with it.
         _install_all(monkeypatch)
         result = SoilWaterContentRatioMetric().compute(_make_context())
         assert result.value is not None

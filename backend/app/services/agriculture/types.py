@@ -510,6 +510,26 @@ class Provenance:
     caveats: List[str] = field(default_factory=list)
     citation: str = ""
 
+    #: Spatial support the value was actually reduced over. Populated
+    #: only when the request geometry was a Point, which has no area of
+    #: its own and therefore has to name the region it describes. All
+    #: five stay ``None`` for a Polygon or for any result the support
+    #: policy did not govern, so absence is meaningful.
+    geometry_type: Optional[str] = None
+    support_radius_m: Optional[float] = None
+    support_area_sq_m: Optional[float] = None
+    support_family: Optional[str] = None
+    support_policy: Optional[str] = None
+    #: Native resolution, in metres, of the grid the support region was
+    #: sized from. ``None`` unless the support policy governed the value.
+    support_native_resolution_m: Optional[float] = None
+    #: The GPS Point exactly as the caller sent it, so a buffered value
+    #: never loses the coordinate it was requested for.
+    original_geometry: Optional[Dict[str, Any]] = None
+    #: Every support region a derived value was built from, primary
+    #: first, for metrics that read more than one dataset.
+    support_inputs: Optional[List[Dict[str, Any]]] = None
+
     computed_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -537,6 +557,22 @@ class Provenance:
             "limitations": list(self.limitations),
             "caveats": list(self.caveats),
             "citation": self.citation,
+            "geometry_type": self.geometry_type,
+            "support_radius_m": self.support_radius_m,
+            "support_area_sq_m": self.support_area_sq_m,
+            "support_family": self.support_family,
+            "support_policy": self.support_policy,
+            "support_native_resolution_m": self.support_native_resolution_m,
+            "original_geometry": (
+                dict(self.original_geometry)
+                if self.original_geometry is not None
+                else None
+            ),
+            "support_inputs": (
+                [dict(item) for item in self.support_inputs]
+                if self.support_inputs is not None
+                else None
+            ),
             "computed_at": self.computed_at,
         }
 

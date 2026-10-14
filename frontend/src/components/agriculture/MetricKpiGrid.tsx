@@ -1,9 +1,14 @@
 import type { EvidenceBundleResponse } from '../../types';
 import { findEvidenceItem, qualityToKpiStatus, shouldRenderKpi } from './parse';
-import { dominantClassLabel } from './evidenceDetails';
+import { bandRows, dominantClassLabel, isDynamicWorldMetric } from './evidenceDetails';
 import { isStateProxyItem } from './proxyState';
 import ProxyStateCard from './ProxyStateCard';
 import KPICard from '../KPICard';
+import { evidenceWindowText } from './evidence';
+import { BAND_LABELS } from './DynamicWorldBands';
+import { SupportBadge, UnavailableReason } from './SupportNotice';
+import { supportInfoOf } from './support';
+import { getMetricInterpretation } from './metricInterpretation';
 
 interface MetricKpiGridProps {
   title: string;
@@ -93,14 +98,9 @@ export default function MetricKpiGrid({
                       <span className="kpi-title-en">{key}</span>
                     </div>
                   </div>
-                  <div className="kpi-value">
+                  <div className="kpi-value kpi-value-block">
                     {missing ? (
-                      <span>
-                        <span className="kpi-no-data">داده موجود نیست</span>{' '}
-                        <span className="badge badge-danger" style={{ fontSize: '11px' }}>
-                          unavailable
-                        </span>
-                      </span>
+                      <UnavailableReason item={item} compact />
                     ) : (
                       <span className="kpi-no-data">—</span>
                     )}
@@ -118,16 +118,48 @@ export default function MetricKpiGrid({
             if (isStateProxyItem(item)) {
               return <ProxyStateCard key={key} item={item} bundleName={bundleName} />;
             }
+            // Dynamic World: show candidate class context when band means exist.
+            const dwCandidate = isDynamicWorldMetric(item.metric_key)
+              ? bandRows(item.band_means).find((row) => row.value !== null)
+              : undefined;
+            const windowText = evidenceWindowText(item);
+            const support = supportInfoOf(item.provenance);
+            const interp = getMetricInterpretation(
+              key,
+              typeof item.value === 'number' ? item.value : null,
+            );
             return (
               <KPICard
                 key={key}
-                title={key}
+                title={dwCandidate ? `${key} — highest mean class` : key}
                 titleFa={item.display_name || key}
-                value={typeof item.value === 'number' ? item.value : null}
-                unit={item.unit}
+                value={
+                  dwCandidate && typeof dwCandidate.value === 'number'
+                    ? `${BAND_LABELS[dwCandidate.band] ?? dwCandidate.band} ${dwCandidate.value.toFixed(2)}`
+                    : typeof item.value === 'number'
+                      ? item.value
+                      : null
+                }
+                unit={dwCandidate ? (item.unit ?? '') : item.unit}
                 icon="📊"
                 status={qualityToKpiStatus(item.quality)}
-                subtitle={`${bundleName}${item.is_proxy ? ' • proxy' : ''}`}
+                subtitle={`${bundleName}${item.is_proxy ? ' • proxy' : ''}${
+                  item.source_dataset ? ` • ${item.source_dataset}` : ''
+                }${windowText ? ` • ${windowText}` : ''}`}
+                referenceRange={interp.rangeLabelFa}
+                farmerNote={interp.farmerSummaryFa}
+                resolution={interp.spatialResolution}
+                statusLabelFa={interp.statusLabelFa}
+                footer={
+                  <div className="kpi-support">
+                    <SupportBadge provenance={item.provenance} />
+                    {support && (
+                      <div className="kpi-support-note">
+                        {support.explanationEn}
+                      </div>
+                    )}
+                  </div>
+                }
               />
             );
           })}

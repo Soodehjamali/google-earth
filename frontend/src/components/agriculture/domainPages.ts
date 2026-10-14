@@ -54,6 +54,14 @@ export const DOMAIN_PAGE_CONFIGS: Record<string, DomainPageConfig> = {
         metricKeys: ['ndvi', 'evi', 'savi', 'msavi', 'ndre'],
       },
       {
+        id: 'anomaly',
+        title: 'Red Edge Seasonal Anomaly',
+        titleFa: 'آنومالی فصلی لبه قرمز',
+        kind: 'kpi',
+        metricKeys: ['ndre_anomaly'],
+        note: '10-year same-window seasonal departure against Sentinel-2 baseline.',
+      },
+      {
         id: 'canopy',
         title: 'Canopy Structure',
         titleFa: 'ساختار کانوپی',
@@ -201,7 +209,7 @@ export const DOMAIN_PAGE_CONFIGS: Record<string, DomainPageConfig> = {
         title: 'Spectral Water Indices',
         titleFa: 'شاخص‌های طیفی آب',
         kind: 'kpi',
-        metricKeys: ['ndwi', 'ndmi', 'mndwi'],
+        metricKeys: ['ndwi', 'ndmi', 'mndwi', 'msi', 'ndmi_anomaly', 'msi_anomaly'],
       },
       {
         id: 'et',

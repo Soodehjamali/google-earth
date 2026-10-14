@@ -333,17 +333,17 @@ def _install_era5(
 
 
 def _all_depths_raw(mean_value: float) -> dict:
-    """Build a raw band dict for all root-zone depths at one value.
+    """Build the band dict Earth Engine returns for all root-zone depths.
 
-    The raw integer is ``mean_value / scale_factor`` for each band.
-    The wv0033/wv1500 bands use scale_factor=0.001, so a physical
-    value of 0.30 corresponds to a raw integer of 300.
+    Earth Engine applies the catalogue's 0.001 band scale when the asset
+    is read, so the reduction already holds physical cm3/cm3 values; a
+    desert field-capacity pixel reads 0.209, verified live. The registry
+    must not scale again.
     """
     bands = {}
     for depth, _ in ROOT_ZONE_INTERVALS:
         band_name = f"val_{depth}_mean"
-        # Raw integer = physical value / scale_factor
-        bands[band_name] = int(mean_value / 0.001)
+        bands[band_name] = float(mean_value)
     return bands
 
 
@@ -372,14 +372,14 @@ class TestDatasetRegistration:
             band_name = f"val_{depth}_mean"
             assert spec.has_band(band_name), f"missing band {band_name}"
 
-    def test_soilgrids_band_scale_factor_is_0001(self):
-        """The catalogue states 10^-3 cm3/cm3, i.e. scale 0.001."""
+    def test_soilgrids_band_scale_factor_is_identity(self):
+        """Earth Engine already applies the catalogue's 0.001 scale."""
         spec = get_dataset(SOILGRIDS)
         for depth, _ in ROOT_ZONE_INTERVALS:
             band_name = f"val_{depth}_mean"
             band = spec.band(band_name)
-            assert band.scale_factor == 0.001, (
-                f"{band_name}: expected scale_factor 0.001, got "
+            assert band.scale_factor == 1.0, (
+                f"{band_name}: expected scale_factor 1.0, got "
                 f"{band.scale_factor}"
             )
 
@@ -672,7 +672,7 @@ class TestSoilFieldCapacity:
         raw = {}
         values_by_depth = [0.20, 0.25, 0.30, 0.35, 0.40]
         for (depth, _), val in zip(ROOT_ZONE_INTERVALS, values_by_depth):
-            raw[f"val_{depth}_mean"] = int(val / 0.001)
+            raw[f"val_{depth}_mean"] = float(val)
         _install_soilgrids(monkeypatch, wv0033_values=raw)
         result = SoilFieldCapacityMetric().compute(_make_context())
         assert result.status == STATUS_OK
@@ -1081,38 +1081,38 @@ class TestScaleFactorRegression:
     """Regression tests protecting against the scale-factor class of bugs.
 
     The project previously discovered a systemic reduction-layer
-    scale-factor bug. These tests verify that:
-    1. Raw SoilGrids integers are not published directly.
-    2. The scale factor is applied exactly once.
-    3. Units are correct after scaling.
+    scale-factor bug, and F-A12 found a second one: the registry scaled
+    SoilGrids by 0.001 although Earth Engine had already done so, which
+    published every SoilGrids value 1000 times too small. These tests
+    verify that:
+    1. A physical value Earth Engine returns is published unchanged.
+    2. No scale factor is applied a second time.
+    3. Units are correct.
     """
 
-    def test_field_capacity_applies_scale_factor(self, monkeypatch):
-        """A raw value of 300 should become 0.30 cm3/cm3, not 300."""
+    def test_field_capacity_is_not_rescaled(self, monkeypatch):
+        """Earth Engine returns 0.30 cm3/cm3; the metric must report 0.30."""
         raw = _all_depths_raw(0.30)
-        # Verify raw values are integers (not already physical)
         for v in raw.values():
-            assert isinstance(v, int)
-            assert v > 1  # Would be implausible as cm3/cm3
+            assert 0.0 < v < 1.0  # already physical, as Earth Engine serves it
         _install_soilgrids(monkeypatch, wv0033_values=raw)
         result = SoilFieldCapacityMetric().compute(_make_context())
         assert result.status == STATUS_OK
-        # Physical value must be in [0, 0.65], not [0, 650]
-        assert 0.0 < result.value < 1.0
+        assert result.value == pytest.approx(0.30, abs=1e-9)
 
     def test_scale_factor_not_applied_twice(self, monkeypatch):
-        """If scale were applied twice, 0.30 would become 0.00030."""
+        """A second 0.001 would turn 0.30 into 0.00030, the F-A12 defect."""
         raw = _all_depths_raw(0.30)
         _install_soilgrids(monkeypatch, wv0033_values=raw)
         result = SoilFieldCapacityMetric().compute(_make_context())
         assert result.status == STATUS_OK
         assert result.value > 0.01  # Not double-scaled
 
-    def test_wilting_point_raw_to_physical(self, monkeypatch):
-        """Raw 120 -> physical 0.12 cm3/cm3."""
+    def test_wilting_point_is_not_rescaled(self, monkeypatch):
+        """Earth Engine returns 0.12 cm3/cm3; the metric must report 0.12."""
         raw = _all_depths_raw(0.12)
         for v in raw.values():
-            assert v == 120  # 0.12 / 0.001 = 120
+            assert v == pytest.approx(0.12)
         _install_soilgrids(monkeypatch, wv1500_values=raw)
         result = SoilWiltingPointMetric().compute(_make_context())
         assert result.value == pytest.approx(0.12, abs=0.001)
@@ -1128,13 +1128,13 @@ class TestScaleFactorRegression:
         # AWC = 0.30 - 0.12 = 0.18
         assert result.value == pytest.approx(0.18, abs=0.001)
 
-    def test_dataset_band_scale_factor_is_0001(self):
-        """Pin the scale factor in the registry to 0.001."""
+    def test_dataset_band_scale_factor_is_identity(self):
+        """Pin the registry to 1.0: Earth Engine already applied 0.001."""
         spec = get_dataset(SOILGRIDS)
         for depth, _ in ROOT_ZONE_INTERVALS:
             band_name = f"val_{depth}_mean"
             band = spec.band(band_name)
-            assert band.scale_factor == 0.001
+            assert band.scale_factor == 1.0
 
     def test_dataset_band_offset_is_zero(self):
         """No offset should be applied to SoilGrids water retention."""

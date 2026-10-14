@@ -14,11 +14,13 @@ Every model preserves:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +85,19 @@ class AgricultureAnalysisRequest(BaseModel):
             "as rejected. Absent (or empty) means no validation is run."
         ),
     )
+    request_id: Optional[str] = Field(
+        default=None,
+        description="Optional persistent ID or idempotency key (UUID string)",
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Optional orchard or field name for identification",
+    )
+    location_id: Optional[uuid.UUID] = Field(
+        default=None,
+        description="Optional existing location ID",
+    )
+
 
 
 class EvidenceItemInput(BaseModel):
@@ -161,6 +176,18 @@ class ProvenanceResponse(BaseModel):
     citation: str = ""
     computed_at: Optional[str] = None
 
+    #: Spatial support the value was reduced over. Present only when
+    #: the request geometry was a Point, which has no area of its own;
+    #: the UI needs these to say what the number actually describes.
+    geometry_type: Optional[str] = None
+    support_radius_m: Optional[float] = None
+    support_area_sq_m: Optional[float] = None
+    support_family: Optional[str] = None
+    support_policy: Optional[str] = None
+    support_native_resolution_m: Optional[float] = None
+    original_geometry: Optional[Dict[str, Any]] = None
+    support_inputs: Optional[List[Dict[str, Any]]] = None
+
 
 # ---------------------------------------------------------------------------
 # 3. Quality / status response
@@ -210,6 +237,10 @@ class EvidenceItemResponse(BaseModel):
     stats: Optional[Dict[str, Any]] = None
     class_histogram: Optional[Dict[str, Any]] = None
     band_means: Optional[Dict[str, Optional[float]]] = None
+    #: Why the metric produced no value, exactly as the metric reported
+    #: it. ``None`` for every item that carries a value.
+    unavailable_reason: Optional[str] = None
+    unavailable_message: Optional[str] = None
 
 
 class EvidenceConflictResponse(BaseModel):
@@ -291,6 +322,10 @@ class DomainSummaryResponse(BaseModel):
     #: item (finite value, not unavailable, usable quality).  Data
     #: presence only — independent of whether any statement fired.
     has_usable_evidence: bool = False
+    vegetation_regime: Optional[str] = Field(
+        default=None,
+        description="Classified vegetation regime (e.g. non_vegetated, vegetated, uncertain)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +348,18 @@ class AgriculturalAnalysisResponse(BaseModel):
     time_end: Optional[str] = None
     spatial_context: Optional[str] = None
     generated_at: Optional[str] = None
+    geometry: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Parcel geometry (GeoJSON Polygon or Point) for the analysis",
+    )
+    location_name: Optional[str] = Field(
+        default=None,
+        description="Name of the analyzed parcel or location",
+    )
+    area_sq_meters: Optional[float] = Field(
+        default=None,
+        description="Calculated area of the parcel in square meters",
+    )
 
     # Domain summaries
     domain_summaries: Dict[str, DomainSummaryResponse] = Field(
@@ -372,6 +419,14 @@ class AgriculturalAnalysisResponse(BaseModel):
     )
     limitations: List[str] = Field(default_factory=list)
     metadata: Dict[str, str] = Field(default_factory=dict)
+    vegetation_regime: Optional[str] = Field(
+        default=None,
+        description="Classified vegetation regime for the analyzed location",
+    )
+    vegetation_regime_explanation: Optional[str] = Field(
+        default=None,
+        description="Scientific basis and evidence for the classified vegetation regime",
+    )
 
     # Temporal intelligence (P5.3 integration phase)
     temporal: Optional[TemporalSectionModel] = Field(
@@ -396,6 +451,20 @@ class AgriculturalAnalysisResponse(BaseModel):
         description="Deterministic linkage of supplied reference "
         "observations against this analysis via the P6.2 engine. "
         "Additive: absent (null) when no ground truth was supplied.",
+    )
+
+    # Soil intelligence (Phase P-AGRI-SOIL)
+    soil_intelligence: Optional[SoilIntelligenceResponse] = Field(
+        default=None,
+        description="Deterministic soil moisture and SoilGrids 2.0 multi-depth properties. "
+        "Additive: populated when soil domain is requested or available.",
+    )
+
+    # Pest / disease risk screening & multi-sensor inspection (Phase P1)
+    pest_disease_inspection: Optional[PestDiseaseInspectionResponse] = Field(
+        default=None,
+        description="Multi-sensor risk screening, anomaly inspection, and biotic/abiotic compatibility. "
+        "Additive: populated when pest_disease domain is requested or pest inspection is triggered.",
     )
 
 
@@ -1570,6 +1639,22 @@ class GroundTruthObservationModel(BaseModel):
     metric_key: Optional[str] = None
     domain: Optional[str] = None
     cell_id: Optional[str] = None
+    crop_type: Optional[str] = None
+    growth_stage: Optional[str] = None
+    condition_summary: Optional[str] = None
+    observed_stress: Optional[str] = None
+    pest_observation: Optional[str] = None
+    disease_observation: Optional[str] = None
+    irrigation_status: Optional[str] = None
+    soil_observation: Optional[str] = None
+    laboratory_result: Optional[str] = None
+    yield_observation: Optional[float] = None
+    notes: Optional[str] = None
+    is_derived: bool = False
+    is_test_fixture: bool = Field(
+        default=False,
+        description="Whether this observation is a synthetic/test fixture. Synthetic records are preserved for tests but never elevate scientific evidence to Level 4.",
+    )
     contract_version: str = ""
     provenance: Dict[str, Any] = Field(default_factory=dict)
     limitations: List[str] = Field(default_factory=list)
@@ -1659,6 +1744,10 @@ class ValidationResultModel(BaseModel):
     metric_relationship: str = ""
     states_agree: Optional[bool] = None
     values_comparable: bool = False
+    difference: Optional[float] = None
+    relative_difference_percent: Optional[float] = None
+    validation_status_code: Optional[str] = None
+    sample_count: int = 1
     status: str = "NOT_VALIDATED"
     linkage_reason: str = ""
     contract_version: str = ""
@@ -1681,3 +1770,589 @@ class ValidationSectionModel(BaseModel):
     limitations: List[str] = Field(default_factory=list)
     contract_version: str = ""
     engine_version: str = ""
+
+
+# ---------------------------------------------------------------------------
+# 14. Spatial Heatmap / Layer Contract (Phase P-AGRI-3)
+# ---------------------------------------------------------------------------
+
+
+class SpatialMetricType(str, Enum):
+    """Allowed spatial heatmap metrics for MVP."""
+
+    NDVI = "ndvi"
+    LST_DAY = "lst_day"
+    SOIL_MOISTURE = "soil_moisture"
+    SAR_VH = "sar_vh"
+    NDMI = "ndmi"
+    NDRE = "ndre"
+    MSI = "msi"
+    SOIL_SOC = "soil_soc"
+    SOIL_PH = "soil_ph"
+    SOIL_CLAY = "soil_clay"
+    SOIL_SAND = "soil_sand"
+    SOIL_CEC = "soil_cec"
+    SOIL_NITROGEN = "soil_nitrogen"
+
+
+class SpatialConceptType(str, Enum):
+    """Allowed agricultural interpretation concepts (Phase P-AGRI-4)."""
+
+    VEGETATION_CONDITION = "vegetation_condition"
+    THERMAL_STRESS = "thermal_stress"
+    SURFACE_DRYNESS = "surface_dryness"
+    SOIL_ORGANIC_CARBON = "soil_organic_carbon"
+    SOIL_ACIDITY_PH = "soil_acidity_ph"
+    SOIL_TEXTURE_CLAY = "soil_texture_clay"
+
+
+class SpatialLayerRequest(BaseModel):
+    """Request contract for real Earth Engine spatial layer tile generation."""
+
+    metric: Optional[SpatialMetricType] = Field(
+        default=None,
+        description="Spatial metric to render: 'ndvi', 'lst_day', 'soil_moisture', 'sar_vh', or 'ndmi'",
+    )
+    concept: Optional[SpatialConceptType] = Field(
+        default=None,
+        description="Agricultural interpretation concept: 'vegetation_condition', 'thermal_stress', or 'surface_dryness'",
+    )
+    geometry: Union[PointGeometry, PolygonGeometry] = Field(
+        ...,
+        description="GeoJSON Point or Polygon",
+    )
+    start_date: str = Field(
+        ...,
+        description="Analysis start date (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        description="Analysis end date (YYYY-MM-DD)",
+    )
+    cloud_max_percent: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=100.0,
+        description="Maximum cloud cover percentage for optical filtering",
+    )
+    support_radius_m: Optional[float] = Field(
+        default=None,
+        description="Optional spatial buffer radius in meters for Point geometry context",
+    )
+
+    @model_validator(mode="after")
+    def validate_metric_or_concept(self) -> SpatialLayerRequest:
+        if not self.metric and not self.concept:
+            raise ValueError("Either 'metric' or 'concept' must be specified in SpatialLayerRequest.")
+        return self
+
+
+class SpatialLayerResponse(BaseModel):
+    """Response contract for real Earth Engine spatial heatmap layer."""
+
+    metric: str
+    display_name: str
+    source_dataset: str
+    tile_url_template: Optional[str] = None
+    min_val: float
+    max_val: float
+    unit: str
+    palette: List[str] = Field(default_factory=list)
+    native_resolution_m: float
+    spatial_resolution: str
+    geometry_type: str
+    support_radius_m: Optional[float] = None
+    support_area_sq_m: Optional[float] = None
+    start_date: str
+    end_date: str
+    status: str = "available"  # "available" or "unavailable"
+    unavailable_reason: Optional[str] = None
+    limitations: List[str] = Field(default_factory=list)
+    bounds: Optional[List[float]] = None  # [west, south, east, north]
+
+    # Additive P-AGRI-4 Agricultural Interpretation fields
+    concept: Optional[str] = None
+    concept_name: Optional[str] = None
+    concept_name_fa: Optional[str] = None
+    interpretation: Optional[str] = None
+    interpretation_fa: Optional[str] = None
+    qualitative_legend: Optional[List[str]] = Field(default_factory=list)
+    scientific_caution: Optional[str] = None
+    scientific_caution_fa: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# 15. 10-Year Historical Same-Period Comparison Contract (Phase P-AGRI-HIST-10Y)
+# ---------------------------------------------------------------------------
+
+
+class HistoricalComparisonRequest(BaseModel):
+    """Request contract for 10-year same-period historical comparison."""
+
+    geometry: Union[PointGeometry, PolygonGeometry] = Field(
+        ...,
+        description="GeoJSON Point or Polygon geometry",
+    )
+    start_date: str = Field(
+        ...,
+        description="Current analysis start date (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        description="Current analysis end date (YYYY-MM-DD)",
+    )
+    domain: Optional[str] = Field(
+        default=None,
+        description="Optional domain: 'vegetation', 'water', 'thermal', 'radar', 'climate', 'phenology', 'soil'",
+    )
+    metric_keys: Optional[List[str]] = Field(
+        default=None,
+        description="Optional specific metrics to compare (e.g. ['ndvi', 'evi', 'ndre'])",
+    )
+    cloud_max_percent: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=100.0,
+        description="Maximum cloud cover percentage for optical filtering",
+    )
+
+
+class HistoricalYearRecord(BaseModel):
+    """Observation record for one calendar year's same-period window."""
+
+    year: int
+    start_date: str
+    end_date: str
+    status: str = "available"  # "available", "partial", "unavailable", "current"
+    scene_count: int = 0
+    metrics: Dict[str, Optional[float]] = Field(default_factory=dict)
+
+
+class HistoricalMetricTrend(BaseModel):
+    """Descriptive trend and baseline comparison for one metric over the 10-year period."""
+
+    metric_key: str
+    display_name: str
+    display_name_fa: str
+    unit: str
+    current_value: Optional[float] = None
+    baseline_median: Optional[float] = None
+    baseline_mean: Optional[float] = None
+    delta_from_baseline: Optional[float] = None
+    trend_direction: str = "insufficient_evidence"  # "improving", "declining", "stable", "variable", "insufficient_evidence"
+    trend_slope_per_year: Optional[float] = None
+    trend_label_fa: str = "شواهد ناکافی"
+    trend_label_en: str = "Insufficient evidence"
+    sufficiency: str = "insufficient"  # "sufficient", "partial", "insufficient"
+    scientific_summary_fa: str = ""
+    scientific_summary_en: str = ""
+
+
+class HistoricalComparisonResponse(BaseModel):
+    """Complete 10-year same-period historical comparison response."""
+
+    requested_period: Dict[str, str]
+    same_period_label_fa: str
+    same_period_label_en: str
+    domain: Optional[str] = None
+    available_metrics: List[str] = Field(default_factory=list)
+    years: List[HistoricalYearRecord] = Field(default_factory=list)
+    trends: Dict[str, HistoricalMetricTrend] = Field(default_factory=dict)
+    limitations: List[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 28. Soil Intelligence Contract (Phase P-AGRI-SOIL)
+# ---------------------------------------------------------------------------
+
+
+class SoilMoistureLayerModel(BaseModel):
+    """Multi-layer depth observation for soil moisture (e.g. ERA5-Land)."""
+
+    band: str
+    depth_en: str
+    depth_fa: str
+    depth_top_cm: float
+    depth_bottom_cm: float
+    value: Optional[float] = None
+    unit: str = "m3/m3"
+    status: str = "available"
+    source: str = "ERA5-Land"
+    dataset: str = "ECMWF/ERA5_LAND/DAILY_AGGR"
+    scale_m: float = 11132.0
+    modelled: bool = True
+
+
+class SoilMoistureReadingModel(BaseModel):
+    """Aggregated soil moisture observation for a specific zone (surface / root-zone)."""
+
+    value: Optional[float] = None
+    unit: str = "m3/m3"
+    depth: str
+    depth_fa: str
+    source: str
+    dataset: str
+    scale_m: float
+    status: str = "available"
+    measurement_basis: str = "MODELLED"  # "PRODUCT" | "MODELLED"
+
+
+class SoilMoistureResponseModel(BaseModel):
+    """Soil moisture section with surface, root-zone, and multi-layer readings."""
+
+    surface: Optional[SoilMoistureReadingModel] = None
+    rootzone: Optional[SoilMoistureReadingModel] = None
+    multilayer_era5: List[SoilMoistureLayerModel] = Field(default_factory=list)
+    coarse_warning: bool = True
+    spatial_resolution_m: int = 9000
+    limitations: List[str] = Field(default_factory=list)
+
+
+class SoilPropertyDepthModel(BaseModel):
+    """One depth layer measurement for a SoilGrids 2.0 property."""
+
+    depth_code: str
+    depth_en: str
+    depth_fa: str
+    depth_top_cm: float
+    depth_bottom_cm: float
+    thickness_cm: float
+    value: Optional[float] = None
+    unit: str
+    status: str = "available"
+
+
+class SoilPropertyRecordModel(BaseModel):
+    """Complete depth profile and root-zone weighted mean for a soil property."""
+
+    property_key: str
+    name_fa: str
+    name_en: str
+    unit: str
+    root_zone_value: Optional[float] = None
+    root_zone_depth: str = "0–100 cm"
+    root_zone_depth_fa: str = "۰ تا ۱۰۰ سانتی‌متر (ناحیه ریشه)"
+    depth_profiles: List[SoilPropertyDepthModel] = Field(default_factory=list)
+    source: str = "ISRIC SoilGrids 2.0 (Verified GEE)"
+    dataset_id: str = ""
+    scale_m: float = 250.0
+    reference_period: str = "Static modelled baseline (~2020)"
+    reference_period_fa: str = "خط مبنای مدل‌شده خاک (ISRIC SoilGrids 2.0)"
+    status: str = "available"
+    is_modelled_baseline: bool = True
+    reason: Optional[str] = None
+
+
+class SoilWaterRetentionModel(BaseModel):
+    """Field capacity, wilting point, and available water capacity (ISRIC SoilGrids)."""
+
+    field_capacity_33kpa: Optional[float] = None
+    wilting_point_1500kpa: Optional[float] = None
+    available_water_capacity: Optional[float] = None
+    unit: str = "m3/m3"
+    depth: str = "0–100 cm"
+    depth_fa: str = "۰ تا ۱۰۰ سانتی‌متر (ناحیه ریشه)"
+    source: str = "ISRIC SoilGrids 2.0 wv0033 / wv1500"
+    dataset_id: str = "ISRIC/SoilGrids250m/v2_0"
+    scale_m: float = 250.0
+    status: str = "available"
+
+
+class SoilTextureClassificationModel(BaseModel):
+    """USDA soil texture classification derived from root-zone Sand, Silt, and Clay."""
+
+    class_en: str
+    class_fa: str
+    sand_percent: Optional[float] = None
+    silt_percent: Optional[float] = None
+    clay_percent: Optional[float] = None
+    method: str = "USDA Soil Texture Triangle (0–100 cm Weighted Profile)"
+    status: str = "available"
+
+
+class UnavailableNutrientModel(BaseModel):
+    """Rigorous honesty disclosure for nutrients requiring laboratory soil testing."""
+
+    key: str
+    name_fa: str
+    name_en: str
+    status: str = "UNAVAILABLE"
+    scientific_status: str = "REQUIRES_LAB_VALIDATION"
+    validation_status: str = "LAB_REQUIRED"
+    reason: str = "NO_SATELLITE_SENSOR_EXISTS"
+    message_fa: str
+    message_en: str
+    satellite_estimable: bool = False
+    next_action: Optional[str] = None
+    next_action_fa: Optional[str] = None
+
+
+class SoilMetricAvailabilityItem(BaseModel):
+    """Unified Soil Metric Registry and Data Availability Item (Phase P-AGRI-SOIL-2 / P-AGRI-SOIL-3)."""
+
+    metric_key: str
+    label_en: str
+    label_fa: str
+    value: Optional[float] = None
+    unit: Optional[str] = None
+    source: Optional[str] = None
+    dataset_id: Optional[str] = None
+    variable: Optional[str] = None
+    band: Optional[str] = None
+    status: str  # "AVAILABLE" | "MODELLED_BASELINE" | "REQUIRES_LAB_VALIDATION" | "DERIVED" | "INSUFFICIENT_DATA"
+    data_status: str = "AVAILABLE"  # "AVAILABLE" | "UNAVAILABLE" | "INSUFFICIENT_DATA"
+    scientific_status: str = "GRIDDED_SOIL_BASELINE"  # "SATELLITE_OBSERVATION" | "REANALYSIS_MODEL" | "GRIDDED_SOIL_BASELINE" | "DERIVED" | "UNOBSERVABLE_SATELLITE"
+    scientific_status_fa: Optional[str] = None
+    validation_status: str  # "NOT_LAB_VERIFIED" | "PENDING_LAB_VALIDATION" | "REQUIRES_LAB_VALIDATION" | "LAB_REQUIRED" | "GROUND_TRUTH_VALIDATED"
+    validation_note_fa: Optional[str] = None
+    availability_message_fa: Optional[str] = None
+    depth: Optional[str] = None
+    depth_cm: Optional[List[float]] = None
+    spatial_resolution: Optional[str] = None
+    spatial_resolution_m: Optional[float] = None
+    temporal_resolution: Optional[str] = None
+    temporal_period: Optional[str] = None
+    is_ground_truth: bool = False
+    requires_lab_validation: bool = True
+    reason: Optional[str] = None
+    reason_fa: Optional[str] = None
+    limitations: List[str] = Field(default_factory=list)
+    next_action: Optional[str] = None
+    next_action_fa: Optional[str] = None
+
+
+class SoilObservation(BaseModel):
+    """Laboratory Soil Ground Truth Observation schema (Phase P-AGRI-SOIL-2 §9).
+
+    Standardized schema for physical laboratory soil sample records.
+    Prepares future ingestion infrastructure for regional calibration.
+    """
+
+    observation_id: str = Field(..., description="Unique laboratory sample ID or barcode")
+    latitude: float = Field(..., ge=-90, le=90, description="WGS84 latitude")
+    longitude: float = Field(..., ge=-180, le=180, description="WGS84 longitude")
+    sample_date: str = Field(..., description="ISO collection date (YYYY-MM-DD)")
+    depth_top_cm: float = Field(..., ge=0, description="Top depth of sampling interval (cm)")
+    depth_bottom_cm: float = Field(..., ge=0, description="Bottom depth of sampling interval (cm)")
+    pH: Optional[float] = Field(None, ge=0, le=14, description="Potentiometric pH")
+    EC: Optional[float] = Field(None, ge=0, description="Electrical conductivity of saturation extract (dS/m)")
+    total_n: Optional[float] = Field(None, ge=0, description="Kjeldahl total nitrogen (g/kg or %)")
+    available_p: Optional[float] = Field(None, ge=0, description="Olsen available phosphorus (mg/kg)")
+    exchangeable_k: Optional[float] = Field(None, ge=0, description="Ammonium acetate exchangeable potassium (mg/kg)")
+    nitrate: Optional[float] = Field(None, ge=0, description="Nitrate-nitrogen NO3-N (mg/kg)")
+    laboratory: Optional[str] = Field(None, description="Accredited laboratory name")
+    method: Optional[str] = Field(None, description="Standard analytical method description")
+    quality: Optional[str] = Field("verified", description="Quality assurance flag")
+    notes: Optional[str] = Field(None, description="Field sampling and pedological notes")
+    source_type: str = Field("laboratory", description="Origin source type: always laboratory")
+    is_derived: bool = Field(False, description="Always False for physical laboratory ground truth")
+
+
+class SoilLaboratoryFrameworkModel(BaseModel):
+    """Laboratory sample ingestion and ML calibration status."""
+
+    is_lab_calibrated: bool = False
+    ml_nutrient_mapping_status: str = "DEACTIVATED"
+    message_fa: str
+    message_en: str
+    supported_sample_fields: List[str] = Field(default_factory=list)
+
+
+class SoilIntelligenceResponse(BaseModel):
+    """Complete Soil Intelligence response contract (Phase P-AGRI-SOIL)."""
+
+    start_date: str
+    end_date: str
+    moisture: SoilMoistureResponseModel
+    properties: Dict[str, Any] = Field(default_factory=dict)
+    unavailable_nutrients: List[UnavailableNutrientModel] = Field(default_factory=list)
+    data_availability_matrix: List[SoilMetricAvailabilityItem] = Field(default_factory=list)
+    laboratory_framework: SoilLaboratoryFrameworkModel
+    limitations: List[str] = Field(default_factory=list)
+
+
+class SoilIntelligenceRequest(BaseModel):
+    """Direct request contract for standalone Soil Intelligence analysis."""
+
+    geometry: Union[PointGeometry, PolygonGeometry] = Field(
+        ...,
+        description="GeoJSON Point or Polygon geometry",
+    )
+    start_date: str = Field(
+        ...,
+        description="Analysis window start date (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        description="Analysis window end date (YYYY-MM-DD)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 29. Pest / Disease Inspection & Risk Screening Contract (Phase P1)
+# ---------------------------------------------------------------------------
+
+
+class PestDiseaseRiskLevel(str, Enum):
+    """Overall multi-sensor stress risk level (screening only, not disease diagnosis)."""
+
+    NONE = "none"
+    LOW = "low"
+    MODERATE = "moderate"
+    ELEVATED = "elevated"
+    HIGH = "high"
+    INSUFFICIENT = "insufficient"
+
+
+class PestDiseasePatternType(str, Enum):
+    """Categorical remote-sensing stress patterns compatible with biological or abiotic factors."""
+
+    NO_ANOMALY = "no_significant_anomaly_detected"
+    VEGETATION_STRESS = "vegetation_stress_pattern"
+    MOISTURE_STRESS = "moisture_stress_pattern"
+    PERSISTENT_DECLINE = "persistent_vegetation_decline"
+    POSSIBLE_BIOTIC_STRESS = "possible_biotic_stress_compatible_pattern"
+    POSSIBLE_ABIOTIC_STRESS = "possible_abiotic_stress_compatible_pattern"
+    MIXED_CONFLICTING = "mixed_conflicting_evidence"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+
+
+class EvidenceHierarchyLevel(int, Enum):
+    """Hierarchical scientific evidence levels (0 to 4)."""
+
+    LEVEL_0_NO_EVIDENCE = 0
+    LEVEL_1_SINGLE_SENSOR = 1
+    LEVEL_2_MULTI_TEMPORAL = 2
+    LEVEL_3_MULTI_SENSOR_CONCORDANCE = 3
+    LEVEL_4_GROUND_TRUTH_VALIDATED = 4
+
+
+class SensorEvidenceDetail(BaseModel):
+    """Individual sensor evidence metric observation and orientation."""
+
+    sensor_family: str  # "optical", "radar", "thermal", "ground_truth"
+    metric_key: str
+    display_name_fa: str
+    value: Optional[float] = None
+    baseline_value: Optional[float] = None
+    anomaly_z_score: Optional[float] = None
+    status: str = "available"
+    indication: str = "normal"  # "normal", "stressed", "declining", "elevated_temp", "volume_loss"
+    weight_in_assessment: float = 1.0
+    notes_fa: str = ""
+
+
+class BioticAbioticAssessment(BaseModel):
+    """Biotic versus abiotic compatibility screening."""
+
+    compatible_stress_type: str = "indeterminate"  # "biotic", "abiotic", "mixed", "indeterminate", "none"
+    biotic_compatibility_score: float = 0.0
+    abiotic_compatibility_score: float = 0.0
+    spatial_uniformity: str = "unknown"  # "uniform", "patchy_localized", "edge_effect", "unknown"
+    weather_correlation: str = "unknown"  # "correlated_with_drought_heat", "decoupled", "unknown"
+    canopy_structural_decay: str = "unknown"  # "detected", "not_detected", "unknown"
+    reasoning_fa: str = ""
+    reasoning_en: str = ""
+
+
+class PestDiseaseInspectionResponse(BaseModel):
+    """Complete Pest & Disease Inspection & Risk Screening response contract (Phase P1)."""
+
+    request_id: Optional[str] = None
+    start_date: str
+    end_date: str
+    overall_risk_level: PestDiseaseRiskLevel = PestDiseaseRiskLevel.INSUFFICIENT
+    risk_level_fa: str = "شواهد ناکافی"
+    pattern_type: PestDiseasePatternType = PestDiseasePatternType.INSUFFICIENT_EVIDENCE
+    pattern_title_fa: str = "شواهد ناکافی برای غربالگری"
+    pattern_summary_fa: str = ""
+    evidence_hierarchy_level: int = 0
+    evidence_hierarchy_title_fa: str = "سطح ۰: بدون شواهد"
+    evidence_hierarchy_description_fa: str = ""
+    optical_evidence: List[SensorEvidenceDetail] = Field(default_factory=list)
+    radar_evidence: List[SensorEvidenceDetail] = Field(default_factory=list)
+    thermal_evidence: List[SensorEvidenceDetail] = Field(default_factory=list)
+    biotic_abiotic_assessment: BioticAbioticAssessment = Field(default_factory=BioticAbioticAssessment)
+    ground_truth_corroboration: Dict[str, Any] = Field(default_factory=dict)
+    temporal_persistence: Dict[str, Any] = Field(default_factory=dict)
+    scientific_disclaimer_fa: str = (
+        "این سامانه صرفاً یک ابزار پایش و غربالگری ریسک مبتنی بر سنجش از دور چندسنسوری است. "
+        "تشخیص قطعی نوع آفت، پاتوژن بیماری یا تجویز سموم شیمیایی از طریق ماهواره از نظر علمی ناممکن و غیرمجاز است. "
+        "هرگونه اقدام کنترلی یا درمانی نیازمند بازدید میدانی کارشناس گیاه‌پزشک و آزمایشگاه تشخیصی معتبر است."
+    )
+    scientific_disclaimer_en: str = (
+        "This system provides multi-sensor remote sensing risk screening only. "
+        "Definitive pathogen or pest diagnosis and chemical pesticide prescriptions from satellite imagery "
+        "are scientifically impossible and strictly prohibited. Field inspection by certified plant pathologists "
+        "and laboratory testing are mandatory before treatment."
+    )
+    recommended_field_actions_fa: List[str] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+
+
+class PestDiseaseInspectionRequest(BaseModel):
+    """Request contract for standalone Pest/Disease Inspection."""
+
+    geometry: Union[PointGeometry, PolygonGeometry] = Field(
+        ...,
+        description="GeoJSON Point or Polygon geometry",
+    )
+    start_date: str = Field(
+        ...,
+        description="Analysis window start date (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        description="Analysis window end date (YYYY-MM-DD)",
+    )
+    ground_truth: Optional[List[Any]] = Field(
+        default=None,
+        description="Optional ground truth observations to link and validate",
+    )
+    cloud_max_percent: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=100.0,
+        description="Maximum cloud cover percentage for optical filtering",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 15. History persistence schemas (P0-HISTORY)
+# ---------------------------------------------------------------------------
+
+
+class AgricultureHistoryItemSummary(BaseModel):
+    """Summary of a saved agricultural analysis run for list display."""
+
+    id: uuid.UUID
+    location_id: uuid.UUID
+    location_name: Optional[str] = None
+    geometry_type: str = "Point"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    area_sq_meters: Optional[float] = None
+    start_date: str
+    end_date: str
+    status: str  # "completed", "running", "failed"
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    overall_sufficiency: Optional[str] = None
+    synthesis_status: Optional[str] = None
+    error_message: Optional[str] = None
+    model_version: Optional[str] = "1.0.0"
+
+    model_config = {"from_attributes": True}
+
+
+class AgricultureHistoryListResponse(BaseModel):
+    """Paginated list of saved agricultural analysis runs."""
+
+    items: List[AgricultureHistoryItemSummary] = Field(default_factory=list)
+    total: int = 0
+    skip: int = 0
+    limit: int = 20
+
+
+
+

@@ -90,6 +90,7 @@ export default function MapView({
   const verticesRef = useRef<[number, number][]>(vertices)
   verticesRef.current = vertices
   const dragVertexIndexRef = useRef<number | null>(null)
+  const consecutiveSatelliteErrorsRef = useRef<number>(0)
 
   // Helper to construct GeoJSON FeatureCollection for drawn polygon
   const buildDrawnFeatureCollection = useCallback(
@@ -475,7 +476,7 @@ export default function MapView({
     }
     currentMap.on('move', onMapMove)
 
-    // Handle map provider errors and fallback to reliable OpenStreetMap
+    // Handle map provider errors: require 5 consecutive failures before disabling satellite provider
     const onMapError = (e: any) => {
       const srcId = e?.sourceId || e?.tile?.source || ''
       const errMsg = typeof e?.error?.message === 'string' ? e.error.message : ''
@@ -486,13 +487,16 @@ export default function MapView({
         errMsg.includes('arcgisonline') ||
         errMsg.includes('World_Imagery')
       if (isSatellite) {
-        setMapProviderError('ارتباط با سرور تصاویر ماهواره‌ای برقرار نشد. نقشه پایه OpenStreetMap فعال است.')
-        try {
-          if (currentMap.getLayer('osm-layer')) {
-            currentMap.setPaintProperty('osm-layer', 'raster-opacity', 1.0)
+        consecutiveSatelliteErrorsRef.current += 1
+        if (consecutiveSatelliteErrorsRef.current >= 5) {
+          setMapProviderError('ارتباط با سرور تصاویر ماهواره‌ای برقرار نشد. نقشه پایه OpenStreetMap فعال است.')
+          try {
+            if (currentMap.getLayer('osm-layer')) {
+              currentMap.setPaintProperty('osm-layer', 'raster-opacity', 1.0)
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
       }
     }
@@ -500,6 +504,7 @@ export default function MapView({
 
     const onSourceData = (e: any) => {
       if (e?.sourceId === 'satellite' && e?.isSourceLoaded && e?.tile) {
+        consecutiveSatelliteErrorsRef.current = 0
         setMapProviderError(null)
       }
     }
@@ -1402,6 +1407,7 @@ export default function MapView({
                 cursor: 'pointer',
               }}
               onClick={() => {
+                consecutiveSatelliteErrorsRef.current = 0
                 setMapProviderError(null)
                 if (map.current) {
                   try {

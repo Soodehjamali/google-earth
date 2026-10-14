@@ -172,10 +172,46 @@ _register(DatasetSpec(
     caveats=(
         "ST_* bands are fully masked in scenes whose PROCESSING_LEVEL is L2SR.",
         "The thermal band is acquired at 100 m and resampled to 30 m; the true thermal resolution remains 100 m.",
-        "Only Landsat 8 is registered; Landsat 9 (LC09) is not yet in this registry.",
+        "Landsat 8 and Landsat 9 (LC09) are cross-calibrated with phased 8-day repeat cycles.",
     ),
     citation="USGS Landsat 8 Collection 2 Level-2, USGS/NASA",
     docs_url="https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2",
+))
+
+_register(DatasetSpec(
+    id="LANDSAT/LC09/C02/T1_L2",
+    name="Landsat 9 Collection 2 Level-2",
+    name_fa="لندست ۹ سطح ۲",
+    provider="USGS / NASA",
+    description=(
+        "Landsat 9 Collection 2 Level-2 surface reflectance and surface "
+        "temperature, atmospherically corrected with OLI-2 and TIRS-2 instruments."
+    ),
+    spatial_resolution="30 m (optical) / 30 m resampled from 100 m (thermal)",
+    temporal_resolution="16 days (8 days when combined with Landsat 8)",
+    available_from="2021-10-31",
+    available_to=None,
+    measurement_basis=MeasurementBasis.DIRECT,
+    cloud_mask_method="qa_pixel",
+    cloud_mask_band="QA_PIXEL",
+    bands={
+        "SR_B2": BandSpec("SR_B2", "Blue", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "SR_B3": BandSpec("SR_B3", "Green", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "SR_B4": BandSpec("SR_B4", "Red", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "SR_B5": BandSpec("SR_B5", "NIR", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "SR_B6": BandSpec("SR_B6", "SWIR 1", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "SR_B7": BandSpec("SR_B7", "SWIR 2", "reflectance", 2.75e-05, -0.2, (0.0, 1.0)),
+        "ST_B10": BandSpec("ST_B10", "Surface temperature", "K", 0.00341802, 149.0, (150.0, 400.0), (0.0,)),
+        "ST_QA": BandSpec("ST_QA", "Surface temperature quality", "K", 0.01, 0.0, None, ()),
+        "QA_PIXEL": BandSpec("QA_PIXEL", "Pixel quality bitmask", "bitmask", 1.0, 0.0, None, ()),
+    },
+    caveats=(
+        "ST_* bands are fully masked in scenes whose PROCESSING_LEVEL is L2SR.",
+        "The thermal band is acquired at 100 m and resampled to 30 m; the true thermal resolution remains 100 m.",
+        "Phased 8 days apart from Landsat 8; identical radiometric scaling.",
+    ),
+    citation="USGS Landsat 9 Collection 2 Level-2, USGS/NASA",
+    docs_url="https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2",
 ))
 
 
@@ -1016,10 +1052,15 @@ def _soilgrids_wv_bands() -> Dict[str, "BandSpec"]:
             name,
             f"Volumetric water content, mean, {depth.replace('_', '-')}",
             "cm3/cm3",
-            # The catalogue states 10^-3 cm^3/cm^3, which is the same
-            # numeric scale as m3/m3. The stored integer is therefore
-            # converted to a volume fraction by multiplying by 0.001.
-            0.001,
+            # Earth Engine applies the catalogue's 10^-3 band scale when
+            # the asset is read, so these bands arrive already in
+            # cm3/cm3 (verified live: the band type is double with range
+            # +/-32.768, and a desert field-capacity pixel reads 0.209,
+            # not 209). The registry therefore must not scale again:
+            # applying 0.001 here published every SoilGrids value 1000
+            # times too small, which only stayed hidden while a bare
+            # Point never produced a SoilGrids reduction at all.
+            1.0,
             0.0,
             (0.0, 0.65),
             (),

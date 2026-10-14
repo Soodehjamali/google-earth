@@ -1,9 +1,11 @@
-"""Application configuration using pydantic-settings."""
-
+from pathlib import Path
 from typing import List, Optional
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
+_ENV_FILE = _BACKEND_DIR / ".env"
 
 #: Credential combinations that are acceptable for local development only.
 _DEV_DATABASE_MARKERS = ("postgres:postgres@", "postgres:postgres123@")
@@ -13,9 +15,10 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(_ENV_FILE), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Application
@@ -27,7 +30,7 @@ class Settings(BaseSettings):
 
     # Database (async driver — matches asyncpg in requirements and
     # create_async_engine in app/db/session.py)
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/agri_intelligence"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5434/agri_intelligence"
 
     # Database connection pool
     DB_POOL_SIZE: int = 5

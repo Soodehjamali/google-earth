@@ -23,6 +23,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.registry import get_dataset
 from app.services.agriculture.quality import (
     REANALYSIS_THRESHOLDS,
@@ -83,6 +84,9 @@ def _reduce_era5_band(
     temperatures would pair a warm day's temperature with a cool day's
     dewpoint and produce a value that describes no actual day.
     """
+    # ERA5 is point-queryable: when a derived metric on another grid calls
+    # this, the read goes back to the containing pixel, never a buffer.
+    context = scope_context_for_dataset(context, ERA5_DAILY)
     collection = (
         ee_module.ImageCollection(ERA5_DAILY)
         .filterDate(context.start_date, context.end_date)

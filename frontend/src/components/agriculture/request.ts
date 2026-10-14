@@ -3,6 +3,7 @@ import type {
   AgricultureGeometry,
   GroundTruthObservationInput,
 } from '../../types/index.ts';
+import { validatePolygonCoordinates } from './polygon.ts';
 
 /**
  * Locked Comprehensive API domain names (Phase 0B §2).
@@ -97,6 +98,7 @@ export interface AnalysisInputs {
   selectedDomains: readonly unknown[];
   cloud_max_percent: unknown;
   groundTruth?: readonly GroundTruthObservationInput[];
+  name?: string;
 }
 
 /**
@@ -274,6 +276,9 @@ export function buildAgricultureRequest(
     end_date: inputs.end_date,
     cloud_max_percent: clampCloudPercent(inputs.cloud_max_percent),
   };
+  if (inputs.name && inputs.name.trim()) {
+    request.name = inputs.name.trim();
+  }
   if (!allSelected) {
     request.domains = valid;
   }
@@ -293,6 +298,10 @@ export function validateAnalysisInputs(
   if (!start_date || !end_date) return 'بازه زمانی را وارد کنید — Date range required';
   // YYYY-MM-DD strings compare lexicographically.
   if (end_date <= start_date) return 'تاریخ پایان باید بعد از تاریخ شروع باشد';
+  if (geometry.type === 'Polygon') {
+    const val = validatePolygonCoordinates(geometry.coordinates[0]);
+    if (!val.valid) return val.error || 'چندضلعی نامعتبر است — Invalid polygon';
+  }
   return null;
 }
 

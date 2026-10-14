@@ -8,6 +8,7 @@ import type {
   SynthesisStatementResponse,
 } from '../../types/index.ts';
 import { DOMAIN_META, PATTERN_META } from '../../types/index.ts';
+import { supportRows } from './support.ts';
 
 /** Narrow an unknown value to a plain record without casting blindly. */
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -150,6 +151,31 @@ export function getProvenanceRows(
   push('product_date', 'تاریخ محصول', provenance.product_date);
   push('formula', 'فرمول', provenance.formula);
   push('citation', 'استناد', provenance.citation);
+  if (Array.isArray(provenance.limitations) && provenance.limitations.length > 0) {
+    const limits = provenance.limitations.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    );
+    if (limits.length > 0) {
+      rows.push({
+        key: 'limitations',
+        label: 'محدودیت‌ها — Limitations',
+        value: limits.join('; '),
+      });
+    }
+  }
+  if (Array.isArray(provenance.caveats) && provenance.caveats.length > 0) {
+    const caveats = provenance.caveats.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    );
+    if (caveats.length > 0) {
+      rows.push({
+        key: 'caveats',
+        label: 'تذکرات — Caveats',
+        value: caveats.join('; '),
+      });
+    }
+  }
+  for (const row of supportRows(provenance)) rows.push(row);
   return rows;
 }
 

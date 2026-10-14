@@ -7,6 +7,7 @@ import DynamicWorldBands from './DynamicWorldBands';
 import ProvenanceDrawer from './ProvenanceDrawer';
 import { CropShareDetail, SpatialStatsDetail, TemporalRangeDetail } from './StructuredDetails';
 import KPICard from '../KPICard';
+import { SupportStrip, UnavailableReason } from './SupportNotice';
 
 interface EvidenceDetailProps {
   item: EvidenceItemResponse;
@@ -75,6 +76,10 @@ export default function EvidenceDetailCard({
             </span>
           </div>
         )}
+
+        {/* Support + time context stay on the card, never only in the drawer. */}
+        {!unavailable && <SupportStrip item={item} />}
+        {unavailable && <UnavailableReason item={item} />}
 
         <div className="evidence-detail-row">
           <span className="text-muted">مجموعه داده:</span>

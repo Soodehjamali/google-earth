@@ -7,6 +7,7 @@ import type {
 import {
   asArray,
   asEvidenceItem,
+  asRecord,
   asSynthesisStatement,
   domainMetaFor,
   sufficiencyBadgeClass,
@@ -15,6 +16,7 @@ import SynthesisStatementCard from './SynthesisStatementCard';
 import { statementKeyFor } from './SynthesisStatementCard';
 import EvidenceDetailCard from './EvidenceDetailCard';
 import { routePathForDomain } from './domainPages';
+import { UnavailableReason } from './SupportNotice';
 
 interface DomainSummaryBlockProps {
   domainKey: string;
@@ -51,6 +53,17 @@ export default function DomainSummaryBlock({
   );
   const bundle = bundles?.[domainKey];
   const bundleItems = bundle && Array.isArray(bundle.items) ? bundle.items : [];
+  const bundleConflicts = bundle && Array.isArray(bundle.conflicts) ? bundle.conflicts : [];
+  const summaryConflicts = asArray(summary.conflicts).filter(
+    (entry): entry is string => typeof entry === 'string',
+  );
+  const significantConflicts = bundleConflicts.filter(
+    (entry) =>
+      entry &&
+      typeof entry === 'object' &&
+      ((entry as { status?: string }).status === 'conflicting' ||
+        (entry as { status?: string }).status === 'partially_consistent'),
+  );
   const scalarItems = bundleItems
     .map(asEvidenceItem)
     .filter(
@@ -119,9 +132,9 @@ export default function DomainSummaryBlock({
               </Link>
             </div>
           )}
-          {statements.length === 0 && (
+          {statements.length === 0 && scalarItems.length === 0 && unavailable.length === 0 && (
             <div className="empty-state" style={{ padding: '24px' }}>
-              <div className="empty-state-desc">هیچ تحلیلی برای این حوزه یافت نشد</div>
+              <div className="empty-state-desc">هیچ داده یا تحلیلی برای این حوزه یافت نشد</div>
             </div>
           )}
 
@@ -158,15 +171,61 @@ export default function DomainSummaryBlock({
           {unavailable.length > 0 && (
             <div className="unavailable-section">
               <h4 className="unavailable-title">داده‌های در دسترس نیست — Unavailable Evidence</h4>
-              {unavailable.map((key) => (
-                <div key={key} className="unavailable-item">
-                  <span className="badge badge-danger" style={{ fontSize: '11px' }}>
-                    {' '}
-                    unavailable{' '}
-                  </span>
-                  <code>{key}</code>
-                </div>
-              ))}
+              {unavailable.map((key) => {
+                const source = scalarItems.find((entry) => entry.metric_key === key);
+                return (
+                  <div key={key} className="unavailable-item">
+                    <code>{key}</code>
+                    {source ? (
+                      <UnavailableReason item={source} compact />
+                    ) : (
+                      <span className="badge badge-danger" style={{ fontSize: '11px' }}>
+                        unavailable
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {(significantConflicts.length > 0 || summaryConflicts.length > 0) && (
+            <div className="domain-conflicts mt-2">
+              <h4 className="unavailable-title">
+                تناقضات و عدم تطابق مدل‌ها — Model Conflicts & Discrepancies ({significantConflicts.length + summaryConflicts.length})
+              </h4>
+              <ul className="conflicts-list" style={{ paddingLeft: '16px', margin: '4px 0' }}>
+                {significantConflicts.map((c, i) => {
+                  const record = asRecord(c);
+                  if (!record) return null;
+                  const a = typeof record.metric_a === 'string' ? record.metric_a : '—';
+                  const b = typeof record.metric_b === 'string' ? record.metric_b : '—';
+                  const status = typeof record.status === 'string' ? record.status : '—';
+                  const explanation = typeof record.explanation === 'string' ? record.explanation : '';
+                  return (
+                    <li key={`sc-${i}`} style={{ marginBottom: '6px' }}>
+                      <code>{a}</code> ↔ <code>{b}</code>{' '}
+                      <span
+                        className={`badge ${status === 'conflicting' ? 'badge-danger' : 'badge-warning'}`}
+                        style={{ fontSize: '11px' }}
+                      >
+                        {status}
+                      </span>
+                      {explanation && (
+                        <div className="text-muted" style={{ fontSize: '0.85rem', marginTop: '2px' }}>
+                          {explanation}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+                {summaryConflicts.map((text, i) => (
+                  <li key={`sumc-${i}`} style={{ marginBottom: '6px' }}>
+                    <span className="badge badge-danger" style={{ fontSize: '11px' }}>conflict</span>
+                    <span style={{ fontSize: '0.85rem', marginLeft: '6px' }}>{text}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

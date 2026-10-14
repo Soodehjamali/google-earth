@@ -74,6 +74,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.climate import (
     ERA5_DAILY,
     ERA5_WORKING_SCALE,
@@ -452,6 +453,9 @@ def _reduce_smap_rootzone(
     band's conversion exactly once and reports the same quantity that
     the soil module publishes under ``soil_moisture_rootzone``.
     """
+    # SMAP L4 is point-queryable: read the containing pixel even when the
+    # calling metric's primary dataset is a buffered one.
+    context = scope_context_for_dataset(context, SMAP_L4)
     dataset = get_dataset(SMAP_L4)
     band_name = "sm_rootzone"
 

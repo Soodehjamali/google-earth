@@ -58,6 +58,7 @@ from app.services.agriculture.aggregation import (
     pixel_area_sq_m,
 )
 from app.services.agriculture.base import Metric, MetricContext, MetricDomain
+from app.services.agriculture.support import scope_context_for_dataset
 from app.services.agriculture.quality import (
     MODIS_THRESHOLDS,
     REANALYSIS_THRESHOLDS,
@@ -167,6 +168,7 @@ def _reduce_smap_l3(
 
     Returns ``(stats, image_count, quality_counts)``.
     """
+    context = scope_context_for_dataset(context, dataset_id)
     collection = (
         ee_module.ImageCollection(dataset_id)
         .filterDate(context.start_date, context.end_date)

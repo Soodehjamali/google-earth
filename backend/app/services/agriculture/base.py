@@ -18,6 +18,7 @@ That is what makes the fallback chain and the catalog possible.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from abc import ABC, abstractmethod
@@ -150,12 +151,39 @@ class MetricContext:
     #: Free-form options for metric-specific tuning.
     options: Dict[str, Any] = field(default_factory=dict)
 
+    #: The geometry exactly as the caller sent it, before any support
+    #: re-scoping. ``None`` unless the caller declared it — the Point
+    #: support policy only ever engages off this field, which is what
+    #: leaves hand-built contexts and non-Point requests untouched.
+    requested_geometry: Optional[Dict[str, Any]] = None
+
+    #: The Earth Engine object for ``requested_geometry``, kept so a
+    #: support region can be buffered from the original Point rather
+    #: than from a geometry an earlier metric may already have swapped.
+    original_geometry: Any = None
+
+    #: Support geometries already built for this request, keyed by
+    #: radius. Shared by reference across the contexts ``replace``
+    #: derives, so concurrent metrics buffer each radius at most once.
+    support_plan: Optional[Dict[str, Any]] = None
+
+    #: The support region this context currently reduces over, or
+    #: ``None`` when it reduces over the geometry as given.
+    support_spec: Optional[Any] = None
+
+    #: Every support region this metric's reducers actually used, primary
+    #: first. Opened fresh for each metric computation and shared by
+    #: reference with the contexts derived from it, so a derived metric
+    #: that reads a second dataset can disclose that dataset's support too.
+    support_log: Optional[List[Any]] = None
+
     def cache_key(self, metric_key: str, **extra: Any) -> str:
         """Build a deterministic cache key for a metric.
 
         Folds in everything that could change the answer: geometry,
         dates, metric identity, scale, cloud tolerance, dataset versions,
-        and any metric-specific extras.
+        the spatial support the value was reduced over, and any
+        metric-specific extras.
         """
         payload = {
             "metric": metric_key,
@@ -165,10 +193,32 @@ class MetricContext:
             "scale": self.scale,
             "cloud_max_percent": self.cloud_max_percent,
             "dataset_versions": dict(sorted(self.dataset_versions.items())),
+            "support": self.support_identity(),
             "extra": extra,
         }
         blob = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    def support_identity(self) -> str:
+        """Identity of the Point-support policy that shaped this context.
+
+        In the cache key so an analysis produced under one meaning of a
+        Point request can never be replayed under another.
+        """
+        from app.services.agriculture.support import support_identity
+
+        return support_identity(self.support_spec)
+
+    def support_context_for(self, metric: "Metric") -> "MetricContext":
+        """Return the context ``metric`` should reduce over.
+
+        Delegates to :mod:`app.services.agriculture.support`, the single
+        source of truth for what a Point request means. Returns this
+        context unchanged for every request the policy does not govern.
+        """
+        from app.services.agriculture.support import open_support_scope
+
+        return open_support_scope(self, metric)
 
     @property
     def start(self) -> Optional[date]:
@@ -219,6 +269,32 @@ class Metric(ABC):
 
     #: Things this metric cannot tell you. Surfaced verbatim.
     limitations: Tuple[str, ...] = ()
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Re-scope every metric to its support geometry, in one place.
+
+        Wrapping the subclass's own ``compute`` is what makes the Point
+        support policy impossible to opt out of by accident: a metric
+        that forgets to ask the context for the right geometry still
+        receives it, and still discloses it. Metrics that do not define
+        ``compute`` are left alone, and a metric whose context is not
+        governed by the policy sees the wrapper as a pass-through.
+        """
+        super().__init_subclass__(**kwargs)
+        implementation = cls.__dict__.get("compute")
+        if implementation is None or not callable(implementation):
+            return
+
+        @functools.wraps(implementation)
+        def compute(self: Any, context: MetricContext, _impl: Any = implementation) -> Any:
+            from app.services.agriculture.support import (
+                apply_support_disclosure,
+            )
+
+            scoped = context.support_context_for(self)
+            return apply_support_disclosure(_impl(self, scoped), scoped)
+
+        cls.compute = compute
 
     # -- identity ----------------------------------------------------------
 
