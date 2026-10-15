@@ -254,15 +254,7 @@ def _key_file() -> Optional[Path]:
     key_path = Path(settings.EE_PRIVATE_KEY_FILE)
     if key_path.exists():
         return key_path
-    backend_root = Path(__file__).resolve().parent.parent.parent.parent
-    for parent in [backend_root, *backend_root.parents]:
-        cand = parent / "credentials" / "gee-key.json"
-        if cand.exists():
-            return cand
-        cand = parent / "backend" / "credentials" / "gee-key.json"
-        if cand.exists():
-            return cand
-    return key_path
+    return None
 
 
 def _has_default_credentials() -> bool:

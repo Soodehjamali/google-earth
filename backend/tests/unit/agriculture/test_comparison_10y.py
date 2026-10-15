@@ -92,6 +92,7 @@ def test_calculate_10y_trend_declining_and_baseline():
     assert "پایین‌تر از میانه" in trend.scientific_summary_fa
 
 
+@pytest.mark.requires_gee
 def test_soil_and_productivity_boundary_limitations():
     """Verify that requesting soil or productivity includes non-claim limitation notices."""
     req_soil = HistoricalComparisonRequest(
@@ -113,6 +114,7 @@ def test_soil_and_productivity_boundary_limitations():
     assert any("عملکرد محصول" in lim for lim in resp_prod.limitations)
 
 
+@pytest.mark.requires_gee
 def test_generate_historical_comparison_real_gee():
     """Verify 10-year comparison generates 10 windows with real GEE satellite data."""
     req = HistoricalComparisonRequest(
