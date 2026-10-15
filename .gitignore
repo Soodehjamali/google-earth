@@ -21,3 +21,46 @@ htmlcov/
 _patch*.py
 docs/phase-2-screens/
 
+# Scratch & Diagnostic Scripts
+*.mjs
+backend/_fa12_*
+backend/audit_*.py
+backend/check_*.py
+backend/inspect_*.py
+backend/probe_*.py
+backend/test_*_live.py
+backend/scripts/
+scripts/
+.antigravity/
+.worktrees/
+scratch/
+frontend/_fa12_browser/
+
+# Test Data Captures & Diagnostic Dumps
+*.out
+*.err
+*.png
+*.pdf
+rendered_report.html
+*_audit*.json
+ardakan_*.json
+fa12_*.json
+e2e_*.json
+ground_truth_test_report.json
+pest_disease_audit.json
+heatmap_chain_audit.json
+backend/catalog_dump.json
+backend/catalog_inventory.json
+backend/metric_coverage_audit.json
+backend/_soil_probe_results.json
+backend/_soilgrids_meta.json
+backend/audit_tiles_result.json
+frontend/_saved_analysis_sample.json
+frontend/setting.json
+
+# Sprint Audit Notes & Transient Prompts
+P-AGRI-*.md
+P-AGRI-*.txt
+p_agri_*.txt
+temp_prompt.txt
+PROJECT_STATUS.md
