@@ -28,11 +28,12 @@ GFS_CELL_RADIUS_M = 13915.0         # 27.83km / 2 for cell footprint buffer
 #: Default lead-time temperature uncertainty table in degrees Celsius.
 #: Flagged as "needs calibration" in documentation and output.
 DEFAULT_LEAD_TIME_UNCERTAINTY_TABLE: Tuple[Tuple[float, float], ...] = (
-    (24.0, 1.0),        # 0 to 24h: ±1.0 °C
-    (48.0, 1.5),        # 24 to 48h: ±1.5 °C
-    (72.0, 2.0),        # 48 to 72h: ±2.0 °C
-    (120.0, 2.5),       # 72 to 120h: ±2.5 °C
-    (float("inf"), 3.5),# > 120h: ±3.5 °C
+    (24.0, 1.0),        # 0 to 24h: ±1.0 °C (placeholder / needs calibration)
+    (48.0, 1.5),        # 24 to 48h: ±1.5 °C (placeholder / needs calibration)
+    (72.0, 2.0),        # 48 to 72h: ±2.0 °C (placeholder / needs calibration)
+    (120.0, 2.5),       # 72 to 120h: ±2.5 °C (placeholder / needs calibration)
+    (240.0, 3.5),       # 120 to 240h: ±3.5 °C (placeholder / needs calibration)
+    (float("inf"), 4.5),# > 240h: ±4.5 °C (placeholder / needs calibration)
 )
 
 
@@ -42,7 +43,7 @@ def get_lead_time_uncertainty(lead_hours: float, table: Optional[Tuple[Tuple[flo
     for max_h, unc in lookup:
         if lead_hours <= max_h:
             return unc
-    return 3.5
+    return 4.5
 
 
 @dataclass(frozen=True)

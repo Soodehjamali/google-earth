@@ -391,3 +391,90 @@ async def test_frost_assessment_evidence_level_and_unknown_stage():
     # Most sensitive stage for pistachio has the warmest tc10 (e.g. fruit_set at -1.0C)
     assert assessment_unknown.t_critical_10_c == -1.0
     assert assessment_unknown.phenological_stage == "fruit_set"
+
+
+def test_lead_time_uncertainty_table_monotonic_growth():
+    """Verify lead-time uncertainty table is strictly monotonic and grows with lead time up to 240h."""
+    from app.services.agriculture.forecast import (
+        DEFAULT_LEAD_TIME_UNCERTAINTY_TABLE,
+        get_lead_time_uncertainty,
+    )
+
+    prev_h = 0.0
+    prev_unc = 0.0
+    for max_h, unc in DEFAULT_LEAD_TIME_UNCERTAINTY_TABLE:
+        assert unc > prev_unc, f"Uncertainty must strictly grow with lead time: {unc} <= {prev_unc}"
+        assert max_h > prev_h, f"Lead hours must strictly increase: {max_h} <= {prev_h}"
+        prev_h = max_h
+        prev_unc = unc
+
+    # Verify lookups
+    assert get_lead_time_uncertainty(12.0) == 1.0    # 0-24h
+    assert get_lead_time_uncertainty(36.0) == 1.5    # 24-48h
+    assert get_lead_time_uncertainty(60.0) == 2.0    # 48-72h
+    assert get_lead_time_uncertainty(100.0) == 2.5   # 72-120h
+    assert get_lead_time_uncertainty(180.0) == 3.5   # 120-240h
+    assert get_lead_time_uncertainty(300.0) == 4.5   # > 240h
+
+
+def test_hard_cap_horizon_returns_no_nightly_risk_beyond_cap():
+    """Verify that beyond the hard cap (default 240h), no nightly risk is returned."""
+    from app.services.agriculture.forecast import ForecastResult, ForecastTimestep
+
+    base_utc = datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc)
+    series: list[ForecastTimestep] = []
+
+    # Generate 300 hours of forecast (spanning ~12 local nights)
+    for h in range(300):
+        ts = base_utc + timedelta(hours=h)
+        series.append(
+            ForecastTimestep(
+                timestamp_utc=ts.isoformat(),
+                lead_hours=float(h),
+                temperature_2m_c=-2.0,  # Freezing throughout
+                temperature_2m_c_raw=-2.0,
+                elevation_delta_m=0.0,
+                elevation_correction_c=0.0,
+                elevation_uncertainty_c=0.5,
+                lead_time_uncertainty_c=1.5,
+                total_uncertainty_c=1.58,
+                temperature_min_c=-3.58,
+                temperature_max_c=-0.42,
+                is_interpolated=False,
+                wind_speed_10m_mps=1.5,
+            )
+        )
+
+    forecast = ForecastResult(
+        series=series,
+        source="test",
+        issue_time_utc=base_utc.isoformat(),
+        native_spatial_resolution_m=27830.0,
+        native_temporal_resolution_h=1,
+        quality_state="coarse_context",
+        site_elevation_m=1200.0,
+        cell_elevation_m=1200.0,
+        horizon_hours=300,
+        disclaimer_fa="test",
+    )
+
+    # Assess with hard cap = 240h
+    assessment_capped = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="early_bloom",
+        hard_cap_horizon_h=240,
+    )
+
+    # Every returned nightly risk must only cover steps within the 240h horizon
+    for nr in assessment_capped.nightly_risks:
+        end_dt = datetime.fromisoformat(nr.end_time_utc)
+        start_lead_h = (datetime.fromisoformat(nr.start_time_utc) - base_utc).total_seconds() / 3600.0
+        assert start_lead_h <= 240.0, f"Night {nr.night_date} starts at lead_h={start_lead_h} > 240h"
+
+    # Beyond 240h (hours 241 to 300) spans nights 10..12. They must NOT be in nightly_risks!
+    night_dates = [nr.night_date for nr in assessment_capped.nightly_risks]
+    # Day 0 is 2026-03-20. 240h is 10 days = 2026-03-30.
+    # Night of 2026-03-31 (hour ~264) must NOT be present
+    assert "2026-03-31" not in night_dates
+    assert "2026-04-01" not in night_dates

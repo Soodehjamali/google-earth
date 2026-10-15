@@ -13,7 +13,7 @@ class FrostAssessRequest(BaseModel):
     geometry: Dict[str, Any] = Field(..., description="GeoJSON polygon or point feature geometry.")
     crop: str = Field("pistachio", description="Target crop key, e.g. pistachio.")
     phenological_stage: str = Field("early_bloom", description="Target phenological stage.")
-    horizon_h: int = Field(72, ge=24, le=384, description="Forecast horizon in hours.")
+    horizon_h: int = Field(240, ge=24, le=384, description="Forecast horizon in hours (default 240h, hard-capped at 240h).")
     pooling_risk_proxy: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Optional pre-computed cold-air-pooling proxy (0.0 to 1.0)."
     )

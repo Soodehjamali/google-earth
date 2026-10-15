@@ -36,6 +36,10 @@ _CONFIG_PATHS = [
 
 DEFAULT_LOCAL_UTC_OFFSET_HOURS = 3.5  # Iran Standard Time (IRST = UTC+3:30)
 
+#: Configurable forecast horizon parameters
+DEFAULT_FROST_HORIZON_H = int(os.environ.get("FROST_DEFAULT_HORIZON_H", "240"))
+FROST_HARD_CAP_HORIZON_H = int(os.environ.get("FROST_HARD_CAP_HORIZON_H", "240"))
+
 RISK_LEVEL_NONE = "none"
 RISK_LEVEL_ADVISORY = "advisory"
 RISK_LEVEL_WATCH = "watch"
@@ -421,6 +425,7 @@ def assess_frost_risk(
     pooling_risk_proxy: Optional[float] = None,
     thresholds_config_path: Optional[Path] = None,
     local_utc_offset_hours: float = DEFAULT_LOCAL_UTC_OFFSET_HOURS,
+    hard_cap_horizon_h: Optional[int] = None,
 ) -> FrostRiskAssessment:
     """Execute complete frost risk evaluation combining forecast, thresholds, and topography.
 
@@ -479,8 +484,12 @@ def assess_frost_risk(
         RISK_LEVEL_WARNING: 3,
     }
 
+    hard_cap = hard_cap_horizon_h if hard_cap_horizon_h is not None else FROST_HARD_CAP_HORIZON_H
+
     for night_key in sorted(nights_map.keys()):
-        steps = nights_map[night_key]
+        raw_steps = nights_map[night_key]
+        # Beyond the hard cap: return no nightly risk
+        steps = [s for s in raw_steps if s.lead_hours <= hard_cap]
         if not steps:
             continue
 
