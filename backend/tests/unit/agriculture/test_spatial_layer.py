@@ -77,6 +77,7 @@ def test_spatial_layer_request_validation():
         )
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_ndvi():
     """Verify real Earth Engine NDVI generation for Point geometry."""
     req = SpatialLayerRequest(
@@ -102,6 +103,7 @@ def test_generate_spatial_layer_ndvi():
     assert len(resp.bounds) == 4
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_all_four_metrics():
     """Verify that all four MVP metrics generate valid real responses with proper metadata."""
     for metric_type in [
@@ -125,6 +127,7 @@ def test_generate_spatial_layer_all_four_metrics():
         assert resp.unit != ""
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_polygon():
     """Verify spatial layer generation for Polygon geometry."""
     poly = PolygonGeometry(
@@ -152,6 +155,7 @@ def test_generate_spatial_layer_polygon():
     assert resp.support_area_sq_m > 0
 
 
+@pytest.mark.requires_gee
 def test_no_data_honest_response():
     """Verify that when no imagery exists, honest unavailable status is returned."""
     # Future or invalid date range with 0 images
@@ -243,6 +247,7 @@ def test_spatial_layer_request_with_concept():
         )
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_vegetation_condition():
     """Verify vegetation_condition concept generates real GEE NDVI tile with qualitative interpretation."""
     from app.schemas.agriculture import SpatialConceptType
@@ -270,6 +275,7 @@ def test_generate_spatial_layer_vegetation_condition():
     assert len(resp.qualitative_legend) >= 3
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_thermal_stress():
     """Verify thermal_stress concept generates real GEE LST tile with honest scientific caution."""
     from app.schemas.agriculture import SpatialConceptType
@@ -293,6 +299,7 @@ def test_generate_spatial_layer_thermal_stress():
     assert resp.qualitative_legend is not None
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_surface_dryness():
     """Verify surface_dryness concept generates real GEE NDMI tile with honest optical proxy caution."""
     from app.schemas.agriculture import SpatialConceptType
@@ -317,6 +324,7 @@ def test_generate_spatial_layer_surface_dryness():
     assert resp.qualitative_legend is not None
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_ndmi_metric_direct():
     """Verify raw NDMI metric request works directly (backward & raw compatibility)."""
     from app.schemas.agriculture import SpatialMetricType
@@ -337,6 +345,7 @@ def test_generate_spatial_layer_ndmi_metric_direct():
     assert "/api/v1/agriculture/tiles/" in resp.proxied_tile_url_template
 
 
+@pytest.mark.requires_gee
 def test_generate_spatial_layer_true_color():
     """Verify true_color Sentinel-2 RGB composite generation and proxied tile URL."""
     from app.schemas.agriculture import SpatialMetricType
