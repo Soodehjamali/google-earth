@@ -302,7 +302,7 @@ class TestHistoryPersistenceIntegration:
         # Cleanup
         await delete_analysis_history_item(session, test_id)
 
-    async def test_persistence_across_completely_closed_session(self, mock_analysis_response):
+    async def test_persistence_across_completely_closed_session(self, async_db_session, mock_analysis_response):
         """Stage 4 Requirement: Persist analysis, close session, open brand new connection, verify data."""
         engine = create_async_engine(settings.DATABASE_URL)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
