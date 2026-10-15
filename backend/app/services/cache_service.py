@@ -26,8 +26,13 @@ class CacheService:
     def get(self, key: str) -> Optional[Any]:
         """Get a value from cache."""
         if key in self._cache:
-            value, timestamp = self._cache[key]
-            if time.time() - timestamp < self._ttl:
+            entry = self._cache[key]
+            if len(entry) == 3:
+                value, timestamp, item_ttl = entry
+            else:
+                value, timestamp = entry
+                item_ttl = self._ttl
+            if time.time() - timestamp < item_ttl:
                 logger.debug(f"Cache hit: {key[:16]}...")
                 return value
             else:
@@ -35,9 +40,9 @@ class CacheService:
                 logger.debug(f"Cache expired: {key[:16]}...")
         return None
     
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """Set a value in cache."""
-        self._cache[key] = (value, time.time())
+        self._cache[key] = (value, time.time(), ttl or self._ttl)
         logger.debug(f"Cache set: {key[:16]}...")
     
     def invalidate(self, key: str) -> None:

@@ -34,6 +34,17 @@ interface MapViewProps {
   onPolygonChange?: (polygon: GeoJSON.Polygon | null, isConfirmed: boolean) => void
   onPolygonConfirm?: (polygon: GeoJSON.Polygon) => void
   onPolygonClear?: () => void
+  /** Candidate inspection zones to overlay as priority markers on the field */
+  inspectionZones?: MapInspectionZoneItem[]
+}
+
+export interface MapInspectionZoneItem {
+  id: string
+  nameFa: string
+  centerCoordinates?: [number, number] | null
+  priority: 'high' | 'medium' | 'low' | 'unknown'
+  statusFa: string
+  reasonFa: string
 }
 
 export default function MapView({
@@ -52,6 +63,7 @@ export default function MapView({
   onPolygonChange,
   onPolygonConfirm,
   onPolygonClear,
+  inspectionZones = [],
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -826,6 +838,78 @@ export default function MapView({
       // Layer not ready yet
     }
   }, [rasterOpacity])
+
+  // Candidate Inspection Zones Markers (Step 1 & 8)
+  const zoneMarkersRef = useRef<maplibregl.Marker[]>([])
+
+  useEffect(() => {
+    const current = map.current
+    if (!current) return
+
+    // Clear previous markers
+    zoneMarkersRef.current.forEach((m) => m.remove())
+    zoneMarkersRef.current = []
+
+    if (!inspectionZones || inspectionZones.length === 0) return
+
+    const addMarkers = () => {
+      zoneMarkersRef.current.forEach((m) => m.remove())
+      zoneMarkersRef.current = []
+
+      inspectionZones.forEach((z) => {
+        if (!z.centerCoordinates || z.centerCoordinates.length < 2) return
+        const [lon, lat] = z.centerCoordinates
+        if (typeof lon !== 'number' || typeof lat !== 'number' || isNaN(lon) || isNaN(lat)) return
+
+        const el = document.createElement('div')
+        el.className = 'inspection-zone-marker'
+        const color = z.priority === 'high' ? '#e53e3e' : z.priority === 'medium' ? '#dd6b20' : '#38a169'
+        el.style.cssText = `
+          background-color: ${color};
+          color: white;
+          border: 2px solid white;
+          border-radius: 50%;
+          width: 26px;
+          height: 26px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 13px;
+          font-weight: bold;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+          cursor: pointer;
+        `
+        el.innerText = z.priority === 'high' ? '!' : '✓'
+
+        const popup = new maplibregl.Popup({ offset: 25, closeButton: true }).setHTML(`
+          <div style="direction: rtl; text-align: right; font-family: sans-serif; font-size: 0.82rem; padding: 4px; min-width: 160px;">
+            <div style="font-weight: 700; color: ${color}; margin-bottom: 4px;">${z.nameFa}</div>
+            <div style="margin-bottom: 2px;">اولویت: <strong>${z.priority === 'high' ? 'بالا (فوری)' : z.priority === 'medium' ? 'متوسط' : 'عادی'}</strong></div>
+            <div style="margin-bottom: 4px; color: #4a5568;">وضعیت: ${z.statusFa}</div>
+            <div style="font-size: 0.75rem; color: #718096; border-top: 1px solid #edf2f7; padding-top: 4px;">${z.reasonFa}</div>
+          </div>
+        `)
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lon, lat])
+          .setPopup(popup)
+          .addTo(current)
+
+        zoneMarkersRef.current.push(marker)
+      })
+    }
+
+    if (!current.loaded()) {
+      current.once('load', addMarkers)
+    } else {
+      addMarkers()
+    }
+
+    return () => {
+      zoneMarkersRef.current.forEach((m) => m.remove())
+      zoneMarkersRef.current = []
+    }
+  }, [inspectionZones])
 
   // Handle dynamic geometry updates from parent components or saved analyses
   useEffect(() => {

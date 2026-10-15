@@ -11,6 +11,9 @@ import AnalysisRequestForm, {
   type GeometryInputMode,
 } from '../components/agriculture/AnalysisRequestForm';
 import { calculatePolygonCenter } from '../components/agriculture/polygon';
+import { agricultureApi } from '../api/agriculture';
+import { extractCandidateInspectionZones } from '../components/agriculture/decisionSupport';
+import type { MapInspectionZoneItem } from '../components/MapView';
 import {
   asArray,
   asSynthesisStatement,
@@ -666,6 +669,60 @@ export default function Agriculture() {
     });
   }
 
+  const [ndviTileUrl, setNdviTileUrl] = useState<string | null>(null);
+  const [showNdviOverlay, setShowNdviOverlay] = useState<boolean>(true);
+  const [showInspectionZonesOverlay, setShowInspectionZonesOverlay] = useState<boolean>(true);
+
+  const mapInspectionZones: MapInspectionZoneItem[] = useMemo(() => {
+    if (!result) return [];
+    try {
+      const zones = extractCandidateInspectionZones(result);
+      return zones.map((z) => ({
+        id: z.cellId,
+        nameFa: z.zoneNameFa,
+        centerCoordinates: z.centerCoordinates,
+        priority: z.priority,
+        statusFa: z.statusFa,
+        reasonFa: z.reasonFa,
+      }));
+    } catch {
+      return [];
+    }
+  }, [result]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!result?.geometry || !result.time_start || !result.time_end) {
+      setNdviTileUrl(null);
+      return;
+    }
+
+    const startDate = result.time_start;
+    const endDate = result.time_end;
+
+    const fetchNdvi = async () => {
+      try {
+        const res = await agricultureApi.getSpatialLayer({
+          metric: 'ndvi',
+          geometry: result.geometry as any,
+          start_date: startDate,
+          end_date: endDate,
+          cloud_max_percent: 20,
+        });
+        if (isMounted && res.status === 'available') {
+          setNdviTileUrl(res.proxied_tile_url_template || res.tile_url_template);
+        }
+      } catch (err) {
+        console.warn('NDVI spatial layer fetch failed gracefully:', err);
+      }
+    };
+
+    fetchNdvi();
+    return () => {
+      isMounted = false;
+    };
+  }, [result]);
+
   const bannerError = formError || error;
   const crossDomainStatements = result ? asArray(result.cross_domain_statements) : [];
   // Domain visibility (F-CONTRACT-FRONTEND-CONTRACT-1 §1): the hub
@@ -828,12 +885,40 @@ export default function Agriculture() {
             />
 
             <div className="card">
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="card-title">🗺️ نقشه</span>
-                {activeGeometryMode === 'draw' && (
-                  <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
-                    ✏️ حالت رسم مرز زمین فعال است
-                  </span>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="card-title">🗺️ نقشه مزرعه</span>
+                  {activeGeometryMode === 'draw' && (
+                    <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>
+                      ✏️ حالت رسم مرز زمین فعال است
+                    </span>
+                  )}
+                </div>
+                {result && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {ndviTileUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setShowNdviOverlay(!showNdviOverlay)}
+                        className={`btn btn-sm ${showNdviOverlay ? 'btn-success' : 'btn-outline-secondary'}`}
+                        style={{ fontSize: '0.74rem', padding: '2px 8px' }}
+                        title="نمایش یا پنهان‌سازی لایه رستری NDVI بر روی نقشه"
+                      >
+                        🌿 لایه NDVI {showNdviOverlay ? '✓' : ''}
+                      </button>
+                    )}
+                    {mapInspectionZones.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowInspectionZonesOverlay(!showInspectionZonesOverlay)}
+                        className={`btn btn-sm ${showInspectionZonesOverlay ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        style={{ fontSize: '0.74rem', padding: '2px 8px' }}
+                        title="نمایش یا پنهان‌سازی نقاط بازرسی میدانی بر روی نقشه"
+                      >
+                        📍 نقاط بازرسی ({mapInspectionZones.length}) {showInspectionZonesOverlay ? '✓' : ''}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="card-body" style={{ padding: 0 }}>
@@ -841,6 +926,8 @@ export default function Agriculture() {
                   geometry={previewGeometry}
                   center={previewCenter}
                   zoom={previewGeometry?.type === 'Point' ? 12 : previewGeometry?.type === 'Polygon' ? 13 : 11}
+                  rasterTileUrl={showNdviOverlay ? ndviTileUrl : null}
+                  inspectionZones={showInspectionZonesOverlay ? mapInspectionZones : []}
                   enableDrawing={activeGeometryMode === 'draw'}
                   showDrawControls={activeGeometryMode === 'draw'}
                   initialPolygon={confirmedPolygon}

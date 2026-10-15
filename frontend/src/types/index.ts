@@ -1499,7 +1499,7 @@ export interface ValidationSection {
 // Spatial Heatmap Layer (Phase P-AGRI-3 & P-AGRI-4)
 // ---------------------------------------------------------------------------
 
-export type SpatialMetricType = 'ndvi' | 'lst_day' | 'soil_moisture' | 'sar_vh' | 'ndmi' | 'ndre' | 'msi' | 'soil_soc' | 'soil_ph' | 'soil_clay' | 'soil_sand' | 'soil_cec' | 'soil_nitrogen';
+export type SpatialMetricType = 'ndvi' | 'lst_day' | 'soil_moisture' | 'sar_vh' | 'ndmi' | 'ndre' | 'msi' | 'soil_soc' | 'soil_ph' | 'soil_clay' | 'soil_sand' | 'soil_cec' | 'soil_nitrogen' | 'true_color';
 
 export type SpatialConceptType = 'vegetation_condition' | 'thermal_stress' | 'surface_dryness' | 'soil_organic_carbon' | 'soil_acidity_ph' | 'soil_texture_clay';
 
@@ -1518,6 +1518,7 @@ export interface SpatialLayerResponse {
   display_name: string;
   source_dataset: string;
   tile_url_template: string | null;
+  proxied_tile_url_template?: string | null;
   min_val: number;
   max_val: number;
   unit: string;

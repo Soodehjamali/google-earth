@@ -1182,6 +1182,66 @@ async def get_spatial_layer(
     return generate_spatial_layer(data)
 
 
+@router.get(
+    "/tiles/{layer_token}/{z}/{x}/{y}.png",
+    tags=["Agriculture"],
+)
+async def get_proxied_tile(
+    layer_token: str,
+    z: int,
+    x: int,
+    y: int,
+):
+    """Proxy and cache Earth Engine map tiles.
+
+    Ensures the client browser never contacts Google/Earth Engine or external tile servers directly.
+    Responses are cached for high performance and resilience.
+    """
+    from fastapi.responses import Response
+    import httpx
+    from app.services.cache_service import cache_service
+
+    tile_cache_key = f"tile_img:{layer_token}:{z}:{x}:{y}"
+    cached_bytes = cache_service.get(tile_cache_key)
+    if cached_bytes and isinstance(cached_bytes, (bytes, bytearray)):
+        return Response(
+            content=bytes(cached_bytes),
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    url_template = cache_service.get(f"tile_template:{layer_token}")
+    if not url_template or not isinstance(url_template, str):
+        raise AppException(
+            message="Map tile layer session expired or not found",
+            code="ERR_TILE_LAYER_EXPIRED",
+            reason="The map tile layer token has expired or is invalid. Please refresh the map layer.",
+            status_code=404,
+        )
+
+    target_url = url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(target_url)
+            if resp.status_code == 200:
+                cache_service.set(tile_cache_key, resp.content, ttl=86400)
+                return Response(
+                    content=resp.content,
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+            elif resp.status_code == 404:
+                return Response(status_code=404, content=b"")
+            else:
+                logger.warning(f"Tile proxy upstream error: {resp.status_code} for {target_url}")
+                return Response(status_code=resp.status_code, content=resp.content)
+    except Exception as exc:
+        logger.warning(f"Tile proxy fetch failed for {target_url}: {exc}")
+        return Response(status_code=502, content=b"")
+
+
+
 @router.post(
     "/historical-comparison",
     response_model=HistoricalComparisonResponse,

@@ -1793,6 +1793,7 @@ class SpatialMetricType(str, Enum):
     SOIL_SAND = "soil_sand"
     SOIL_CEC = "soil_cec"
     SOIL_NITROGEN = "soil_nitrogen"
+    TRUE_COLOR = "true_color"
 
 
 class SpatialConceptType(str, Enum):
@@ -1854,6 +1855,7 @@ class SpatialLayerResponse(BaseModel):
     display_name: str
     source_dataset: str
     tile_url_template: Optional[str] = None
+    proxied_tile_url_template: Optional[str] = None
     min_val: float
     max_val: float
     unit: str
