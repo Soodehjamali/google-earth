@@ -86,4 +86,33 @@ This document records architectural, agronomic, and operational decisions made d
 - **Decision:** Integrated with `tile_auth.generate_signed_layer_token` and `cache_service`. Generates HMAC-signed layer tokens bound to metric `pooling_risk_proxy`, bounding box, and 7200s TTL, serving through `/api/v1/agriculture/tiles/{layer_token}/{z}/{x}/{y}.png` with color ramp `["#f7fcf0", "#bae4bc", "#7bccc4", "#43a2ca", "#0868ac"]`.
 - **Why:** Seamless integration with frontend map viewers without exposing Earth Engine URLs or credentials.
 
+---
+
+## Task 3.3: Risk Model & Threshold Engine Decisions
+
+### 3.3.1 External Phenological Thresholds & Provenance Enforcement
+- **Decision:** All crop threshold definitions are strictly isolated in `config/frost_thresholds.yaml` (external to Python source code). For pistachio, all stages (`dormant`, `bud_burst`, `early_bloom`, `full_bloom`, `fruit_set`) are explicitly configured with `status: placeholder`, `source: null`, and `verified: false`.
+- **Loader Validation Rule:** The parser (`load_frost_thresholds_config`) strictly validates provenance metadata. It rejects configuration files if `status` is missing, if `status == "placeholder"` while `source` is non-null or `verified` is true, or if $T_{\text{crit,90}} \ge T_{\text{crit,10}}$ (a violation of the monotonic mortality curve).
+- **Why:** Guarantees that unverified placeholder values cannot silently pose as calibrated agronomic facts, ensuring safe operational boundaries.
+
+### 3.3.2 Local Night Aggregation Across UTC Midnight
+- **Decision:** Night windows are defined according to local Iranian time (IRST = UTC+3:30) from 18:00 local on date $D$ to 09:00 local on date $D+1$ (spanning 15 hours). In UTC, this corresponds to 14:30 UTC on date $D$ to 05:30 UTC on date $D+1$, crossing the 00:00 UTC boundary.
+- **Why:** Radiation frost events reach their temperature nadir immediately before dawn; segmenting by UTC calendar days would split the single physical freeze event across two calendar dates, obscuring minimum temperature and duration of freeze.
+
+### 3.3.3 Cold-Air-Pooling Temperature Bump & Wind Damping
+- **Decision:** During radiative conditions, topographic depressions experience additional nocturnal cooling below the regional NWP grid. When `pooling_risk_proxy > 0.40`, a cooling bump is applied to minimum temperature:
+  $$\Delta T_{\text{pool}} = \frac{\text{proxy} - 0.40}{0.60} \times 2.5\,^\circ\text{C} \times f_{\text{wind}}$$
+  where $f_{\text{wind}} = 1.0$ for wind $\le 1.5\,\text{m/s}$, decreasing linearly to $0.0$ at wind $\ge 4.0\,\text{m/s}$.
+- **Why:** Physical realism: stable stratification and cold pooling require calm conditions; turbulent shear in breezy weather destroys inversion layers and prevents cold pooling.
+
+### 3.3.4 Physical-Only Cultural Defense Recommendations
+- **Decision:** Advisory recommendations are strictly limited to proven physical and cultural orchard practices:
+  1. Pre-freeze surface or furrow irrigation (to increase soil thermal conductivity and release latent heat).
+  2. Wind machines / selective inverted sinks in the presence of radiation inversion.
+  3. Clean-burning orchard heaters placed in depressions.
+  4. Maintaining firm, moist, uncultivated soil surface.
+  Chemical and hormonal recommendations (e.g. anti-transpirants, copper sprays, gibberellins, or unproven foliar sprays) are strictly excluded from the recommendation database.
+- **Why:** Regulatory safety, scientific honesty, and avoidance of hazardous agronomic practices.
+
+
 

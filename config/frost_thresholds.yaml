@@ -1,0 +1,53 @@
+# Frost Risk Phenological Thresholds Configuration
+#
+# IMPORTANT NOTICE:
+# All temperature values in this file are STRICTLY UNVERIFIED PLACEHOLDERS (status: placeholder, source: null).
+# Commercial or operational frost defense MUST NOT rely on these values without prior verification
+# and sign-off by a qualified local agricultural extension officer, horticultural researcher,
+# or regional pomologist.
+#
+version: "1.0"
+crops:
+  pistachio:
+    common_name_fa: "پسته"
+    scientific_name: "Pistacia vera"
+    status: "placeholder"
+    source: null
+    verified: false
+    verification_warning_fa: "هشدار: آستانه‌های دمایی سرمازدگی پسته در این سامانه فرضی (placeholder) بوده و برای استفاده تجاری یا عملیاتی حتماً نیازمند کالیبراسیون و تایید کارشناس باغبانی است."
+    stages:
+      dormant:
+        name_fa: "خواب زمستانه"
+        t_critical_10_c: -15.0
+        t_critical_90_c: -22.0
+        status: "placeholder"
+        source: null
+        notes_fa: "جوانه‌های خفته تحمل سرمای شدید زمستانه را دارند."
+      bud_burst:
+        name_fa: "تورم و باز شدن جوانه"
+        t_critical_10_c: -4.0
+        t_critical_90_c: -7.0
+        status: "placeholder"
+        source: null
+        notes_fa: "جوانه‌های در حال باز شدن نسبت به سرمای دیررس بهاره آسیب‌پذیرند."
+      early_bloom:
+        name_fa: "اوایل گلدهی"
+        t_critical_10_c: -2.2
+        t_critical_90_c: -4.5
+        status: "placeholder"
+        source: null
+        notes_fa: "گل‌های تازه باز شده آسیب‌پذیری بالایی نسبت به یخبندان دارند."
+      full_bloom:
+        name_fa: "گلدهی کامل"
+        t_critical_10_c: -1.5
+        t_critical_90_c: -3.0
+        status: "placeholder"
+        source: null
+        notes_fa: "حساس‌ترین مرحله فنولوژیکی نسبت به سرمازدگی تشعشعی بهاره."
+      fruit_set:
+        name_fa: "تشکیل میوه (ارزنک)"
+        t_critical_10_c: -1.0
+        t_critical_90_c: -2.5
+        status: "placeholder"
+        source: null
+        notes_fa: "میوه‌های تازه تشکیل شده بسیار حساس به یخ‌زدگی بافت آبدار هستند."
