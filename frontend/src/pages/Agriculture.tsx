@@ -66,6 +66,7 @@ import { SupportBadge } from '../components/agriculture/SupportNotice';
 import { asRecord, findEvidenceItem, isFiniteNumber } from '../components/agriculture/parse';
 import { supportInfoOf } from '../components/agriculture/support';
 import ErrorBanner from '../components/agriculture/ErrorBanner.tsx';
+import { CoverageIndicator } from '../components/agriculture/CoverageIndicator.tsx';
 
 /**
  * Agriculture Analysis Workspace (Prompt 3).
@@ -1016,6 +1017,9 @@ export default function Agriculture() {
           <div className="text-muted" style={{ fontSize: '0.85rem', margin: '16px 0 10px' }}>
             بخش ۲ — خروجی تحلیل کشاورزی: لایه پشتیبانی تصمیم و شواهد چندمنبعی (Decision Support & Evidence)
           </div>
+
+          {/* Dynamic Data Coverage Indicator with Coarse-Context Separation (Task 2.3) */}
+          <CoverageIndicator result={result} />
 
           {/* 0. Primary Farmer Decision Support Layer (P-AGRI-DSS-1) */}
           <AgronomicDecisionSupportSection

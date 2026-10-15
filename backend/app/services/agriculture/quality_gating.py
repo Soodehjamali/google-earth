@@ -340,3 +340,137 @@ def aggregate_hourly_to_local_days(
             "count": len(temps),
         }
     return result
+
+
+def compute_coverage_summary(
+    outcomes: Optional[Dict[str, Any]] = None,
+    evidence_bundles: Optional[Dict[str, Any]] = None,
+    requested_domains: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """Compute dynamic coverage summary partitioned into valid, coarse context, and unavailable.
+
+    Strict rules (Decision 2.3.1):
+    1. Applicability: When `requested_domains` is provided, M (total) is strictly the number of
+       registered metrics belonging to the requested domains. When None, M is all registered metrics.
+    2. Partitioning:
+       - valid (N): field-scale metrics (native pixel <= 30m or polygon adequate) with valid observation.
+       - coarse_context (K): regional reanalysis/satellite data (footprint > field). NEVER counted as valid.
+       - unavailable (U): missing observations, cloud masked, or QC/computation failure.
+    3. Ratio: valid_ratio = round(N / M, 4) if M > 0 else 0.0.
+    4. By-domain: Detailed breakdown for each applicable domain.
+    """
+    from app.services.agriculture.catalog import (
+        all_metrics,
+        metrics_in_domain,
+        registered_domains,
+    )
+    from app.services.agriculture import ensure_registered
+    ensure_registered()
+
+    avail_domains = list(registered_domains())
+    if requested_domains:
+        normalized_requested: List[str] = []
+        for rd in requested_domains:
+            norm_d = "history" if rd == "historical" else rd
+            if norm_d in avail_domains and norm_d not in normalized_requested:
+                normalized_requested.append(norm_d)
+        target_domains = normalized_requested if normalized_requested else avail_domains
+    else:
+        target_domains = avail_domains
+
+    by_domain: Dict[str, Dict[str, Any]] = {}
+
+    outcome_map = outcomes or {}
+
+    bundle_item_map: Dict[str, Any] = {}
+    bundle_unavail_set: set[str] = set()
+    if evidence_bundles:
+        for b_key, bundle in evidence_bundles.items():
+            if isinstance(bundle, dict):
+                items = bundle.get("items") or []
+                unav = bundle.get("unavailable") or []
+            else:
+                items = getattr(bundle, "items", []) or []
+                unav = getattr(bundle, "unavailable", []) or []
+
+            for it in items:
+                m_key = getattr(it, "metric_key", None) or (it.get("metric_key") if isinstance(it, dict) else None)
+                if m_key:
+                    bundle_item_map[m_key] = it
+
+            for uk in unav:
+                bundle_unavail_set.add(uk)
+
+    for domain_name in target_domains:
+        try:
+            domain_metrics = metrics_in_domain(domain_name)
+        except ValueError:
+            domain_metrics = []
+
+        m_count = len(domain_metrics)
+        d_valid = 0
+        d_coarse = 0
+        d_unavail = 0
+
+        for metric in domain_metrics:
+            key = metric.key
+            res = outcome_map.get(key)
+            if res is not None:
+                q_st = getattr(res, "quality_state", None)
+                if q_st is QualityState.COARSE_CONTEXT or q_st == "coarse_context":
+                    d_coarse += 1
+                elif q_st is QualityState.VALID or q_st == "valid":
+                    d_valid += 1
+                elif getattr(res, "is_usable", False) and getattr(res, "status", "") in ("ok", "partial"):
+                    d_valid += 1
+                else:
+                    d_unavail += 1
+                continue
+
+            it = bundle_item_map.get(key)
+            if it is not None:
+                q_st = getattr(it, "quality_state", None)
+                if q_st is None and isinstance(it, dict):
+                    q_st = it.get("quality_state")
+                q_val = q_st.value if hasattr(q_st, "value") else str(q_st) if q_st else ""
+
+                is_us = getattr(it, "is_usable", None)
+                if is_us is None and isinstance(it, dict):
+                    is_us = it.get("is_usable", False)
+
+                if q_val == "coarse_context":
+                    d_coarse += 1
+                elif q_val == "valid":
+                    d_valid += 1
+                elif is_us:
+                    d_valid += 1
+                else:
+                    d_unavail += 1
+                continue
+
+            d_unavail += 1
+
+        v_ratio = round(d_valid / m_count, 4) if m_count > 0 else 0.0
+        by_domain[domain_name] = {
+            "valid": d_valid,
+            "coarse_context": d_coarse,
+            "unavailable": d_unavail,
+            "total": m_count,
+            "valid_ratio": v_ratio,
+        }
+
+    total_valid = sum(d["valid"] for d in by_domain.values())
+    total_coarse = sum(d["coarse_context"] for d in by_domain.values())
+    total_unavail = sum(d["unavailable"] for d in by_domain.values())
+    total_m = sum(d["total"] for d in by_domain.values())
+    overall_ratio = round(total_valid / total_m, 4) if total_m > 0 else 0.0
+
+    return {
+        "valid": total_valid,
+        "coarse_context": total_coarse,
+        "unavailable": total_unavail,
+        "total": total_m,
+        "valid_ratio": overall_ratio,
+        "by_domain": by_domain,
+    }
+

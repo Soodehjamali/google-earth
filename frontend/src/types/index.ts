@@ -482,6 +482,25 @@ export interface AgriculturalAnalysisResponse {
   soil_intelligence?: SoilIntelligenceResponse | null;
   /** Additive P1 pest & disease risk screening and multi-sensor inspection. */
   pest_disease_inspection?: PestDiseaseInspectionResponse | null;
+  /** Additive Phase 2 Task 2.3 dynamic coverage summary partitioning valid, coarse context, and unavailable metrics. */
+  coverage?: CoverageSummaryResponse | null;
+}
+
+export interface DomainCoverageResponse {
+  valid: number;
+  coarse_context: number;
+  unavailable: number;
+  total: number;
+  valid_ratio: number;
+}
+
+export interface CoverageSummaryResponse {
+  valid: number;
+  coarse_context: number;
+  unavailable: number;
+  total: number;
+  valid_ratio: number;
+  by_domain: Record<string, DomainCoverageResponse>;
 }
 
 export interface ErrorResponse {

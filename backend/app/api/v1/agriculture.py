@@ -292,8 +292,12 @@ def _serialize_domain_summary(summary: DomainSummary) -> DomainSummaryResponse:
 def _serialize_synthesis(
     synthesis: AgriculturalSynthesis,
     evidence_bundles: Optional[Dict[str, EvidenceBundle]] = None,
+    requested_domains: Optional[List[str]] = None,
+    outcomes: Optional[Dict[str, Any]] = None,
 ) -> AgriculturalAnalysisResponse:
     """Convert an AgriculturalSynthesis to the top-level API response."""
+    from app.services.agriculture.quality_gating import compute_coverage_summary
+
     domain_summaries = {
         d.value: _serialize_domain_summary(s)
         for d, s in synthesis.domain_summaries.items()
@@ -305,6 +309,12 @@ def _serialize_synthesis(
             d.value: _serialize_evidence_bundle(b)
             for d, b in evidence_bundles.items()
         }
+
+    coverage_summary = compute_coverage_summary(
+        outcomes=outcomes,
+        evidence_bundles=evidence_bundles,
+        requested_domains=requested_domains,
+    )
 
     return AgriculturalAnalysisResponse(
         time_start=synthesis.time_start.isoformat()
@@ -340,6 +350,7 @@ def _serialize_synthesis(
         metadata=dict(synthesis.metadata),
         vegetation_regime=synthesis.vegetation_regime,
         vegetation_regime_explanation=synthesis.metadata.get("regime_explanation"),
+        coverage=coverage_summary,
     )
 
 
@@ -737,6 +748,15 @@ async def run_agriculture_analysis(
             response = _attach_ground_truth_validation(
                 response, data.ground_truth, request_id
             )
+        if response.coverage is None or (data.domains and response.coverage.total > 0):
+            from app.services.agriculture.quality_gating import compute_coverage_summary
+            from app.schemas.agriculture import CoverageSummaryResponse
+            response.coverage = CoverageSummaryResponse(
+                **compute_coverage_summary(
+                    evidence_bundles=response.evidence_bundles,
+                    requested_domains=data.domains,
+                )
+            )
         if (not data.domains or any(d in ("pest_disease", "inspection") for d in data.domains)) and response.pest_disease_inspection is None:
             try:
                 from app.services.agriculture.pest_disease_inspection import inspect_pest_disease_risk
@@ -824,7 +844,12 @@ async def run_agriculture_analysis(
         )
 
         # Serialize
-        response = _serialize_synthesis(synthesis, evidence_bundles)
+        response = _serialize_synthesis(
+            synthesis,
+            evidence_bundles,
+            requested_domains=data.domains,
+            outcomes=outcomes,
+        )
         response.request_id = request_id
         response.metadata["metrics_executed"] = str(len(outcomes))
         response.metadata["unknown_metrics"] = str(len(unknown))

@@ -377,6 +377,48 @@ class DomainSummaryResponse(BaseModel):
     )
 
 
+class DomainCoverageResponse(BaseModel):
+    """Coverage breakdown for a single domain (Task 2.3)."""
+
+    valid: int = Field(default=0, description="Count of valid field-scale metrics")
+    coarse_context: int = Field(
+        default=0,
+        description="Count of coarse regional context metrics",
+    )
+    unavailable: int = Field(default=0, description="Count of unavailable metrics")
+    total: int = Field(default=0, description="Total metrics applicable to this domain")
+    valid_ratio: float = Field(
+        default=0.0,
+        description="Ratio of valid metrics to total applicable (N/M)",
+    )
+
+
+class CoverageSummaryResponse(BaseModel):
+    """Overall metric coverage partitioned strictly into valid, coarse context, and unavailable (Task 2.3)."""
+
+    valid: int = Field(
+        default=0,
+        description="Count of valid field-scale metrics (N)",
+    )
+    coarse_context: int = Field(
+        default=0,
+        description="Count of coarse regional context metrics (K)",
+    )
+    unavailable: int = Field(default=0, description="Count of unavailable metrics")
+    total: int = Field(
+        default=0,
+        description="Total applicable registered metrics (M)",
+    )
+    valid_ratio: float = Field(
+        default=0.0,
+        description="Ratio of valid metrics to total applicable (N/M)",
+    )
+    by_domain: Dict[str, DomainCoverageResponse] = Field(
+        default_factory=dict,
+        description="Per-domain coverage breakdown",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 6. Top-level agricultural analysis response
 # ---------------------------------------------------------------------------
@@ -515,6 +557,26 @@ class AgriculturalAnalysisResponse(BaseModel):
         description="Multi-sensor risk screening, anomaly inspection, and biotic/abiotic compatibility. "
         "Additive: populated when pest_disease domain is requested or pest inspection is triggered.",
     )
+
+    # Dynamic coverage indicator (Phase 2 Task 2.3)
+    coverage: Optional[CoverageSummaryResponse] = Field(
+        default=None,
+        description="Dynamic coverage summary partitioning valid, coarse context, and unavailable metrics (Task 2.3)",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ensure_coverage(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get("coverage") is None and data.get("evidence_bundles"):
+                try:
+                    from app.services.agriculture.quality_gating import compute_coverage_summary
+                    data["coverage"] = compute_coverage_summary(
+                        evidence_bundles=data.get("evidence_bundles")
+                    )
+                except Exception:
+                    pass
+        return data
 
 
 # ---------------------------------------------------------------------------

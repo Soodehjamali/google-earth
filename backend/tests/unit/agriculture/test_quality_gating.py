@@ -425,3 +425,197 @@ def test_gdd_metric_with_elevation_correction_and_hourly():
     assert res_corr.provenance.site_elevation_m == 1500.0
     assert "Elevation correction" in res_corr.provenance.formula or "-3.25" in res_corr.provenance.formula
 
+
+def test_coverage_summary_partitioning_and_hard_invariants():
+    """Verify that coarse context metrics are NEVER counted as valid in coverage numerator N."""
+    from app.services.agriculture.quality_gating import compute_coverage_summary
+
+    # Mock outcomes:
+    # 2 valid metrics (ndvi, evi)
+    # 2 coarse metrics (temperature_mean, soil_moisture_rootzone)
+    # 1 unavailable metric (precipitation)
+    p_valid = Provenance(
+        source_dataset_id="COPERNICUS/S2_SR_HARMONIZED",
+        source_dataset_name="Sentinel-2",
+        quality_level=QualityLevel.GOOD,
+        quality_state=QualityState.VALID,
+    )
+    p_coarse = Provenance(
+        source_dataset_id="ECMWF/ERA5_LAND/DAILY_AGGR",
+        source_dataset_name="ERA5-Land",
+        quality_level=QualityLevel.GOOD,
+        quality_state=QualityState.COARSE_CONTEXT,
+    )
+    p_unavail = Provenance(
+        source_dataset_id="UCSB-CHG/CHIRPS/DAILY",
+        source_dataset_name="CHIRPS",
+        quality_level=QualityLevel.UNAVAILABLE,
+        quality_state=QualityState.UNAVAILABLE,
+    )
+
+    outcomes = {
+        "ndvi": MetricResult(
+            metric_key="ndvi",
+            display_name="NDVI",
+            display_name_fa="شاخص سبزینگی",
+            status="ok",
+            value=0.55,
+            provenance=p_valid,
+            quality_state=QualityState.VALID,
+        ),
+        "evi": MetricResult(
+            metric_key="evi",
+            display_name="EVI",
+            display_name_fa="شاخص سبزینگی بهبودیافته",
+            status="ok",
+            value=0.45,
+            provenance=p_valid,
+            quality_state=QualityState.VALID,
+        ),
+        "temperature_mean": MetricResult(
+            metric_key="temperature_mean",
+            display_name="Mean Temp",
+            display_name_fa="میانگین دما",
+            status="ok",
+            value=25.0,
+            provenance=p_coarse,
+            quality_state=QualityState.COARSE_CONTEXT,
+        ),
+        "precipitation": MetricResult.unavailable(
+            metric_key="precipitation",
+            display_name="Precipitation",
+            display_name_fa="بارندگی",
+            reason="masked",
+            provenance=p_unavail,
+        ),
+    }
+
+    # When requested for vegetation and climate domains:
+    # Vegetation has 14 metrics (ndvi and evi are valid, 12 unavailable)
+    # Climate has 10 metrics (temperature_mean is coarse, 9 unavailable)
+    # Total applicable = 14 + 10 = 24 metrics
+    cov = compute_coverage_summary(
+        outcomes=outcomes,
+        requested_domains=["vegetation", "climate"],
+    )
+
+    # HARD INVARIANT: N = 2 (ndvi, evi only). Coarse temperature_mean MUST NOT be in N!
+    assert cov["valid"] == 2
+    # K = 1 (temperature_mean)
+    assert cov["coarse_context"] == 1
+    # Total applicable M = 24
+    assert cov["total"] == 24
+    # Unavailable U = 24 - 2 - 1 = 21
+    assert cov["unavailable"] == 21
+    # Ratio N / M = 2 / 24 = 0.0833
+    assert cov["valid_ratio"] == pytest.approx(round(2 / 24, 4), abs=0.0001)
+
+    # Verify per-domain breakdown
+    assert "vegetation" in cov["by_domain"]
+    veg = cov["by_domain"]["vegetation"]
+    assert veg["valid"] == 2
+    assert veg["coarse_context"] == 0
+    assert veg["total"] == 14
+    assert veg["unavailable"] == 12
+
+    assert "climate" in cov["by_domain"]
+    clim = cov["by_domain"]["climate"]
+    assert clim["valid"] == 0
+    assert clim["coarse_context"] == 1
+    assert clim["total"] == 10
+    assert clim["unavailable"] == 9
+
+
+def test_coverage_summary_domain_applicability_denominator():
+    """Verify denominator M dynamically reflects requested domains, not a flat 118."""
+    from app.services.agriculture.quality_gating import compute_coverage_summary
+
+    # Empty outcomes: all metrics will be counted as unavailable
+    cov_veg = compute_coverage_summary(outcomes={}, requested_domains=["vegetation"])
+    assert cov_veg["total"] == 14
+    assert cov_veg["valid"] == 0
+    assert cov_veg["unavailable"] == 14
+    assert cov_veg["valid_ratio"] == 0.0
+
+    cov_veg_water = compute_coverage_summary(
+        outcomes={}, requested_domains=["vegetation", "water"]
+    )
+    # 14 vegetation + 13 water = 27
+    assert cov_veg_water["total"] == 27
+    assert cov_veg_water["valid"] == 0
+    assert cov_veg_water["unavailable"] == 27
+
+    cov_all = compute_coverage_summary(outcomes={}, requested_domains=None)
+    # All registered metrics across all domains
+    assert cov_all["total"] == 118
+
+
+def test_agricultural_analysis_response_legacy_coverage_auto_derivation():
+    """Verify that deserializing a legacy report without coverage dynamically populates coverage."""
+    from app.schemas.agriculture import AgriculturalAnalysisResponse
+
+    p_valid_dict = {
+        "source_dataset_id": "COPERNICUS/S2_SR_HARMONIZED",
+        "source_dataset_name": "Sentinel-2",
+        "quality_level": "good",
+        "quality_state": "valid",
+    }
+    p_coarse_dict = {
+        "source_dataset_id": "ECMWF/ERA5_LAND/DAILY_AGGR",
+        "source_dataset_name": "ERA5-Land",
+        "quality_level": "good",
+        "quality_state": "coarse_context",
+    }
+
+    legacy_payload = {
+        "time_start": "2024-05-01",
+        "time_end": "2024-05-31",
+        "overall_sufficiency": "limited",
+        "evidence_bundles": {
+            "vegetation": {
+                "name": "vegetation",
+                "items": [
+                    {
+                        "metric_key": "ndvi",
+                        "value": 0.45,
+                        "unit": "index",
+                        "status": "direct",
+                        "quality": "good",
+                        "quality_state": "valid",
+                        "is_usable": True,
+                        "is_proxy": False,
+                        "provenance": p_valid_dict,
+                    }
+                ],
+                "unavailable": [],
+            },
+            "climate": {
+                "name": "climate",
+                "items": [
+                    {
+                        "metric_key": "temperature_mean",
+                        "value": 24.0,
+                        "unit": "°C",
+                        "status": "modelled",
+                        "quality": "good",
+                        "quality_state": "coarse_context",
+                        "is_usable": True,
+                        "is_proxy": False,
+                        "provenance": p_coarse_dict,
+                    }
+                ],
+                "unavailable": [],
+            },
+        },
+        # NOTE: 'coverage' is missing completely!
+    }
+
+    resp = AgriculturalAnalysisResponse.model_validate(legacy_payload)
+    assert resp.coverage is not None
+    assert resp.coverage.valid == 1
+    assert resp.coverage.coarse_context == 1
+    assert resp.coverage.total == 118
+    assert resp.coverage.unavailable == 116
+    assert resp.coverage.valid_ratio == pytest.approx(round(1 / 118, 4), abs=0.0001)
+
+
