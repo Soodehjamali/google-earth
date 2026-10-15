@@ -21,6 +21,7 @@ from app.services.agriculture.evidence import (
     SufficiencyLevel,
 )
 from app.services.agriculture.synthesis import (
+    ALL_SYNTHESIS_RULES,
     AgriculturalSynthesis,
     CROSS_DOMAIN_RULES,
     DEFAULT_RULES,
@@ -956,3 +957,73 @@ class TestSufficiencyPropagation:
         summary = engine.evaluate_domain(SynthesisDomain.WATER, bundle)
         assert len(summary.unavailable_evidence) == 1
         assert "precipitation_anomaly" in summary.unavailable_evidence
+
+
+# ---------------------------------------------------------------------------
+# 23. Climate & Frost Risk Synthesis Rules
+# ---------------------------------------------------------------------------
+
+
+class TestClimateFrostRules:
+    def test_near_freezing_minimum_triggers(self) -> None:
+        items = [
+            _make_item("temperature_min", -1.5, source="noaa_gfs"),
+        ]
+        bundle = _make_bundle("climate_bundle", items)
+        engine = SynthesisEngine(rules=ALL_SYNTHESIS_RULES)
+        summary = engine.evaluate_domain(SynthesisDomain.CROSS_DOMAIN, bundle)
+        matching = [s for s in summary.statements if s.rule_id == "climate_near_freezing_minimum"]
+        assert len(matching) == 1
+        assert "below freezing" in matching[0].statement
+
+    def test_cross_cold_air_pooling_frost_risk_triggers(self) -> None:
+        items = [
+            _make_item("temperature_min", 1.0, source="noaa_gfs"),
+            _make_item("cold_air_pooling_risk", "high", source="nasadem"),
+        ]
+        bundle = _make_bundle("frost_cross_bundle", items)
+        engine = SynthesisEngine(rules=ALL_SYNTHESIS_RULES)
+        summary = engine.evaluate_domain(SynthesisDomain.CROSS_DOMAIN, bundle)
+        matching = [s for s in summary.statements if s.rule_id == "cross_cold_air_pooling_frost_risk"]
+        assert len(matching) == 1
+        assert "cold air drainage" in matching[0].statement
+
+    def test_unavailable_evidence_no_frost_warning(self) -> None:
+        items = [
+            _make_item("temperature_min", None, status=EvidenceStatus.UNAVAILABLE, source="noaa_gfs"),
+        ]
+        bundle = _make_bundle("unavailable_climate", items)
+        engine = SynthesisEngine(rules=ALL_SYNTHESIS_RULES)
+        summary = engine.evaluate_domain(SynthesisDomain.CROSS_DOMAIN, bundle)
+        matching = [s for s in summary.statements if s.rule_id in ("climate_near_freezing_minimum", "cross_cold_air_pooling_frost_risk")]
+        assert len(matching) == 0
+
+    def test_warm_temperature_no_frost_warning(self) -> None:
+        items = [
+            _make_item("temperature_min", 15.0, source="noaa_gfs"),
+        ]
+        bundle = _make_bundle("warm_climate", items)
+        engine = SynthesisEngine(rules=ALL_SYNTHESIS_RULES)
+        summary = engine.evaluate_domain(SynthesisDomain.CROSS_DOMAIN, bundle)
+        matching = [s for s in summary.statements if s.rule_id == "climate_near_freezing_minimum"]
+        assert len(matching) == 0
+
+    def test_all_synthesis_rules_unique_ids(self) -> None:
+        ids = [r.rule_id for r in ALL_SYNTHESIS_RULES]
+        assert len(ids) == len(set(ids)), f"Duplicate rule IDs detected: {[x for x in ids if ids.count(x) > 1]}"
+        assert len(DEFAULT_RULES) == 24
+        assert len(ALL_SYNTHESIS_RULES) == 26
+
+    def test_synthesis_engine_full_synthesise_wiring(self) -> None:
+        items = [
+            _make_item("temperature_min", -2.0, source="noaa_gfs"),
+        ]
+        bundle = _make_bundle("cross_domain", items)
+        engine = SynthesisEngine(rules=ALL_SYNTHESIS_RULES)
+        synthesis = engine.synthesise({SynthesisDomain.CROSS_DOMAIN: bundle})
+        cross_summary = synthesis.domain_summaries.get(SynthesisDomain.CROSS_DOMAIN)
+        assert cross_summary is not None
+        rule_ids = [s.rule_id for s in cross_summary.statements]
+        assert "climate_near_freezing_minimum" in rule_ids
+        d = synthesis.to_dict()
+        assert d["metadata"]["rule_count"] == "26"

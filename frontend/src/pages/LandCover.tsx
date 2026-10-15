@@ -6,18 +6,26 @@ import ComprehensiveNotice from '../components/ComprehensiveNotice'
 import type { Analysis, MapVisualization } from '../types'
 
 const LANDCOVER_CLASSES: Record<string, { label: string; labelFa: string; color: string }> = {
-  '12': { label: 'Croplands', labelFa: 'زمین کشاورزی', color: '#4caf50' },
-  '14': { label: 'Cropland/Natural Mosaic', labelFa: 'ترکیبی', color: '#8bc34a' },
-  '10': { label: 'Grasslands', labelFa: 'مرتع', color: '#cddc39' },
-  '9': { label: 'Savannas', labelFa: 'گرم‌دشت', color: '#ffeb3b' },
-  '13': { label: 'Urban', labelFa: 'شهری', color: '#9e9e9e' },
-  '16': { label: 'Barren', labelFa: 'بایر', color: '#8d6e63' },
-  '0': { label: 'Water', labelFa: 'آب', color: '#2196f3' },
-  '1': { label: 'Evergreen Needleleaf', labelFa: 'جنگل سوزنی‌برگ', color: '#1b5e20' },
-  '2': { label: 'Evergreen Broadleaf', labelFa: 'جنگل پهن‌برگ', color: '#2e7d32' },
+  '1': { label: 'Evergreen Needleleaf Forest', labelFa: 'جنگل سوزنی‌برگ همیشه‌سبز', color: '#1b5e20' },
+  '2': { label: 'Evergreen Broadleaf Forest', labelFa: 'جنگل پهن‌برگ همیشه‌سبز', color: '#2e7d32' },
+  '3': { label: 'Deciduous Needleleaf Forest', labelFa: 'جنگل سوزنی‌برگ خزان‌دار', color: '#43a047' },
+  '4': { label: 'Deciduous Broadleaf Forest', labelFa: 'جنگل پهن‌برگ خزان‌دار', color: '#66bb6a' },
   '5': { label: 'Mixed Forest', labelFa: 'جنگل مختلط', color: '#388e3c' },
-  '7': { label: 'Open Shrublands', labelFa: 'بیشه باز', color: '#a1887f' },
-  '8': { label: 'Woody Savannas', labelFa: 'گرم‌دشت چوبی', color: '#689f38' },
+  '6': { label: 'Closed Shrublands', labelFa: 'درختچه‌زار متراکم', color: '#795548' },
+  '7': { label: 'Open Shrublands', labelFa: 'درختچه‌زار باز', color: '#a1887f' },
+  '8': { label: 'Woody Savannas', labelFa: 'ساوانای درختچه‌ای', color: '#689f38' },
+  '9': { label: 'Savannas', labelFa: 'ساوانا', color: '#ffeb3b' },
+  '10': { label: 'Grasslands', labelFa: 'علفزار و مرتع', color: '#cddc39' },
+  '11': { label: 'Permanent Wetlands', labelFa: 'تالاب دائمی', color: '#00acc1' },
+  '12': { label: 'Croplands', labelFa: 'زمین کشاورزی زراعی', color: '#4caf50' },
+  '13': { label: 'Urban and Built-up Lands', labelFa: 'اراضی ساخته‌شده و شهری', color: '#9e9e9e' },
+  '14': { label: 'Cropland/Natural Vegetation Mosaics', labelFa: 'موزاییک زراعت و پوشش طبیعی', color: '#8bc34a' },
+  '15': { label: 'Permanent Snow and Ice', labelFa: 'برف و یخ دائمی', color: '#b2ebf2' },
+  '16': { label: 'Barren', labelFa: 'اراضی بایر و بیابان', color: '#8d6e63' },
+  '17': { label: 'Water Bodies', labelFa: 'پهنه‌های آبی', color: '#2196f3' },
+  // Retained for compatibility with Dynamic World (where 0=water) and legacy payloads
+  '0': { label: 'Water', labelFa: 'آب', color: '#2196f3' },
+  '255': { label: 'Unclassified', labelFa: 'طبقه‌بندی‌نشده', color: '#616161' },
 }
 
 export default function LandCover() {

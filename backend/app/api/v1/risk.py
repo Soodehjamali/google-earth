@@ -37,8 +37,11 @@ async def get_risk_analysis(
         return risk_data
 
     return {
-        "status": "not_implemented",
-        "message": "Risk analysis will be available in Phase 7",
+        "status": "not_available",
+        "message": (
+            "Composite 0-100 numerical risk scoring is scientifically unsupported and prohibited by platform design principles. "
+            "Categorical advisory risk assessments are available via /api/v1/agriculture/frost/assessment and inspection telemetry."
+        ),
         "analysis_id": str(analysis_id),
         "score": None,
         "level": None,

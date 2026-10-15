@@ -1133,6 +1133,33 @@ def _climate_atmospheric_aridity(
         return True
     return False
 
+
+def _climate_near_freezing_minimum(
+    evidence: Dict[str, EvidenceItem],
+    values: Dict[str, Optional[float]],
+) -> bool:
+    """Forecasted or observed minimum temperature is at or below freezing threshold."""
+    t_min = values.get("temperature_min")
+    return t_min is not None and t_min <= 2.0
+
+
+def _cross_cold_air_pooling_frost_risk(
+    evidence: Dict[str, EvidenceItem],
+    values: Dict[str, Optional[float]],
+) -> bool:
+    """Cold air pooling potential coincides with low minimum temperature."""
+    t_min = values.get("temperature_min")
+    if t_min is None or t_min > 3.0:
+        return False
+    cap_val = values.get("cold_air_pooling_index")
+    if cap_val is not None and cap_val > 0.0:
+        return True
+    cap_item = evidence.get("cold_air_pooling_risk")
+    if cap_item and str(cap_item.value).lower() in ("moderate", "high", "critical", "warning", "watch"):
+        return True
+    return False
+
+
 # -- Phenology rules -------------------------------------------------------
 
 def _phenology_delayed_onset(
@@ -1590,6 +1617,55 @@ REGIME_RULES: List[SynthesisRule] = [
 ]
 
 
+CLIMATE_RULES: List[SynthesisRule] = [
+    SynthesisRule(
+        rule_id="climate_near_freezing_minimum",
+        domain=SynthesisDomain.CROSS_DOMAIN,
+        inputs=("temperature_min",),
+        required_inputs=("temperature_min",),
+        conditions=_climate_near_freezing_minimum,
+        output_pattern=PatternState.BELOW_CONTEXT,
+        statement=(
+            "Minimum air temperature is near or below freezing, indicating potential "
+            "cold-stress or frost exposure for sensitive crop phenological stages."
+        ),
+        scientific_basis=(
+            "Numerical weather predictions (NOAA GFS) and reanalysis provide elevation-corrected 2-meter air temperature. "
+            "When nocturnal temperatures drop toward 0 °C, radiation cooling and cold air drainage "
+            "increase frost risk depending on crop phenology."
+        ),
+        limitations=(
+            "Coarse-scale NWP/reanalysis requires elevation lapse-rate adjustment "
+            "and local microtopography validation. Uncalibrated phenological thresholds require on-site confirmation.",
+        ),
+        min_sources=1,
+    ),
+    SynthesisRule(
+        rule_id="cross_cold_air_pooling_frost_risk",
+        domain=SynthesisDomain.CROSS_DOMAIN,
+        inputs=("temperature_min", "cold_air_pooling_risk"),
+        required_inputs=(),
+        optional_inputs=("temperature_min", "cold_air_pooling_risk", "cold_air_pooling_index"),
+        min_inputs=1,
+        conditions=_cross_cold_air_pooling_frost_risk,
+        output_pattern=PatternState.COHERENT,
+        statement=(
+            "Topographic cold air drainage potential coincides with near-freezing forecast temperatures, "
+            "indicating elevated microclimatic frost vulnerability in lower-lying terrain features."
+        ),
+        scientific_basis=(
+            "Nocturnal radiation cooling generates dense, cold air layers that drain into terrain depressions "
+            "(katabatic flow). High cold-air-pooling convergence amplifies freezing severity beyond regional gridded forecasts."
+        ),
+        limitations=(
+            "Topographic index derived from NASADEM (30 m). Micro-scale orchard features (windbreaks, walls, soil tillage) "
+            "significantly modify local airflow.",
+        ),
+        min_sources=1,
+    ),
+]
+
+
 # ---------------------------------------------------------------------------
 # 9. All default rules
 # ---------------------------------------------------------------------------
@@ -1607,7 +1683,8 @@ DEFAULT_RULES: List[SynthesisRule] = (
     + REGIME_RULES
 )
 
-ALL_SYNTHESIS_RULES: List[SynthesisRule] = DEFAULT_RULES
+ALL_SYNTHESIS_RULES: List[SynthesisRule] = DEFAULT_RULES + CLIMATE_RULES
+CLIMATE_SYNTHESIS_RULES: List[SynthesisRule] = CLIMATE_RULES
 
 
 # ---------------------------------------------------------------------------

@@ -202,9 +202,6 @@ class NoaaGfsForecastProvider(ForecastProvider):
             .sort("forecast_hours", True)
         )
 
-        run_info = run_collection.getInfo()
-        features = run_info.get("features", [])
-
         # Issue time
         issue_time_str = (
             datetime.fromtimestamp(creation_time_ms / 1000.0, tz=timezone.utc).isoformat()
@@ -212,9 +209,38 @@ class NoaaGfsForecastProvider(ForecastProvider):
             else None
         )
 
-        # Sample temperature, rh, wind at geometry centroid
-        def sample_img(img_feat):
-            props = img_feat["properties"]
+        # Batch-sample all forecast hours in a single GEE roundtrip
+        centroid_geom = ee_geom.centroid()
+        sampled_fc = (
+            run_collection.select([
+                "temperature_2m_above_ground",
+                "relative_humidity_2m_above_ground",
+                "u_component_of_wind_10m_above_ground",
+                "v_component_of_wind_10m_above_ground",
+            ])
+            .map(
+                lambda img: ee.Feature(
+                    None,
+                    img.reduceRegion(
+                        reducer=ee.Reducer.mean(),
+                        geometry=centroid_geom,
+                        scale=GFS_SPATIAL_RESOLUTION_M,
+                        bestEffort=True,
+                    ),
+                )
+                .set("forecast_hours", img.get("forecast_hours"))
+                .set("forecast_time", img.get("forecast_time"))
+                .set("img_id", img.id())
+            )
+        )
+
+        fc_info = sampled_fc.getInfo()
+        features = fc_info.get("features", [])
+
+        # Process each timestep in memory without additional network calls
+        series: List[ForecastTimestep] = []
+        for feat in features:
+            props = feat.get("properties", {})
             lead_h = float(props.get("forecast_hours", 0))
             forecast_time_ms = props.get("forecast_time")
             if not forecast_time_ms:
@@ -222,24 +248,15 @@ class NoaaGfsForecastProvider(ForecastProvider):
 
             ts_utc = datetime.fromtimestamp(forecast_time_ms / 1000.0, tz=timezone.utc).isoformat()
 
-            # Reduce region at parcel centroid
-            ee_image = ee.Image(img_feat["id"])
-            sampled = ee_image.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=ee_geom.centroid(),
-                scale=GFS_SPATIAL_RESOLUTION_M,
-                bestEffort=True,
-            ).getInfo()
-
-            t_val = sampled.get("temperature_2m_above_ground")
+            t_val = props.get("temperature_2m_above_ground")
             # GEE's NOAA/GFS0P25 provides temperature_2m_above_ground directly in degrees Celsius
             t_raw_c = float(t_val) if t_val is not None else 15.0
 
-            rh = sampled.get("relative_humidity_2m_above_ground")
+            rh = props.get("relative_humidity_2m_above_ground")
             rh_pct = float(rh) if rh is not None else None
 
-            u = sampled.get("u_component_of_wind_10m_above_ground")
-            v = sampled.get("v_component_of_wind_10m_above_ground")
+            u = props.get("u_component_of_wind_10m_above_ground")
+            v = props.get("v_component_of_wind_10m_above_ground")
             wind_speed = math.sqrt(float(u)**2 + float(v)**2) if (u is not None and v is not None) else None
 
             # Apply Phase 2 elevation correction
@@ -260,24 +277,24 @@ class NoaaGfsForecastProvider(ForecastProvider):
             # Quadrature total uncertainty: sqrt(elev_unc^2 + lead_unc^2)
             total_unc = round(math.sqrt(corr.uncertainty_c**2 + lead_unc**2), 2)
 
-            return ForecastTimestep(
-                timestamp_utc=ts_utc,
-                lead_hours=lead_h,
-                temperature_2m_c=corr.corrected_value,
-                temperature_2m_c_raw=corr.raw_value,
-                elevation_delta_m=round(z_site - z_cell, 1),
-                elevation_correction_c=corr.delta_c,
-                elevation_uncertainty_c=corr.uncertainty_c,
-                lead_time_uncertainty_c=lead_unc,
-                total_uncertainty_c=total_unc,
-                temperature_min_c=round(corr.corrected_value - total_unc, 2),
-                temperature_max_c=round(corr.corrected_value + total_unc, 2),
-                is_interpolated=False,
-                relative_humidity_percent=round(rh_pct, 1) if rh_pct is not None else None,
-                wind_speed_10m_mps=round(wind_speed, 1) if wind_speed is not None else None,
+            series.append(
+                ForecastTimestep(
+                    timestamp_utc=ts_utc,
+                    lead_hours=lead_h,
+                    temperature_2m_c=corr.corrected_value,
+                    temperature_2m_c_raw=corr.raw_value,
+                    elevation_delta_m=round(z_site - z_cell, 1),
+                    elevation_correction_c=corr.delta_c,
+                    elevation_uncertainty_c=corr.uncertainty_c,
+                    lead_time_uncertainty_c=lead_unc,
+                    total_uncertainty_c=total_unc,
+                    temperature_min_c=round(corr.corrected_value - total_unc, 2),
+                    temperature_max_c=round(corr.corrected_value + total_unc, 2),
+                    is_interpolated=False,
+                    relative_humidity_percent=round(rh_pct, 1) if rh_pct is not None else None,
+                    wind_speed_10m_mps=round(wind_speed, 1) if wind_speed is not None else None,
+                )
             )
-
-        series = [sample_img(f) for f in features]
 
         # Sort by lead_hours
         series.sort(key=lambda x: x.lead_hours)

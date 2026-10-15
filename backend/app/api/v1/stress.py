@@ -32,12 +32,17 @@ async def get_stress_analysis(
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
 
-    stress_data = analysis.result_data.get("stress") if analysis.result_data else None
+    result_data = analysis.result_data or {}
+    stress_data = (
+        result_data.get("stress")
+        or result_data.get("agriculture", {}).get("bundles", {}).get("stress")
+        or result_data.get("evidence", {}).get("stress")
+    )
     if stress_data:
         return stress_data
 
     return {
-        "status": "not_implemented",
-        "message": "Stress analysis will be available in Phase 6",
+        "status": "not_available",
+        "message": "Stress evidence was not included in this analysis run. Request the stress domain in /api/v1/agriculture/analysis.",
         "analysis_id": str(analysis_id),
     }
