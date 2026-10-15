@@ -204,6 +204,56 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
 
 
 @dataclass
+class ColdAirPoolingAdjustmentConfig:
+    """Configurable thresholds for topographically-driven cold-air pooling temperature bump.
+
+    All physical parameters are placeholders marked 'needs calibration' with local meteorological stations.
+    """
+
+    status: str = "placeholder"
+    notes: str = "Needs calibration against local microclimate station network"
+    min_pooling_proxy_threshold: float = 0.40  # Below this proxy, no cooling bump applied
+    max_cooling_bump_c: float = 2.5            # Max cooling bump under calm radiative conditions
+    wind_speed_calm_mps: float = 1.5           # Speed at or below which full pooling develops
+    wind_speed_drain_mps: float = 4.0          # Speed at or above which turbulent mixing drains pool
+
+
+def load_cold_air_pooling_config(
+    config_path: Optional[Path] = None,
+) -> ColdAirPoolingAdjustmentConfig:
+    """Load cold-air pooling adjustment parameters from config YAML if present."""
+    resolved_path: Optional[Path] = None
+    if config_path and config_path.exists():
+        resolved_path = config_path
+    else:
+        for p in _CONFIG_PATHS:
+            if p and p.exists() and p.is_file():
+                resolved_path = p
+                break
+
+    if not resolved_path:
+        return ColdAirPoolingAdjustmentConfig()
+
+    try:
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+        if isinstance(raw, dict) and "cold_air_pooling" in raw:
+            p_data = raw["cold_air_pooling"]
+            return ColdAirPoolingAdjustmentConfig(
+                status=p_data.get("status", "placeholder"),
+                notes=p_data.get("notes", "Needs calibration against local microclimate station network"),
+                min_pooling_proxy_threshold=float(p_data.get("min_pooling_proxy_threshold", 0.40)),
+                max_cooling_bump_c=float(p_data.get("max_cooling_bump_c", 2.5)),
+                wind_speed_calm_mps=float(p_data.get("wind_speed_calm_mps", 1.5)),
+                wind_speed_drain_mps=float(p_data.get("wind_speed_drain_mps", 4.0)),
+            )
+    except Exception as exc:
+        logger.warning("Could not parse cold_air_pooling section from %s: %s", resolved_path, exc)
+
+    return ColdAirPoolingAdjustmentConfig()
+
+
+@dataclass
 class NightlyFrostRisk:
     """Frost risk and thermal metrics for a single local night."""
 
@@ -251,6 +301,7 @@ class FrostRiskAssessment:
     nightly_risks: List[NightlyFrostRisk]
     disclaimer_fa: str
     recommendations_warning_fa: str = RECOMMENDATION_WARNING_FA
+    evidence_level: str = "B"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -297,33 +348,46 @@ def aggregate_forecast_by_local_night(
 def calculate_pooling_cooling_bump(
     pooling_risk_proxy: float,
     wind_speed_mps: Optional[float] = None,
-    max_cooling_bump_c: float = 2.5,
+    max_cooling_bump_c: Optional[float] = None,
+    config: Optional[ColdAirPoolingAdjustmentConfig] = None,
 ) -> float:
     """Calculate cold air pooling temperature bump.
 
     Physical rationale:
     During radiative frost, topography depressions trap cold air, cooling up to
     1.0-3.0 °C below the regional GFS grid forecast.
-    High wind speeds (> 3.0 m/s) disrupt boundary layer stratification and drain
+    High wind speeds disrupt boundary layer stratification and drain
     the pool via mechanical turbulence mixing.
+
+    SAFETY CONSTRAINT:
+    The pooling term must NEVER warm: clip the adjustment at 0.0.
+    Ridges are not credited with warming; false-safe is the dangerous direction.
     """
-    if pooling_risk_proxy <= 0.40:
+    cfg = config or ColdAirPoolingAdjustmentConfig()
+    max_bump = max_cooling_bump_c if max_cooling_bump_c is not None else cfg.max_cooling_bump_c
+    min_thresh = cfg.min_pooling_proxy_threshold
+    w_calm = cfg.wind_speed_calm_mps
+    w_drain = cfg.wind_speed_drain_mps
+
+    if pooling_risk_proxy <= min_thresh:
         return 0.0
 
-    # Linear pooling scaling above 0.40
-    raw_bump = (pooling_risk_proxy - 0.40) / 0.60 * max_cooling_bump_c
+    # Linear pooling scaling above min_thresh
+    scaling_range = max(0.01, 1.0 - min_thresh)
+    raw_bump = (pooling_risk_proxy - min_thresh) / scaling_range * max_bump
 
-    # Wind damping: above 1.5 m/s, turbulent mixing rapidly breaks cold pools
+    # Wind damping: above w_calm, turbulent mixing rapidly breaks cold pools
     if wind_speed_mps is not None:
-        if wind_speed_mps >= 4.0:
+        if wind_speed_mps >= w_drain:
             wind_factor = 0.0
-        elif wind_speed_mps <= 1.5:
+        elif wind_speed_mps <= w_calm:
             wind_factor = 1.0
         else:
-            wind_factor = max(0.0, 1.0 - (wind_speed_mps - 1.5) / 2.5)
+            wind_factor = max(0.0, 1.0 - (wind_speed_mps - w_calm) / max(0.01, (w_drain - w_calm)))
         raw_bump *= wind_factor
 
-    return round(float(raw_bump), 2)
+    # CRITICAL: Clip adjustment at 0.0 so pooling NEVER warms
+    return max(0.0, round(float(raw_bump), 2))
 
 
 def classify_nightly_risk(
@@ -370,17 +434,28 @@ def assess_frost_risk(
         raise ValueError(f"Crop '{crop}' not found in frost thresholds configuration.")
 
     crop_cfg = configs[crop]
-    if phenological_stage not in crop_cfg.stages:
+    unknown_stage_note_fa = ""
+    if not phenological_stage or phenological_stage == "unknown":
+        # Conservative safety fallback: select the most sensitive phenological stage (highest critical temperature)
+        most_sensitive = max(crop_cfg.stages.values(), key=lambda s: s.t_critical_10_c)
+        stage_cfg = most_sensitive
+        unknown_stage_note_fa = (
+            f"مرحله فنولوژیکی نامشخص است؛ بر مبنای اصل احتیاط کشاورزی، حساس‌ترین مرحله رشد "
+            f"({stage_cfg.name_fa} با آستانه ۱۰٪ خسارت {stage_cfg.t_critical_10_c}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
+        )
+    elif phenological_stage not in crop_cfg.stages:
         raise ValueError(
             f"Stage '{phenological_stage}' not found for crop '{crop}'. "
             f"Available stages: {list(crop_cfg.stages.keys())}"
         )
+    else:
+        stage_cfg = crop_cfg.stages[phenological_stage]
 
-    stage_cfg = crop_cfg.stages[phenological_stage]
     tc10 = stage_cfg.t_critical_10_c
     tc90 = stage_cfg.t_critical_90_c
 
-    # 2. Topography pooling proxy
+    # 2. Topography pooling proxy & configuration
+    pooling_cfg = load_cold_air_pooling_config(thresholds_config_path)
     if pooling_risk_proxy is not None:
         p_proxy = pooling_risk_proxy
     elif pooling_result is not None:
@@ -422,7 +497,7 @@ def assess_frost_risk(
         unc_at_min = min_step.total_uncertainty_c
 
         # Calculate cold air pooling bump
-        cooling_bump = calculate_pooling_cooling_bump(p_proxy, wind_at_min)
+        cooling_bump = calculate_pooling_cooling_bump(p_proxy, wind_at_min, config=pooling_cfg)
         t_adjusted_min = round(t_raw_min - cooling_bump, 2)
         t_lower = round(t_adjusted_min - unc_at_min, 2)
         t_upper = round(t_adjusted_min + unc_at_min, 2)
@@ -478,9 +553,13 @@ def assess_frost_risk(
         "باید با نظر مستقیم مروجین کشاورزی صورت گیرد."
     )
 
+    combined_warning = crop_cfg.verification_warning_fa
+    if unknown_stage_note_fa:
+        combined_warning = f"{combined_warning} {unknown_stage_note_fa}".strip()
+
     return FrostRiskAssessment(
         crop=crop,
-        phenological_stage=phenological_stage,
+        phenological_stage=stage_cfg.stage_key,
         crop_fa=crop_cfg.common_name_fa,
         stage_fa=stage_cfg.name_fa,
         t_critical_10_c=tc10,
@@ -488,11 +567,12 @@ def assess_frost_risk(
         thresholds_status=crop_cfg.status,
         thresholds_source=crop_cfg.source,
         thresholds_verified=crop_cfg.verified,
-        thresholds_warning_fa=crop_cfg.verification_warning_fa,
+        thresholds_warning_fa=combined_warning,
         pooling_risk_proxy=round(p_proxy, 3),
         overall_risk_level=overall_level,
         overall_risk_level_fa=RISK_LEVEL_FA[overall_level],
         nightly_risks=nightly_risks,
         disclaimer_fa=disclaimer,
         recommendations_warning_fa=RECOMMENDATION_WARNING_FA,
+        evidence_level="B",
     )

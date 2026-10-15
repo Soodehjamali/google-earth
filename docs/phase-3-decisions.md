@@ -47,7 +47,7 @@ This document records architectural, agronomic, and operational decisions made d
 - **Why:** Physical accuracy and prevention of catastrophic temperature offset errors.
 
 ### 3.1.2 DEM Elevation Correction & Thermodynamic Consistency
-- **Decision:** Apply the production `correct_temperature_for_elevation` function from `backend/app/services/agriculture/quality_gating.py` to every forecast timestep. Cell mean elevation ($z_{\text{cell}}$) is computed over the GFS cell radius ($13,915\,\text{m} \approx 27.8\,\text{km} / 2$) from NASADEM 30m, and site elevation ($z_{\text{site}}$) is computed over the parcel geometry. The lapse rate $\Gamma = -6.5\,^\circ\text{C/km}$ (or inversion condition during clear radiative nights) calculates $\Delta T = -\Gamma \cdot (z_{\text{site}} - z_{\text{cell}})$.
+- **Decision:** Apply the production `correct_temperature_for_elevation` function from `backend/app/services/agriculture/quality_gating.py` to every forecast timestep. Cell mean elevation ($z_{\text{cell}}$) is computed over the GFS cell radius ($13,915\,\text{m} \approx 27.8\,\text{km} / 2$) from NASADEM 30m, and site elevation ($z_{\text{site}}$) is computed over the parcel geometry. The lapse rate $\Gamma = -6.5\,^\circ\text{C/km}$ calculates $\Delta T = \Gamma \cdot \frac{z_{\text{site}} - z_{\text{cell}}}{1000}$, ensuring that when a site is higher than the cell mean ($\Delta z > 0$), $\Delta T$ is negative and the corrected temperature is colder ($T_{\text{corr}} = T_{\text{cell}} + \Delta T$).
 - **Why:** Prevents elevation-induced warm/cold bias in mountainous or basin terrain (e.g. Iranian central plateau pistachio regions).
 
 ### 3.1.3 Forecast Uncertainty Formulation
@@ -165,6 +165,31 @@ This document records architectural, agronomic, and operational decisions made d
 ### 3.5.5 LTR Presentation & Mathematical Minus Sign Isolation
 - **Decision:** All sub-zero temperatures, negative adjustments, and uncertainty intervals are rendered with `<FormattedNumber>` and tabular numerals, ensuring mathematical minus signs (`U+2212`) always remain on the left of digits without RTL inversion in Persian UI contexts.
 - **Why:** Prevents dangerous temperature reading confusions (e.g. reading $-2.5\,^\circ\text{C}$ as $+2.5\,^\circ\text{C}$).
+
+---
+
+## Item C3 Decisions: Formulas, Constants, and Pooling Clipping
+
+### C3.1 Lapse-Rate Correction Sign Convention
+- **Formula:**
+  $$\Delta z_{\text{km}} = \frac{z_{\text{site}} - z_{\text{cell}}}{1000}$$
+  $$\Delta T = \Gamma \cdot \Delta z_{\text{km}} \quad (\text{with } \Gamma = -6.5\,^\circ\text{C/km})$$
+  $$T_{\text{corr}} = T_{\text{cell}} + \Delta T$$
+- **Directional Proof:** For a site higher than the cell mean ($z_{\text{site}} = 1500\,\text{m}, z_{\text{cell}} = 1000\,\text{m}$), $\Delta z = +0.5\,\text{km}$, yielding $\Delta T = -3.25\,^\circ\text{C}$ and $T_{\text{corr}} < T_{\text{cell}}$. A higher site is strictly colder.
+
+### C3.2 Non-Warming Constraint on Cold-Air-Pooling
+- **Safety Constraint:** The cold-air-pooling adjustment must **never warm** the forecast temperature. The pooling cooling bump is clipped at $0.0$:
+  $$\Delta T_{\text{pool}} = \max(0.0, \text{raw\_bump})$$
+  $$T_{\text{adjusted}} = T_{\text{raw}} - \Delta T_{\text{pool}} \le T_{\text{raw}}$$
+- **Rationale:** Topographic ridges or elevated convexities drain cold air, but must not be credited with artificial warming during freezing nights. The dangerous error direction for agriculture is false-safe (underestimating frost risk).
+
+### C3.3 Externalization of Physical Constants to Config
+- The following empirical constants have been moved into `config/frost_thresholds.yaml` (under `cold_air_pooling`) and `ColdAirPoolingAdjustmentConfig`, explicitly marked as **placeholder / "needs calibration"**:
+  1. `min_pooling_proxy_threshold: 0.40` — Below this proxy value, terrain is considered neutral or self-draining, and no pooling cooling bump is applied.
+  2. `max_cooling_bump_c: 2.5` — Maximum radiative cooling depression under calm stagnation conditions.
+  3. `wind_speed_calm_mps: 1.5` — Wind threshold below which full cold-air pooling develops.
+  4. `wind_speed_drain_mps: 4.0` — Wind threshold above which turbulent boundary-layer mixing completely disrupts the cold pool.
+- **Evidence Level:** All frost advisory outputs maintain an evidence level of $\le \text{B}$ (`evidence_level: "B"`), reflecting the combination of synoptic NWP forecast and topographic proxy modeling without direct in-canopy telemetry.
 
 
 

@@ -284,3 +284,110 @@ async def test_end_to_end_frost_risk_assessment():
     forbidden_terms = ["هورمون", "محلول‌پاشی شیمیایی", "ضدیخ شیمیایی", "کود فسفیت", "جیبرلین"]
     for term in forbidden_terms:
         assert term not in all_recs_text, f"Forbidden chemical recommendation found: {term}"
+
+
+def test_lapse_rate_explicit_signs_higher_site_colder():
+    """Verify physical lapse-rate sign: higher elevation strictly yields colder temperature."""
+    from app.services.agriculture.quality_gating import correct_temperature_for_elevation
+
+    # 1. Higher site than cell mean: z_site > z_cell -> delta_c < 0, corrected < raw
+    corr_high = correct_temperature_for_elevation(
+        t_cell=10.0,
+        z_cell=1000.0,
+        z_site=1500.0,  # +500m elevation gain
+    )
+    assert corr_high.delta_c == -3.25  # -6.5 * 0.5 km = -3.25 °C
+    assert corr_high.corrected_value == 6.75
+    assert corr_high.corrected_value < corr_high.raw_value
+
+    # 2. Lower site than cell mean: z_site < z_cell -> delta_c > 0, corrected > raw
+    corr_low = correct_temperature_for_elevation(
+        t_cell=10.0,
+        z_cell=1000.0,
+        z_site=800.0,  # -200m elevation drop
+    )
+    assert corr_low.delta_c == +1.30  # -6.5 * -0.2 km = +1.30 °C
+    assert corr_low.corrected_value == 11.30
+    assert corr_low.corrected_value > corr_low.raw_value
+
+    # 3. Equal elevation: delta_c == 0.0
+    corr_equal = correct_temperature_for_elevation(
+        t_cell=10.0,
+        z_cell=1000.0,
+        z_site=1000.0,
+    )
+    assert corr_equal.delta_c == 0.0
+    assert corr_equal.corrected_value == 10.0
+
+
+def test_cold_air_pooling_never_warms_and_clips_at_zero():
+    """Verify pooling adjustment term NEVER warms (strictly clipped at >= 0.0)."""
+    # Ridges, negative proxies, or baseline terrain must NEVER produce negative cooling bump
+    test_proxies = [-1.0, -0.5, 0.0, 0.1, 0.25, 0.39, 0.40]
+    for p in test_proxies:
+        bump = calculate_pooling_cooling_bump(p, wind_speed_mps=1.0)
+        assert bump == 0.0, f"Expected 0.0 bump for proxy {p}, got {bump}"
+        t_raw = 5.0
+        t_adjusted = t_raw - bump
+        assert t_adjusted <= t_raw, f"Adjustment caused warming: {t_adjusted} > {t_raw}"
+
+    # Over the entire valid range [0.0, 1.0], bump must be non-negative
+    for step in range(101):
+        proxy_val = step / 100.0
+        for wind_val in [0.0, 1.0, 2.5, 4.0, 6.0]:
+            b = calculate_pooling_cooling_bump(proxy_val, wind_speed_mps=wind_val)
+            assert b >= 0.0, f"Negative cooling bump ({b}) for proxy={proxy_val}, wind={wind_val}"
+
+
+def test_cold_air_pooling_config_driven_values():
+    """Verify ColdAirPoolingAdjustmentConfig parameters drive the computation."""
+    from app.services.agriculture.frost_risk import (
+        ColdAirPoolingAdjustmentConfig,
+        load_cold_air_pooling_config,
+    )
+
+    # 1. Custom config override
+    custom_cfg = ColdAirPoolingAdjustmentConfig(
+        status="placeholder",
+        notes="Custom test calibration",
+        min_pooling_proxy_threshold=0.50,
+        max_cooling_bump_c=3.5,
+        wind_speed_calm_mps=2.0,
+        wind_speed_drain_mps=5.0,
+    )
+
+    # Below custom threshold 0.50 -> 0 bump
+    assert calculate_pooling_cooling_bump(0.45, config=custom_cfg) == 0.0
+
+    # Above custom threshold 0.50: proxy=0.75 -> (0.75 - 0.50) / 0.50 * 3.5 = 1.75
+    bump = calculate_pooling_cooling_bump(0.75, wind_speed_mps=1.5, config=custom_cfg)
+    assert bump == 1.75
+
+    # 2. Production YAML loader loads cold_air_pooling section
+    prod_cfg = load_cold_air_pooling_config()
+    assert prod_cfg.status == "placeholder"
+    assert prod_cfg.min_pooling_proxy_threshold == 0.40
+    assert prod_cfg.max_cooling_bump_c == 2.5
+    assert prod_cfg.wind_speed_calm_mps == 1.5
+    assert prod_cfg.wind_speed_drain_mps == 4.0
+
+
+@pytest.mark.asyncio
+async def test_frost_assessment_evidence_level_and_unknown_stage():
+    """Verify evidence_level <= B and conservative fallback for unknown stage."""
+    provider = FakeForecastProvider(base_tmin_c=-2.0, base_tmax_c=10.0)
+    forecast = await provider.get_hourly_forecast(None, horizon_h=48)
+
+    # Case 1: Unknown stage -> selects most sensitive stage with explanatory note
+    assessment_unknown = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="unknown",
+        pooling_risk_proxy=0.70,
+    )
+    assert assessment_unknown.evidence_level <= "B"
+    assert assessment_unknown.evidence_level == "B"
+    assert "مرحله فنولوژیکی نامشخص است" in assessment_unknown.thresholds_warning_fa
+    # Most sensitive stage for pistachio has the warmest tc10 (e.g. fruit_set at -1.0C)
+    assert assessment_unknown.t_critical_10_c == -1.0
+    assert assessment_unknown.phenological_stage == "fruit_set"

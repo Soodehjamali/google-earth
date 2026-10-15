@@ -51,3 +51,13 @@ crops:
         status: "placeholder"
         source: null
         notes_fa: "میوه‌های تازه تشکیل شده بسیار حساس به یخ‌زدگی بافت آبدار هستند."
+
+# Cold-air-pooling temperature adjustment configuration
+# All physical parameters are placeholders marked "needs calibration" with local microclimate station network.
+cold_air_pooling:
+  status: "placeholder"
+  notes: "Needs calibration against local microclimate station network"
+  min_pooling_proxy_threshold: 0.40  # Below this proxy threshold, no pooling cooling bump is applied (neutral/ridge)
+  max_cooling_bump_c: 2.5            # Maximum cooling bump in °C under calm radiative conditions
+  wind_speed_calm_mps: 1.5           # Wind speed at or below which full pooling develops (m/s)
+  wind_speed_drain_mps: 4.0          # Wind speed at or above which turbulent mixing drains cold pool (m/s)
