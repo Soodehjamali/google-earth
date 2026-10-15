@@ -478,7 +478,7 @@ class Provenance:
 
     measurement_basis: MeasurementBasis = MeasurementBasis.DIRECT
     quality_level: QualityLevel = QualityLevel.UNAVAILABLE
-    quality_state: QualityState = QualityState.UNAVAILABLE
+    quality_state: Optional[QualityState] = None
     native_resolution_m: Optional[float] = None
     support_description: Optional[str] = None
     cell_elevation_m: Optional[float] = None
@@ -541,6 +541,18 @@ class Provenance:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
 
+    def __post_init__(self) -> None:
+        if self.quality_state is None:
+            if self.quality_level in (
+                QualityLevel.UNAVAILABLE,
+                QualityLevel.INSUFFICIENT,
+            ):
+                self.quality_state = QualityState.UNAVAILABLE
+            elif self.native_resolution_m is not None and self.native_resolution_m > 100:
+                self.quality_state = QualityState.COARSE_CONTEXT
+            else:
+                self.quality_state = QualityState.VALID
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "source_dataset_id": self.source_dataset_id,
@@ -554,7 +566,11 @@ class Provenance:
             "aggregation_method": self.aggregation_method,
             "measurement_basis": self.measurement_basis.value,
             "quality_level": self.quality_level.value,
-            "quality_state": self.quality_state.value,
+            "quality_state": (
+                self.quality_state.value
+                if self.quality_state is not None
+                else QualityState.UNAVAILABLE.value
+            ),
             "native_resolution_m": self.native_resolution_m,
             "support_description": self.support_description,
             "cell_elevation_m": self.cell_elevation_m,
@@ -901,11 +917,14 @@ class MetricResult:
             self.class_histogram is not None
             and self.class_histogram.entries
         )
-        is_usable_quality = (
-            (self.provenance is not None and self.provenance.quality_level.is_usable)
-            or (self.provenance is not None and self.provenance.quality_state.is_usable_data)
-            or (self.quality_state is not None and self.quality_state.is_usable_data)
-        )
+        if self.quality_state is QualityState.COARSE_CONTEXT:
+            is_usable_quality = True
+        else:
+            is_usable_quality = (
+                self.provenance is not None
+                and self.provenance.quality_level.is_usable
+                and self.quality_state is not QualityState.UNAVAILABLE
+            )
         return bool(
             self.status in (STATUS_OK, STATUS_PARTIAL)
             and has_payload

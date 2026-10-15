@@ -37,6 +37,12 @@ from app.services.agriculture.types import (
     SpatialStats,
 )
 from app.services.agriculture import units as u
+from app.services.agriculture.quality_gating import (
+    DEFAULT_QUALITY_CONFIG,
+    QualityState,
+    correct_temperature_for_elevation,
+    aggregate_hourly_to_local_days,
+)
 
 logger = get_logger(__name__)
 
@@ -162,6 +168,60 @@ def _reduce_era5_band(
     return stats, day_count, daily_values
 
 
+def get_or_compute_elevations(
+    context: MetricContext,
+    ee_module: Any,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Retrieve or compute ERA5 cell elevation and parcel elevation.
+
+    z_site: parcel elevation from NASADEM (30m)
+    z_cell: ERA5-Land grid cell elevation from NASADEM (30m) averaged over cell footprint
+    """
+    z_cell = context.option("cell_elevation_m")
+    z_site = context.option("site_elevation_m")
+    if z_cell is not None and z_site is not None:
+        try:
+            return float(z_cell), float(z_site)
+        except (ValueError, TypeError):
+            pass
+
+    # In live execution with Earth Engine
+    if hasattr(ee_module, "Image") and context.geometry is not None:
+        try:
+            from app.services.agriculture.terrain import NASADEM, TERRAIN_WORKING_SCALE
+
+            dem = ee_module.Image(NASADEM).select(["elevation"])
+
+            # 1. Parcel elevation
+            if z_site is None:
+                site_raw = dem.reduceRegion(
+                    reducer=ee_module.Reducer.mean(),
+                    geometry=context.geometry,
+                    scale=TERRAIN_WORKING_SCALE,
+                    maxPixels=1e9,
+                    bestEffort=True,
+                ).getInfo()
+                if site_raw and site_raw.get("elevation") is not None:
+                    z_site = float(site_raw["elevation"])
+
+            # 2. Grid cell elevation (averaged over ERA5 cell footprint ~11km)
+            if z_cell is None:
+                cell_geom = context.geometry.centroid().buffer(5500)
+                cell_raw = dem.reduceRegion(
+                    reducer=ee_module.Reducer.mean(),
+                    geometry=cell_geom,
+                    scale=TERRAIN_WORKING_SCALE,
+                    maxPixels=1e9,
+                    bestEffort=True,
+                ).getInfo()
+                if cell_raw and cell_raw.get("elevation") is not None:
+                    z_cell = float(cell_raw["elevation"])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not compute DEM elevations for climate: %s", exc)
+
+    return z_cell, z_site
+
+
 class _ERA5Metric(Metric):
     """Common behaviour for metrics read directly from a single ERA5 band."""
 
@@ -178,6 +238,12 @@ class _ERA5Metric(Metric):
 
     #: Conversion applied to the raw ERA5 values.
     conversion = "none"
+
+    #: Whether this is a temperature metric subject to elevation correction.
+    is_temperature: bool = False
+
+    #: Whether this represents nighttime minimum temperature (higher uncertainty).
+    is_night_minimum: bool = False
 
     def convert(self, value: Optional[float]) -> Optional[float]:
         """Convert raw ERA5 units to the reported unit."""
@@ -205,15 +271,72 @@ class _ERA5Metric(Metric):
             thresholds=REANALYSIS_THRESHOLDS,
         )
 
+        warnings: List[str] = []
+        if quality is QualityLevel.POOR:
+            warnings.append(describe_quality(QualityLevel.POOR))
+
+        # DEM-based temperature elevation correction (Task 2.2)
+        corr_result = None
+        extra_lim = list(self.extra_limitations)
+        z_cell, z_site = (None, None)
+        final_value = converted.mean
+        formula_str = self.formula
+
+        if self.is_temperature and converted.mean is not None:
+            z_cell, z_site = get_or_compute_elevations(context, ee)
+            if z_cell is not None and z_site is not None:
+                gamma = context.option("lapse_rate_c_per_km")
+                corr_result = correct_temperature_for_elevation(
+                    t_cell=converted.mean,
+                    z_cell=z_cell,
+                    z_site=z_site,
+                    lapse_rate_c_per_km=gamma,
+                    is_night_minimum=self.is_night_minimum,
+                )
+                final_value = corr_result.corrected_value
+                formula_str = (
+                    f"{self.formula} + (lapse_rate * (z_site - z_cell) / 1000)"
+                )
+                warnings.append(corr_result.uncertainty_note_fa)
+                extra_lim.append(
+                    f"Elevation lapse rate correction applied: lapse rate "
+                    f"{corr_result.lapse_rate_c_per_km} °C/km, cell elevation "
+                    f"{corr_result.z_cell_m:.0f} m, site elevation "
+                    f"{corr_result.z_site_m:.0f} m (delta: {corr_result.delta_c:+.2f} °C, "
+                    f"uncertainty: ±{corr_result.uncertainty_c:.1f} °C) [needs calibration]."
+                )
+                delta = corr_result.delta_c
+                converted = SpatialStats(
+                    mean=final_value,
+                    median=round(converted.median + delta, 2) if converted.median is not None else None,
+                    min=round(converted.min + delta, 2) if converted.min is not None else None,
+                    max=round(converted.max + delta, 2) if converted.max is not None else None,
+                    std_dev=converted.std_dev,
+                    p10=round(converted.p10 + delta, 2) if converted.p10 is not None else None,
+                    p25=round(converted.p25 + delta, 2) if converted.p25 is not None else None,
+                    p75=round(converted.p75 + delta, 2) if converted.p75 is not None else None,
+                    p90=round(converted.p90 + delta, 2) if converted.p90 is not None else None,
+                    valid_pixel_count=converted.valid_pixel_count,
+                    total_pixel_count=converted.total_pixel_count,
+                    valid_area_sq_m=converted.valid_area_sq_m,
+                )
+            else:
+                extra_lim.append(
+                    "Elevation difference between ERA5-Land grid cell and parcel was not "
+                    "available; uncorrected 2m temperature reported [needs calibration]."
+                )
+
         provenance = self.build_provenance(
             context=context,
             dataset=dataset,
             bands=[self.source_band],
-            formula=self.formula,
+            formula=formula_str,
             quality=quality,
             image_count=day_count,
             aggregation_method="time mean, then spatial mean",
-            extra_limitations=self.extra_limitations,
+            extra_limitations=tuple(extra_lim),
+            cell_elevation_m=corr_result.z_cell_m if corr_result else z_cell,
+            site_elevation_m=corr_result.z_site_m if corr_result else z_site,
         )
 
         if day_count == 0:
@@ -242,15 +365,11 @@ class _ERA5Metric(Metric):
                 provenance=provenance,
             )
 
-        warnings: List[str] = []
-        if quality is QualityLevel.POOR:
-            warnings.append(describe_quality(QualityLevel.POOR))
-
         return MetricResult(
             metric_key=self.key,
             display_name=self.display_name,
             display_name_fa=self.display_name_fa,
-            value=converted.mean,
+            value=final_value,
             unit=self.unit,
             stats=converted,
             provenance=provenance,
@@ -326,6 +445,8 @@ class TemperatureMaxMetric(_ERA5Metric):
     source_band = "temperature_2m_max"
     source_unit = "K"
     conversion = "celsius = kelvin - 273.15"
+    is_temperature = True
+    is_night_minimum = False
     description = "Mean of daily maximum air temperature, from ERA5-Land."
     limitations = (
         "Modelled at roughly 11 km, not measured at the field.",
@@ -347,6 +468,8 @@ class TemperatureMinMetric(_ERA5Metric):
     source_band = "temperature_2m_min"
     source_unit = "K"
     conversion = "celsius = kelvin - 273.15"
+    is_temperature = True
+    is_night_minimum = True
     description = "Mean of daily minimum air temperature, from ERA5-Land."
     limitations = (
         "Modelled at roughly 11 km, not measured at the field.",
@@ -368,6 +491,8 @@ class TemperatureMeanMetric(_ERA5Metric):
     source_band = "temperature_2m"
     source_unit = "K"
     conversion = "celsius = kelvin - 273.15"
+    is_temperature = True
+    is_night_minimum = False
     description = "Mean air temperature at 2 m over the period."
     limitations = (
         "Modelled at roughly 11 km, not measured at the field.",
@@ -902,27 +1027,71 @@ class GDDMetric(Metric):
 
         base = float(context.option("base_temperature", self.base_temperature))
         upper = context.option("upper_temperature")
+        if upper is None and context.option("use_pistachio_defaults", True):
+            upper = DEFAULT_QUALITY_CONFIG.gdd_upper_temp_c
 
-        _, day_count, t_min_daily = _reduce_era5_band(
-            context, ee, "temperature_2m_min"
+        z_cell, z_site = get_or_compute_elevations(context, ee)
+        gamma = context.option("lapse_rate_c_per_km")
+        actual_gamma = (
+            float(gamma)
+            if gamma is not None
+            else DEFAULT_QUALITY_CONFIG.default_lapse_rate_c_per_km
         )
-        _, _, t_max_daily = _reduce_era5_band(
-            context, ee, "temperature_2m_max"
-        )
+
+        delta_c = 0.0
+        if z_cell is not None and z_site is not None:
+            delta_z_km = (z_site - z_cell) / 1000.0
+            delta_c = actual_gamma * delta_z_km
 
         daily_gdd: List[float] = []
-        paired = min(len(t_min_daily), len(t_max_daily))
-        for index in range(paired):
-            value = u.growing_degree_days(
-                u.kelvin_to_celsius(t_min_daily[index]),
-                u.kelvin_to_celsius(t_max_daily[index]),
-                base_temperature_c=base,
-                upper_temperature_c=(
-                    float(upper) if upper is not None else None
-                ),
+        day_count = 0
+
+        hourly_records = context.option("hourly_temperatures")
+        local_tz = context.option("timezone", DEFAULT_QUALITY_CONFIG.local_timezone)
+
+        if hourly_records:
+            # Aggregate hourly into local civil/solar days (Asia/Tehran)
+            local_days = aggregate_hourly_to_local_days(
+                hourly_records, timezone_str=local_tz
             )
-            if value is not None:
-                daily_gdd.append(value)
+            day_count = len(local_days)
+            for date_key in sorted(local_days.keys()):
+                d_stats = local_days[date_key]
+                t_min_corr = d_stats["min"] + delta_c
+                t_max_corr = d_stats["max"] + delta_c
+                val = u.growing_degree_days(
+                    t_min_corr,
+                    t_max_corr,
+                    base_temperature_c=base,
+                    upper_temperature_c=float(upper) if upper is not None else None,
+                )
+                if val is not None:
+                    daily_gdd.append(val)
+        else:
+            _, day_count, t_min_daily = _reduce_era5_band(
+                context, ee, "temperature_2m_min"
+            )
+            _, _, t_max_daily = _reduce_era5_band(
+                context, ee, "temperature_2m_max"
+            )
+
+            paired = min(len(t_min_daily), len(t_max_daily))
+            for index in range(paired):
+                t_min_c = u.kelvin_to_celsius(t_min_daily[index])
+                t_max_c = u.kelvin_to_celsius(t_max_daily[index])
+                if t_min_c is not None and t_max_c is not None:
+                    t_min_corr = t_min_c + delta_c
+                    t_max_corr = t_max_c + delta_c
+                    value = u.growing_degree_days(
+                        t_min_corr,
+                        t_max_corr,
+                        base_temperature_c=base,
+                        upper_temperature_c=(
+                            float(upper) if upper is not None else None
+                        ),
+                    )
+                    if value is not None:
+                        daily_gdd.append(value)
 
         quality = assess_quality(
             image_count=max(day_count, 1),
@@ -931,27 +1100,48 @@ class GDDMetric(Metric):
             thresholds=REANALYSIS_THRESHOLDS,
         )
 
+        extra_lim = [
+            f"Base temperature used: {base} °C [needs calibration].",
+            (
+                f"Upper temperature cap used: {float(upper)} °C [needs calibration]."
+                if upper is not None
+                else "No upper temperature cap was applied, so hot days accumulate without limit."
+            ),
+        ]
+        if z_cell is not None and z_site is not None:
+            extra_lim.append(
+                f"DEM elevation correction applied: lapse rate {actual_gamma} °C/km, "
+                f"cell elevation {z_cell:.0f} m, site elevation {z_site:.0f} m "
+                f"(delta: {delta_c:+.2f} °C) [needs calibration]."
+            )
+        else:
+            extra_lim.append(
+                "Elevation difference between ERA5-Land grid cell and parcel was not "
+                "available; uncorrected temperatures used [needs calibration]."
+            )
+
+        if hourly_records:
+            extra_lim.append(
+                f"Hourly temperatures aggregated into local civil days ({local_tz})."
+            )
+
+        formula_str = (
+            f"GDD = max(0, ((Tmin + Tmax) / 2) - {base}) with elevation correction ({delta_c:+.2f} °C)"
+            if delta_c != 0.0
+            else f"GDD = max(0, ((Tmin + Tmax) / 2) - {base})"
+        )
+
         provenance = self.build_provenance(
             context=context,
             dataset=dataset,
             bands=["temperature_2m_min", "temperature_2m_max"],
-            formula=(
-                f"GDD = max(0, ((Tmin + Tmax) / 2) - {base}), "
-                "with temperatures in degrees Celsius"
-            ),
+            formula=formula_str,
             quality=quality,
             image_count=day_count,
-            aggregation_method="computed per day, then summed over the period",
-            extra_limitations=(
-                f"Base temperature used: {base} degrees Celsius.",
-                (
-                    f"Upper temperature cap used: {float(upper)} degrees "
-                    "Celsius, applied to both Tmin and Tmax."
-                    if upper is not None
-                    else "No upper temperature cap was applied, so hot days "
-                    "accumulate without limit."
-                ),
-            ),
+            aggregation_method="computed per local day, then summed over the period",
+            extra_limitations=tuple(extra_lim),
+            cell_elevation_m=z_cell,
+            site_elevation_m=z_site,
         )
 
         if not daily_gdd:

@@ -271,3 +271,157 @@ def test_legacy_report_deserialization_backward_compatibility():
     parsed_item = EvidenceItemResponse.model_validate(legacy_evidence_dict)
     assert parsed_item.quality_state == QualityState.COARSE_CONTEXT
     assert parsed_item.is_coarse_context is True
+
+
+def test_elevation_correction_physics_and_signs():
+    """Verify physical lapse-rate correction behavior."""
+    # 1. Higher elevation site (z_site > z_cell): must be cooler
+    # Site 1500m, grid 1000m -> delta_z = +500m (+0.5km)
+    # At -6.5 °C/km, delta_T = -3.25 °C. 20.0 °C -> 16.75 °C
+    res_higher = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=1500.0,
+    )
+    assert res_higher.delta_c == -3.25
+    assert res_higher.corrected_value == 16.75
+    assert res_higher.uncertainty_c == 1.0  # default daytime uncertainty
+
+    # 2. Lower elevation site / valley (z_site < z_cell): must be warmer
+    # Site 800m, grid 1000m -> delta_z = -200m (-0.2km)
+    # At -6.5 °C/km, delta_T = +1.30 °C. 20.0 °C -> 21.30 °C
+    res_lower = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=800.0,
+    )
+    assert res_lower.delta_c == 1.30
+    assert res_lower.corrected_value == 21.30
+
+    # 3. Exact equal elevations: zero delta, exact equality
+    res_equal = correct_temperature_for_elevation(
+        t_cell=25.0,
+        z_cell=1200.0,
+        z_site=1200.0,
+    )
+    assert res_equal.delta_c == 0.0
+    assert res_equal.corrected_value == 25.0
+
+    # 4. Custom lapse rate: -5.0 °C/km
+    res_custom = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=2000.0,
+        lapse_rate_c_per_km=-5.0,
+    )
+    assert res_custom.delta_c == -5.0
+    assert res_custom.corrected_value == 15.0
+
+    # 5. Nighttime minimum temperature: higher uncertainty (±2.0 °C) & inversion warning
+    res_night = correct_temperature_for_elevation(
+        t_cell=5.0,
+        z_cell=1000.0,
+        z_site=1200.0,
+        is_night_minimum=True,
+    )
+    assert res_night.uncertainty_c == 2.0
+    assert "وارونگی" in res_night.uncertainty_note_fa
+    assert "اینورژن" in res_night.uncertainty_note_fa
+
+
+def test_aggregate_hourly_to_local_days():
+    """Verify that UTC timestamps are grouped accurately into Asia/Tehran civil days."""
+    from datetime import datetime, timezone
+
+    # Timestamps in UTC:
+    # 2024-05-10 21:00 UTC = 2024-05-11 00:30 Asia/Tehran (belongs to May 11th local)
+    # 2024-05-11 00:30 UTC = 2024-05-11 04:00 Asia/Tehran (belongs to May 11th local)
+    # 2024-05-11 11:30 UTC = 2024-05-11 15:00 Asia/Tehran (belongs to May 11th local)
+    # 2024-05-11 20:00 UTC = 2024-05-11 23:30 Asia/Tehran (belongs to May 11th local)
+    # 2024-05-11 21:00 UTC = 2024-05-12 00:30 Asia/Tehran (belongs to May 12th local)
+
+    records = [
+        (datetime(2024, 5, 10, 21, 0, tzinfo=timezone.utc), 14.0),
+        (datetime(2024, 5, 11, 0, 30, tzinfo=timezone.utc), 10.0),
+        (datetime(2024, 5, 11, 11, 30, tzinfo=timezone.utc), 28.0),
+        (datetime(2024, 5, 11, 20, 0, tzinfo=timezone.utc), 22.0),
+        (datetime(2024, 5, 11, 21, 0, tzinfo=timezone.utc), 12.0),
+    ]
+
+    grouped = aggregate_hourly_to_local_days(records, timezone_str="Asia/Tehran")
+    assert "2024-05-11" in grouped
+    assert "2024-05-12" in grouped
+
+    # On May 11 local: min should be 10.0, max 28.0, count 4
+    may11 = grouped["2024-05-11"]
+    assert may11["min"] == 10.0
+    assert may11["max"] == 28.0
+    assert may11["count"] == 4
+
+    # On May 12 local: value 12.0
+    may12 = grouped["2024-05-12"]
+    assert may12["min"] == 12.0
+    assert may12["max"] == 12.0
+    assert may12["count"] == 1
+
+
+def test_gdd_metric_with_elevation_correction_and_hourly():
+    """Verify that GDDMetric correctly accumulates GDD with elevation-corrected temperatures."""
+    from datetime import datetime, timezone
+    from app.services.agriculture.base import MetricContext
+    from app.services.agriculture.climate import GDDMetric
+
+    # 2 days of hourly data in Asia/Tehran
+    # Day 1: min 15.0 °C, max 25.0 °C -> mean 20.0 °C. With base 10.0 °C: GDD = 10.0
+    # Day 2: min 12.0 °C, max 22.0 °C -> mean 17.0 °C. With base 10.0 °C: GDD = 7.0
+    # Total raw GDD = 17.0
+    records = [
+        # Day 1 (May 10 local)
+        (datetime(2024, 5, 10, 4, 0, tzinfo=timezone.utc), 15.0),
+        (datetime(2024, 5, 10, 12, 0, tzinfo=timezone.utc), 25.0),
+        # Day 2 (May 11 local)
+        (datetime(2024, 5, 11, 4, 0, tzinfo=timezone.utc), 12.0),
+        (datetime(2024, 5, 11, 12, 0, tzinfo=timezone.utc), 22.0),
+    ]
+
+    metric = GDDMetric()
+
+    # 1. Uncorrected (equal elevations: 1000m to 1000m)
+    ctx_uncorrected = MetricContext(
+        start_date="2024-05-10",
+        end_date="2024-05-11",
+        geometry=None,
+        options={
+            "hourly_temperatures": records,
+            "cell_elevation_m": 1000.0,
+            "site_elevation_m": 1000.0,
+            "base_temperature": 10.0,
+            "upper_temperature": 35.0,
+        },
+    )
+    res_raw = metric.compute(ctx_uncorrected)
+    assert res_raw.value == pytest.approx(17.0, abs=0.01)
+
+    # 2. Corrected for higher site: site 1500m (+500m, +0.5km)
+    # At -6.5 °C/km: delta_T = -3.25 °C
+    # Day 1 corrected: min 11.75, max 21.75 -> mean 16.75 -> GDD = 6.75
+    # Day 2 corrected: min 8.75, max 18.75 -> mean 13.75 -> GDD = 3.75
+    # Total corrected GDD = 10.50
+    ctx_corrected = MetricContext(
+        start_date="2024-05-10",
+        end_date="2024-05-11",
+        geometry=None,
+        options={
+            "hourly_temperatures": records,
+            "cell_elevation_m": 1000.0,
+            "site_elevation_m": 1500.0,
+            "base_temperature": 10.0,
+            "upper_temperature": 35.0,
+        },
+    )
+    res_corr = metric.compute(ctx_corrected)
+    assert res_corr.value == pytest.approx(10.5, abs=0.01)
+    assert res_corr.provenance.cell_elevation_m == 1000.0
+    assert res_corr.provenance.site_elevation_m == 1500.0
+    assert "Elevation correction" in res_corr.provenance.formula or "-3.25" in res_corr.provenance.formula
+

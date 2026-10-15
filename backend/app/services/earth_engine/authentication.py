@@ -251,7 +251,14 @@ def _key_file() -> Optional[Path]:
     """Configured service-account key file path, or None."""
     if not settings.EE_PRIVATE_KEY_FILE:
         return None
-    return Path(settings.EE_PRIVATE_KEY_FILE)
+    key_path = Path(settings.EE_PRIVATE_KEY_FILE)
+    if key_path.exists():
+        return key_path
+    backend_root = Path(__file__).resolve().parent.parent.parent.parent
+    candidate = backend_root / "credentials" / "gee-key.json"
+    if candidate.exists():
+        return candidate
+    return key_path
 
 
 def _has_default_credentials() -> bool:
