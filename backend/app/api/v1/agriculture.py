@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import (
     AnalysisNotFoundError,
     AppException,
@@ -1023,12 +1024,15 @@ async def run_agriculture_analysis(
         if "Earth Engine" in err_str or "ee." in getattr(type(e), "__module__", "") or "EEException" in type(e).__name__:
             code = "ERR_GEE_UNAVAILABLE"
             reason = "Earth Engine service failed to process satellite imagery"
+            status_code = 503
         elif isinstance(e, (asyncio.TimeoutError, TimeoutError)):
             code = "ERR_GEE_TIMEOUT"
             reason = "Satellite data processing timed out"
+            status_code = 504
         else:
             code = "ERR_INTERNAL_SERVER_ERROR"
             reason = "An unexpected error occurred during agricultural analysis"
+            status_code = 500
 
         if session:
             try:
@@ -1040,7 +1044,7 @@ async def run_agriculture_analysis(
             message=reason,
             code=code,
             reason=reason,
-            status_code=500,
+            status_code=status_code,
             detail={
                 "request_id": request_id,
             },
@@ -1254,14 +1258,18 @@ async def get_proxied_tile(
     from app.services.agriculture.tile_auth import verify_layer_token
     from app.services.cache_service import cache_service
 
-    # 1. Rate limiting per client IP (respecting X-Forwarded-For behind reverse proxies)
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    elif request.client and request.client.host:
-        client_ip = request.client.host
+    # 1. Rate limiting per client IP (trusting X-Forwarded-For ONLY if socket peer is in TRUSTED_PROXIES)
+    peer_ip = request.client.host if request.client and request.client.host else "unknown"
+    trusted_proxies = getattr(settings, "TRUSTED_PROXIES", ["127.0.0.1", "::1"])
+    if peer_ip in trusted_proxies:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
+        else:
+            client_ip = peer_ip
     else:
-        client_ip = "unknown"
+        # Untrusted immediate peer: do NOT trust X-Forwarded-For header to prevent IP spoofing
+        client_ip = peer_ip
     now = time.time()
     history = [t for t in _tile_ip_requests.get(client_ip, []) if now - t < 60.0]
     if len(history) >= _MAX_TILE_REQUESTS_PER_MINUTE:

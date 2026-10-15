@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     # Tile Proxy Security
     TILE_SIGNING_SECRET: str = "agri_tile_secret_default_key_change_in_production"
+    TRUSTED_PROXIES: List[str] = ["127.0.0.1", "::1"]
 
     @property
     def is_development(self) -> bool:

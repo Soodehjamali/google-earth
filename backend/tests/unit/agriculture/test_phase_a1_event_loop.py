@@ -19,6 +19,7 @@ tests pin the three behaviors the fix must preserve:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import threading
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
@@ -233,31 +234,43 @@ class TestAnalysisDoesNotBlockEventLoop:
             observed.append(threading.get_ident())
             return {"ndvi": _make_mock_outcome("ndvi", 0.65)}, []
 
-        with patch(
-            "app.utils.geometry.create_ee_geometry", return_value=MagicMock()
-        ), patch(
-            "app.services.agriculture.executor.execute_metrics",
-            side_effect=_execute,
-        ), patch(
-            "app.services.agriculture.temporal_section.build_temporal_section",
-            return_value=None,
-        ), patch(
-            "app.services.agriculture.spatial_section.build_spatial_section",
-            return_value=None,
-        ), patch(
-            "app.services.agriculture.soil_intelligence.compute_soil_intelligence",
-            return_value=None,
-        ):
-            req = AgricultureAnalysisRequest(**ANALYSIS_BODY)
-            response1 = await run_agriculture_analysis(req)
-            cache_service.clear()  # second call must execute again
-            response2 = await run_agriculture_analysis(req)
+        loop = asyncio.get_running_loop()
+        prev_executor = loop._default_executor
+        single_worker_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="shared-worker"
+        )
+        loop.set_default_executor(single_worker_executor)
+        try:
+            with patch(
+                "app.utils.geometry.create_ee_geometry", return_value=MagicMock()
+            ), patch(
+                "app.services.agriculture.executor.execute_metrics",
+                side_effect=_execute,
+            ), patch(
+                "app.services.agriculture.temporal_section.build_temporal_section",
+                return_value=None,
+            ), patch(
+                "app.services.agriculture.spatial_section.build_spatial_section",
+                return_value=None,
+            ), patch(
+                "app.services.agriculture.soil_intelligence.compute_soil_intelligence",
+                return_value=None,
+            ):
+                req = AgricultureAnalysisRequest(**ANALYSIS_BODY)
+                response1 = await run_agriculture_analysis(req)
+                cache_service.clear()  # second call must execute again
+                response2 = await run_agriculture_analysis(req)
 
-        assert len(observed) == 2
-        assert response2.metadata["metrics_executed"] == "1"
-        # The default executor reuses worker threads; a per-request pool
-        # factory would very likely produce a different thread each time.
-        assert observed[0] == observed[1]
+            assert len(observed) == 2
+            assert response2.metadata["metrics_executed"] == "1"
+            # Execution must happen off the event loop thread
+            assert observed[0] != threading.get_ident()
+            # The default executor reuses worker threads; a per-request pool
+            # factory would very likely produce a different thread each time.
+            assert observed[0] == observed[1]
+        finally:
+            single_worker_executor.shutdown(wait=True)
+            loop._default_executor = prev_executor
 
 
 # ---------------------------------------------------------------------------

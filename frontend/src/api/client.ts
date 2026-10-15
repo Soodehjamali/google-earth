@@ -24,9 +24,13 @@ export class ApiError extends Error {
         ? 'ERR_RECORD_NOT_FOUND'
         : payload.status === 429
           ? 'ERR_RATE_LIMIT_EXCEEDED'
-          : payload.status === 400 || payload.status === 422
-            ? 'ERR_VALIDATION_FAILED'
-            : 'ERR_INTERNAL_SERVER_ERROR');
+          : payload.status === 503 || payload.status === 502
+            ? 'ERR_GEE_UNAVAILABLE'
+            : payload.status === 504
+              ? 'ERR_GEE_TIMEOUT'
+              : payload.status === 400 || payload.status === 422
+                ? 'ERR_VALIDATION_FAILED'
+                : 'ERR_INTERNAL_SERVER_ERROR');
     this.reason = payload.reason || payload.error || 'Server communication error';
     this.detail = payload.detail;
     this.status = payload.status;
