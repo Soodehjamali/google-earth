@@ -31,13 +31,20 @@ from app.db.models import (  # noqa: F401
 # this is the Alembic Config object
 config = context.config
 
-# The database URL comes from the DATABASE_URL environment variable (via the
-# application settings), never from a value stored in alembic.ini. This keeps
-# credentials out of version control and lets every environment inject its
-# own URL.
-from app.core.config import settings  # noqa: E402
+# Compile PostgreSQL JSONB as standard JSON for SQLite environments (e.g. tests)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+@compiles(JSONB, 'sqlite')
+def compile_jsonb_sqlite(type_, compiler, **kw):
+    return 'JSON'
+
+# The database URL comes from the DATABASE_URL environment variable (via the
+# application settings) unless explicitly provided by caller/config (e.g. tests).
+existing_url = config.get_main_option("sqlalchemy.url")
+if not existing_url or "driver://user:pass" in existing_url:
+    from app.core.config import settings  # noqa: E402
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -102,7 +109,15 @@ async def run_async_migrations() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    asyncio.run(run_async_migrations())
+    url = config.get_main_option("sqlalchemy.url")
+    if url and url.startswith("sqlite"):
+        from sqlalchemy import create_engine
+        connectable = create_engine(url, poolclass=pool.NullPool)
+        with connectable.connect() as connection:
+            do_run_migrations(connection)
+        connectable.dispose()
+    else:
+        asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():
