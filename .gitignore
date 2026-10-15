@@ -24,6 +24,7 @@ docs/phase-2-screens/
 # Scratch & Diagnostic Scripts
 *.mjs
 backend/_fa12_*
+backend/_a2_*
 backend/audit_*.py
 backend/check_*.py
 backend/inspect_*.py

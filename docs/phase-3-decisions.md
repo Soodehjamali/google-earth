@@ -19,7 +19,8 @@ This document records architectural, agronomic, and operational decisions made d
 - **Why:** Codebase must be completely clean of any secrets, project IDs, or service account emails in tracked code.
 
 ### G3. Secrets and Data Scan
-- **Decision:** Strictly audit git tree and history for private keys, credentials, large JSON files, and uncommitted data samples. Ensure `.gitignore` comprehensively blocks all diagnostic and sample artifacts.
+- **Decision:** Strictly audit git tree and history for private keys, credentials, large JSON files, and uncommitted data samples. Untrack 10 large diagnostic JSON dumps (`backend/_a2_resp*.json` and `backend/_fa12_resp*.json`), and add `backend/_a2_*` to `.gitignore`. Scanned `git ls-files` to confirm zero credentials, private keys, or `.env` files are tracked. Conducted a full-history audit across all git branches (`git log -S "BEGIN PRIVATE KEY" --all`). Historical matches were found in early automated checkpoint stashes/commits (`9f3da4b`, `0ca7ebb`) before the repository audit. In strict accordance with the constraint "do not rewrite history (no reset/amend/rebase/force-push)", history was not rewritten, and all historical occurrences are documented and disclosed.
+- **Why:** Complies with security cleanliness for current tracked tree while preserving immutable git history.
 
 ### G4. Tile Token Log Masking
 - **Decision:** Mask both path-based tile tokens (`/api/v1/agriculture/tiles/{token}/...`) and query-string tokens (`?token=...`) across all logging formatters and filters.
