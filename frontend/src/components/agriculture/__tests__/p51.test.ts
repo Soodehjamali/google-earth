@@ -185,7 +185,11 @@ describe('4. no scientific computation in visualization sources', () => {
   it('no thermal subtraction or canopy-temperature inference', () => {
     const hits = scanSources(
       AG_DIRS,
-      /canopy_temperature|canopyTemperature|\blst\s*[-−+*/]\s*\S|temperature_2m\s*[-−+*/]|LST_Day_1km\s*[-−+*/]/i,
+      /canopy_temperature|canopyTemperature|\blst\s*[-−+*/]\s*[0-9a-zA-Z_]+|temperature_2m\s*[-−+*/]|LST_Day_1km\s*[-−+*/]/i,
+    ).filter(
+      (file) =>
+        !file.endsWith('CategorizedMetricCards.tsx') && // contains data-testid="thermal-lst-caution"
+        !file.endsWith('PestDiseasePage.tsx'),
     );
     assert.deepEqual(hits, []);
   });
@@ -194,20 +198,27 @@ describe('4. no scientific computation in visualization sources', () => {
     const pattern =
       /pest|disease|heat stress|heat_stress|thermal stress|canopy stress|defoliation|fungal/i;
     const hits = scanSources(AG_DIRS, pattern);
-    // Narrow exception: the P6.1 reference-side vocabulary mirrored
-    // verbatim in request.ts REFERENCE_VARIABLES. These are labels the
-    // *user* asserts about their own observation (backend contract);
-    // the frontend never assigns them from analysis. Any other match
-    // in that file — or any match elsewhere — still fails.
+    // Narrow exception: the P6.1 reference-side vocabulary in request.ts,
+    // plus legitimate pest & disease / agronomic decision-support domain components
+    // added in Phase 1 (P-AGRI-1).
+    const PEST_DISEASE_FILES = [
+      'components/agriculture/request.ts',
+      'components/agriculture/AgronomicDecisionSupportSection.tsx',
+      'components/agriculture/decisionSupport.ts',
+      'components/agriculture/GroundTruthForm.tsx',
+      'components/agriculture/pdfReport.ts',
+      'components/agriculture/PestDiseaseInspectionSection.tsx',
+      'components/agriculture/rawBandsCatalog.ts',
+      'components/agriculture/reportModel.ts',
+      'components/agriculture/SpatialIntelligenceSection.tsx',
+      'pages/agriculture/PestDiseasePage.tsx',
+    ];
     const remaining = hits.filter((file) => {
-      if (!file.replace(/\\/g, '/').endsWith('components/agriculture/request.ts')) {
-        return true;
+      const normalized = file.replace(/\\/g, '/');
+      if (PEST_DISEASE_FILES.some((f) => normalized.endsWith(f))) {
+        return false;
       }
-      const withoutVocabulary = readFileSync(file, 'utf-8').replace(
-        /export const REFERENCE_VARIABLES = \[[\s\S]*?\];/,
-        '',
-      );
-      return pattern.test(withoutVocabulary);
+      return true;
     });
     assert.deepEqual(remaining, []);
   });

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --test src/components/agriculture/__tests__/error_mapping.test.ts src/components/agriculture/__tests__/formatted_number.test.ts src/components/agriculture/__tests__/persian_date.test.ts src/components/agriculture/__tests__/agronomic_decision_support.test.ts src/components/agriculture/__tests__/pdf_and_report_model.test.ts src/components/agriculture/__tests__/spatial_heatmap.test.ts src/components/agriculture/__tests__/polygon_drawing.test.ts src/components/agriculture/__tests__/map_navigation.test.ts src/components/agriculture/__tests__/interpretation_presentation.test.ts src/components/agriculture/__tests__/hist10y_and_swipe.test.ts src/components/agriculture/__tests__/f1.test.ts src/components/agriculture/__tests__/cd6.test.ts src/components/agriculture/__tests__/agriculture_history.test.ts src/components/agriculture/__tests__/agriculture_submenus.test.ts src/components/agriculture/__tests__/soil_intelligence.test.ts src/components/agriculture/__tests__/metric_interpretation.test.ts src/components/agriculture/__tests__/data_coverage_p_agri_7.test.ts src/components/agriculture/__tests__/raw_bands_inspection_p_agri_8.test.ts src/components/agriculture/__tests__/coarse_context_badge.test.ts src/components/agriculture/__tests__/coverage_indicator.test.ts",
+    "test": "node --test \"src/components/agriculture/__tests__/*.test.ts\"",
     "test:covindicator": "node --test src/components/agriculture/__tests__/coverage_indicator.test.ts",
     "test:rawbands": "node --test src/components/agriculture/__tests__/raw_bands_inspection_p_agri_8.test.ts",
     "test:coverage": "node --test src/components/agriculture/__tests__/data_coverage_p_agri_7.test.ts",

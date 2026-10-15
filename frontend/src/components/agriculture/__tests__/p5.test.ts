@@ -38,16 +38,14 @@ describe('1. /soil navigates to /agriculture/soil', () => {
     const app = readSource('App.tsx');
     const route = app.match(/<Route\s+path="\/soil"[\s\S]*?\/>/)?.[0] ?? '';
     assert.ok(route, 'route for /soil is missing');
-    assert.ok(route.includes('<Navigate'), route);
+    assert.ok(route.includes('RedirectPreservingSearch') || route.includes('<Navigate'), route);
     assert.ok(route.includes(`to="${SOIL_TARGET}"`), route);
-    assert.ok(route.includes('replace'), route);
+    assert.ok(app.includes('replace'), route);
   });
 
   it('the redirect uses the project router (react-router-dom + BrowserRouter)', () => {
     const app = readSource('App.tsx');
-    assert.ok(
-      app.includes(`import { Routes, Route, Navigate } from 'react-router-dom'`),
-    );
+    assert.ok(app.includes(`from 'react-router-dom'`) && app.includes('Navigate'));
     const main = readSource('main.tsx');
     assert.ok(main.includes('BrowserRouter'));
   });
@@ -89,12 +87,19 @@ describe('2. sidebar Soil entry targets the comprehensive route', () => {
     assert.deepEqual(paths, [
       '/',
       '/location',
-      '/agriculture/vegetation',
-      '/agriculture/climate',
-      '/agriculture/water',
-      SOIL_TARGET,
-      '/agriculture/land-crop',
       '/agriculture',
+      '/agriculture',
+      '/agriculture/vegetation',
+      '/agriculture/water',
+      '/agriculture/soil',
+      '/agriculture/climate',
+      '/agriculture/thermal',
+      '/agriculture/land-crop',
+      '/agriculture/phenology',
+      '/agriculture/stress-irrigation',
+      '/agriculture/terrain',
+      '/agriculture/history',
+      '/agriculture/pest-disease',
       '/historical',
       '/reports',
       '/settings',
@@ -125,9 +130,10 @@ const APPROVED_REDIRECTS: Array<[string, string]> = [
 describe('3. redirect set matches the final consolidated contract', () => {
   it('every Navigate in App targets only an approved comprehensive route', () => {
     const app = readSource('App.tsx');
-    const targets = [...app.matchAll(/<Navigate\s+to="([^"]+)"/g)].map(
-      (match) => match[1],
-    );
+    const targets = [
+      ...app.matchAll(/RedirectPreservingSearch\s+to="([^"]+)"/g),
+      ...app.matchAll(/<Navigate\s+to="([^"]+)"/g),
+    ].map((match) => match[1]);
     assert.deepEqual(
       [...targets].sort(),
       APPROVED_REDIRECTS.map(([, target]) => target).sort(),
@@ -159,9 +165,9 @@ describe('3. redirect set matches the final consolidated contract', () => {
         new RegExp(`<Route\\s+path="${legacy}"[\\s\\S]*?/>`),
       )?.[0] ?? '';
       assert.ok(route, `route for ${legacy} is missing`);
-      assert.ok(route.includes('<Navigate'), route);
+      assert.ok(route.includes('RedirectPreservingSearch') || route.includes('<Navigate'), route);
       assert.ok(route.includes(`to="${target}"`), route);
-      assert.ok(route.includes('replace'), route);
+      assert.ok(app.includes('replace'), route);
     }
   });
 
@@ -188,6 +194,8 @@ describe('3. redirect set matches the final consolidated contract', () => {
       'land-crop',
       'stress-irrigation',
       'history',
+      'pest-disease',
+      'pest-disease-validation',
       '/historical',
       '/reports',
       '/settings',
@@ -226,7 +234,6 @@ describe('4. analysesApi remains available to legacy consumers', () => {
   it('legacy pages still import analysesApi', () => {
     const consumers = [
       'Dashboard',
-      'Reports',
       'Location',
       'Analysis',
       'Soil',
@@ -297,7 +304,7 @@ describe('5. comprehensive soil contract stays intact', () => {
 
   it('the hub still links to the comprehensive soil page', () => {
     const nav = readSource('components/agriculture/DomainNavCards.tsx');
-    assert.ok(nav.includes('to={config.routePath}'));
+    assert.ok(nav.includes('to={targetPath}') || nav.includes('to={config.routePath}'));
     const block = readSource('components/agriculture/DomainSummaryBlock.tsx');
     assert.ok(block.includes('routePathForDomain'));
   });

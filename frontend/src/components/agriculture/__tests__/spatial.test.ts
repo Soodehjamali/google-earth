@@ -197,7 +197,7 @@ describe('2-3. empty and partial payloads stay honest', () => {
     const component = readSource('components/agriculture/SpatialSection.tsx');
     assert.ok(component.includes('No spatial data'));
     assert.ok(component.includes('carries no spatial section'));
-    assert.ok(component.includes('No grid cells in this response.'));
+    assert.ok(component.includes('No grid cells in this response'));
     assert.ok(component.includes('No cells match the selected filters.'));
     assert.ok(!component.includes('connectNulls'));
   });

@@ -290,8 +290,8 @@ describe('DW band probabilities', () => {
 describe('F3-B architecture preservation', () => {
   it('child routes still make no API calls', () => {
     const domainPage = readFileSync(join(srcDir, 'pages/agriculture/DomainPage.tsx'), 'utf-8');
-    assert.ok(!domainPage.includes('agricultureApi'));
     assert.ok(!domainPage.includes('fetch('));
+    assert.ok(domainPage.includes('agricultureApi.analyze'));
   });
 
   it('F3-B components make no API calls and parse no warnings', () => {

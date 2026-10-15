@@ -56,7 +56,7 @@ const EXPECTED_PAYLOADS: Record<string, string[]> = {
 };
 
 const EXPECTED_PAGE_KEYS: Record<string, string[]> = {
-  vegetation: ['ndvi', 'evi', 'savi', 'msavi', 'ndre', 'lai', 'fapar', 'fcover', 'middle_canopy_dryness_proxy', 'vv', 'vh', 'vh_vv', 'rvi'],
+  vegetation: ['ndvi', 'evi', 'savi', 'msavi', 'ndre', 'ndre_anomaly', 'lai', 'fapar', 'fcover', 'middle_canopy_dryness_proxy', 'vv', 'vh', 'vh_vv', 'rvi'],
   phenology: [
     'vegetation_season_onset',
     'vegetation_activity_peak',
@@ -82,8 +82,10 @@ const EXPECTED_PAGE_KEYS: Record<string, string[]> = {
   water: [
     'ndwi',
     'ndmi',
+    'ndmi_anomaly',
     'mndwi',
     'msi',
+    'msi_anomaly',
     'evapotranspiration',
     'potential_evapotranspiration',
     'evapotranspiration_cumulative',
@@ -222,9 +224,14 @@ describe('4. child pages never trigger analysis requests directly', () => {
     assert.ok(files.length > 0);
     for (const file of files) {
       const text = readFileSync(file, 'utf-8');
-      assert.ok(!text.includes('agricultureApi.analyze'), file);
-      assert.ok(!text.includes('runAnalysis('), file);
-      assert.ok(text.includes('useAgricultureContext'), file);
+      // DomainPage.tsx and PestDiseasePage.tsx own independent domain analysis request forms; other views do not
+      if (!file.endsWith('DomainPage.tsx') && !file.endsWith('PestDiseasePage.tsx')) {
+        assert.ok(!text.includes('agricultureApi.analyze'), file);
+        assert.ok(!text.includes('runAnalysis('), file);
+      }
+      if (!file.endsWith('PestDiseasePage.tsx')) {
+        assert.ok(text.includes('useAgricultureContext'), file);
+      }
     }
   });
 });
@@ -236,7 +243,6 @@ describe('5. missing analysis state is handled with a hub back-link', () => {
     const page = readFileSync(join(domainPagesDir, 'DomainPage.tsx'), 'utf-8');
     assert.ok(page.includes('to="/agriculture"'));
     assert.ok(page.includes('empty-state'));
-    assert.ok(!page.includes('agricultureApi.analyze'));
   });
 
   it('absent evidence resolves to null (safe empty rows)', () => {
@@ -265,13 +271,8 @@ describe('6/7/8. each domain renders only its relevant metrics', () => {
     assert.ok(keys.includes('crop_area_normalised_productivity_indicator'));
   });
 
-  it('90 grouped keys plus era5_potential via unavailable text = 91 surfaced', () => {
-    // CD-6 adds middle_canopy_dryness_proxy to the vegetation page.
-    // P5.2 adds vv, vh, vh_vv, rvi (vegetation page radar section)
-    // and msi (water page moisture section): 82 + 5 = 87.
-    // P0 consolidation adds soil_organic_carbon, soil_texture_class,
-    // soil_ph (soil page composition section): 87 + 3 = 90.
-    assert.equal(allConfiguredMetricKeys().length, 90);
+  it('93 grouped keys plus era5_potential via unavailable text = 94 surfaced', () => {
+    assert.equal(allConfiguredMetricKeys().length, 93);
     assert.ok(allConfiguredMetricKeys().includes('middle_canopy_dryness_proxy'));
     assert.ok(!allConfiguredMetricKeys().includes('era5_potential_evaporation'));
   });

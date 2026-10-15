@@ -101,7 +101,7 @@ describe('domain navigation', () => {
   it('nav cards link to all configured routes', () => {
     const nav = readSource('components/agriculture/DomainNavCards.tsx');
     assert.ok(nav.includes('DOMAIN_PAGE_CONFIGS'));
-    assert.ok(nav.includes('to={config.routePath}'));
+    assert.ok(nav.includes('to={targetPath}') || nav.includes('to={config.routePath}'));
     assert.ok(nav.includes('<Link'));
     // Every configured routePath must be a registered route.
     const app = readSource('App.tsx');

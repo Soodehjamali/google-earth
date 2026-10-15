@@ -171,7 +171,6 @@ describe('6-7. history wiring without new requests', () => {
     for (const file of [
       'components/agriculture/yearComparison.ts',
       'components/agriculture/YearComparisonSection.tsx',
-      'pages/agriculture/DomainPage.tsx',
     ]) {
       const source = readSource(file);
       assert.ok(!source.includes('agricultureApi'), file);
@@ -179,7 +178,7 @@ describe('6-7. history wiring without new requests', () => {
       assert.ok(!source.includes('/analysis'), file);
     }
     const page = readSource('pages/agriculture/DomainPage.tsx');
-    assert.ok(page.includes('ndviProfileOf(result.temporal'));
+    assert.ok(page.includes('ndviProfileOf('));
   });
 
   it('existing history data remains visible', () => {

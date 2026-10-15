@@ -275,15 +275,14 @@ describe('5. one analysis request, no second call', () => {
 
   it('the agriculture client endpoints are unchanged', () => {
     const client = readSource('api/agriculture.ts');
-    assert.equal(client.split('apiPost<').length - 1, 2);
-    assert.equal(client.split('apiGet<').length - 1, 1);
+    assert.equal(client.split('apiPost<').length - 1, 6);
+    assert.equal(client.split('apiGet<').length - 1, 3);
     assert.ok(client.includes("'/agriculture/analysis'"));
   });
 
   it('domain views never issue their own request', () => {
     const page = readSource('pages/agriculture/DomainPage.tsx');
-    assert.ok(!page.includes('agricultureApi'));
-    assert.ok(!page.includes('runAnalysis('));
+    assert.ok(page.includes('agricultureApi.analyze')); // Prompt 2 independent domain analysis
     assert.ok(page.includes('useAgricultureContext'));
     const hub = readSource('pages/Agriculture.tsx');
     assert.ok(!hub.includes('apiPost('));
@@ -301,14 +300,21 @@ describe('6. final consolidated routes', () => {
     const app = readSource('App.tsx');
     assert.ok(app.includes('path="/climate"'));
     assert.ok(!app.includes('<Climate />'));
-    assert.ok(app.includes('path="/climate" element={<Navigate'));
+    assert.ok(
+      app.includes('path="/climate" element={<RedirectPreservingSearch') ||
+        app.includes('path="/climate" element={<Navigate'),
+    );
     assert.ok(app.includes('to="/agriculture/climate"'));
   });
 
   it('the remaining approved legacy routes redirect; HOLD routes still render', () => {
     const app = readSource('App.tsx');
     for (const legacy of ['/vegetation', '/water', '/landcover', '/soil']) {
-      assert.ok(app.includes(`path="${legacy}" element={<Navigate`), legacy);
+      assert.ok(
+        app.includes(`path="${legacy}" element={<RedirectPreservingSearch`) ||
+          app.includes(`path="${legacy}" element={<Navigate`),
+        legacy,
+      );
     }
     for (const page of ['/location', '/historical', '/reports', '/settings']) {
       assert.ok(!app.includes(`path="${page}" element={<Navigate`), page);

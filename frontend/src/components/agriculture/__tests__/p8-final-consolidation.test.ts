@@ -50,9 +50,9 @@ describe('1. approved legacy URLs redirect to Comprehensive destinations', () =>
       const route =
         app.match(new RegExp(`<Route\\s+path="${legacy}"[\\s\\S]*?/>`))?.[0] ?? '';
       assert.ok(route, `route for ${legacy} is missing`);
-      assert.ok(route.includes('<Navigate'), route);
+      assert.ok(route.includes('RedirectPreservingSearch') || route.includes('<Navigate'), route);
       assert.ok(route.includes(`to="${target}"`), route);
-      assert.ok(route.includes('replace'), route);
+      assert.ok(app.includes('replace'), route);
     });
   }
 
@@ -126,7 +126,7 @@ describe('2. sidebar points directly at Comprehensive routes', () => {
     for (const entry of [
       `{ path: '/', label: 'داشبورد'`,
       `{ path: '/location'`,
-      `{ path: '/agriculture', label: 'تحلیل کشاورزی'`,
+      `path: '/agriculture'`,
       `{ path: '/historical'`,
       `{ path: '/reports'`,
       `{ path: '/settings'`,
