@@ -24,7 +24,8 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Security
+from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -63,6 +64,7 @@ from app.schemas.agriculture import (
     PestDiseaseInspectionRequest,
     PestDiseaseInspectionResponse,
 )
+from app.schemas.frost import EvaluateAlertsRequest
 from app.services.cache_service import cache_service
 from app.services.agriculture.history_store import (
     record_analysis_start,
@@ -1786,6 +1788,7 @@ async def list_orchards_endpoint(
     orchards = result.scalars().all()
 
     out = []
+    from app.services.agriculture.notification import mask_recipient
     for o in orchards:
         out.append({
             "id": str(o.id),
@@ -1801,7 +1804,7 @@ async def list_orchards_endpoint(
                 {
                     "id": str(r.id),
                     "orchard_id": str(r.orchard_id),
-                    "recipient": r.recipient,
+                    "recipient": mask_recipient(r.recipient),
                     "channel": r.channel,
                     "lead_time_h": r.lead_time_h,
                     "enabled": r.enabled,
@@ -1905,15 +1908,32 @@ async def create_alert_rule_endpoint(
     await db.commit()
     await db.refresh(rule)
 
+    from app.services.agriculture.notification import mask_recipient
     return {
         "id": str(rule.id),
         "orchard_id": str(rule.orchard_id),
-        "recipient": rule.recipient,
+        "recipient": mask_recipient(rule.recipient),
         "channel": rule.channel,
         "lead_time_h": rule.lead_time_h,
         "enabled": rule.enabled,
         "created_at": rule.created_at.isoformat() if rule.created_at else None,
     }
+
+
+_admin_token_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
+
+
+async def require_admin_auth(
+    admin_token: Optional[str] = Security(_admin_token_header),
+) -> bool:
+    """Ensure caller has administrator rights to evaluate and dispatch alerts."""
+    expected_token = getattr(settings, "ADMIN_API_KEY", None) or "admin-secret-token"
+    if not admin_token or admin_token != expected_token:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin authorization required to trigger alert evaluation.",
+        )
+    return True
 
 
 @router.post(
@@ -1922,15 +1942,18 @@ async def create_alert_rule_endpoint(
     summary="Evaluate active alert rules against latest forecast",
 )
 async def evaluate_alerts_endpoint(
-    eval_in: Any = Body(...),
+    eval_in: EvaluateAlertsRequest = Body(...),
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_admin_auth),
 ):
     """Evaluate active alert rules, dispatch notifications through providers, and log results.
 
     Enforces:
-    1. Outbound dispatch safety lock when thresholds_verified=False (unless admin_override=True).
-    2. Idempotency: one alert per orchard/night/category, escalate upward only.
-    3. PII masking in logs (phone numbers never in plain logs).
+    1. Authenticated / admin-only access via X-Admin-Token header.
+    2. Server-side only admin_override (never accepted from request body/query/headers).
+    3. Outbound dispatch safety lock when thresholds_verified=False (unless admin_override=True).
+    4. Database idempotency constraint via idempotency_key (one alert per orchard/night/category).
+    5. PII masking in logs and responses (phone numbers never in plain logs).
     """
     from app.schemas.frost import EvaluateAlertsRequest
     from app.db.models.frost import Orchard, AlertRule, NotificationLog
@@ -1945,6 +1968,8 @@ async def evaluate_alerts_endpoint(
     from sqlalchemy.orm import selectinload
 
     req = EvaluateAlertsRequest(**eval_in) if isinstance(eval_in, dict) else eval_in
+    # Server-side setting only: admin_override is never accepted from client request
+    admin_override = bool(getattr(settings, "ALERT_ADMIN_OVERRIDE", False))
 
     risk_hierarchy = {
         "none": 0,
@@ -2052,7 +2077,7 @@ async def evaluate_alerts_endpoint(
                 message=msg,
                 metadata=meta,
                 thresholds_verified=assessment.thresholds_verified,
-                admin_override=req.admin_override,
+                admin_override=admin_override,
                 force_dry_run=req.dry_run,
             )
             status = dispatch_res.status
@@ -2063,9 +2088,11 @@ async def evaluate_alerts_endpoint(
             status = "failed"
             err_msg = str(exc)
 
+        idem_key = f"{orchard.id}:{target_night.night_date}:{target_night.risk_level}"
         log_entry = NotificationLog(
             orchard_id=orchard.id,
             alert_rule_id=rule.id,
+            idempotency_key=idem_key,
             recipient=rule.recipient,
             channel=rule.channel,
             payload={

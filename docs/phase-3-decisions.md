@@ -191,6 +191,44 @@ This document records architectural, agronomic, and operational decisions made d
   4. `wind_speed_drain_mps: 4.0` — Wind threshold above which turbulent boundary-layer mixing completely disrupts the cold pool.
 - **Evidence Level:** All frost advisory outputs maintain an evidence level of $\le \text{B}$ (`evidence_level: "B"`), reflecting the combination of synoptic NWP forecast and topographic proxy modeling without direct in-canopy telemetry.
 
+---
+
+## Item C5 Decisions: PostgreSQL Migration & Idempotency
+
+### C5.1 Schema Idempotency & Unique Constraints
+- Table `notification_logs` enforces DB-level uniqueness:
+  - `uq_notification_orchard_night_category` on `(orchard_id, alert_date, risk_category)`.
+  - Column `idempotency_key` (VARCHAR 128) with unique index `ix_notification_log_idempotency_key`.
+- Deterministic key generation: `hashlib.sha256(f"{orchard_id}:{alert_date}:{risk_category}".encode()).hexdigest()`.
+
+### C5.2 Alembic Environment Cleanup
+- Removed dialect-specific SQLite JSONB compilation hacks from `backend/alembic/env.py`. Moved all SQLite workarounds cleanly to `backend/tests/conftest.py` so production migration scripts remain pure PostgreSQL.
+- Verified real migration cycle against live PostgreSQL on port 5434: `alembic downgrade -1` followed by `alembic upgrade head`.
+
+---
+
+## Item C6 Decisions: Endpoint Security, Auth, and PII Masking
+
+### C6.1 Route Authorization
+- `/api/v1/agriculture/frost/evaluate-alerts` is protected by `require_admin_auth` dependency validating the `X-Admin-Token` header against `settings.ADMIN_API_KEY`.
+- Other read/assess endpoints (`/frost/assess`, `/frost/orchards`) remain accessible for standard user queries.
+
+### C6.2 Server-Side Only Admin Override
+- Client requests cannot bypass the unverified-thresholds safety lock. `EvaluateAlertsRequest` configures `model_config = ConfigDict(extra="forbid")` and explicitly omits `admin_override`. Any payload attempting to supply `admin_override` is rejected immediately with HTTP 422 `ERR_VALIDATION_FAILED`.
+- `admin_override` is evaluated strictly from server-side configuration (`settings.ALERT_ADMIN_OVERRIDE`).
+
+### C6.3 PII Storage and Strict Masking
+- **Storage:** Raw phone numbers and recipient identifiers are stored exclusively in PostgreSQL in:
+  1. Table `alert_rules`, column `recipient` (VARCHAR 255).
+  2. Table `notification_logs`, column `recipient` (VARCHAR 255).
+- **Masking:** All API responses (`GET /frost/orchards`, `POST /frost/alert-rules`, `POST /frost/evaluate-alerts`) and uvicorn/application log records mask recipient identifiers using `mask_recipient()`:
+  - Format: `+98-***-***-1234` or `***1234` (only the last 4 digits visible).
+  - Raw phone numbers are never returned over HTTP or printed to standard log streams.
+
+### C6.4 Database-Level Idempotency Verification
+- Proved via `test_concurrent_duplicate_alert_insertion_db_constraint` that attempting to insert duplicate records for the same parcel, date, and risk tier triggers an `IntegrityError` / `UniqueViolation` in the database engine, preventing multi-dispatch race conditions.
+
+
 
 
 

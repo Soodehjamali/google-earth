@@ -271,4 +271,150 @@ async def test_evaluate_alerts_idempotency_and_escalation():
         assert len(db_entries) == 1
 
 
+def test_evaluate_alerts_endpoint_admin_auth_required():
+    """Verify that POST /api/v1/agriculture/frost/evaluate-alerts requires admin authorization."""
+    client = TestClient(app)
+
+    # 1. No auth header -> 403 Forbidden
+    resp_no_auth = client.post("/api/v1/agriculture/frost/evaluate-alerts", json={"dry_run": True})
+    assert resp_no_auth.status_code == 403
+    assert "Admin authorization required" in resp_no_auth.text
+
+    # 2. Invalid auth token -> 403 Forbidden
+    resp_bad_auth = client.post(
+        "/api/v1/agriculture/frost/evaluate-alerts",
+        json={"dry_run": True},
+        headers={"X-Admin-Token": "unauthorized-token"},
+    )
+    assert resp_bad_auth.status_code == 403
+
+
+def test_evaluate_alerts_refuses_admin_override_in_request():
+    """Verify that admin_override is forbidden in request body and strictly refused (422)."""
+    client = TestClient(app)
+
+    # Attempt to pass admin_override in JSON body -> rejected with 422 Unprocessable Entity
+    resp = client.post(
+        "/api/v1/agriculture/frost/evaluate-alerts",
+        json={"dry_run": True, "admin_override": True},
+        headers={"X-Admin-Token": "admin-secret-token"},
+    )
+    assert resp.status_code == 422
+    assert resp.json().get("code") == "ERR_VALIDATION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_phone_number_masked_in_all_responses_and_logs(caplog):
+    """Verify that raw phone numbers are masked in all responses and never leak into logs."""
+    import logging
+    from app.api.v1.agriculture import list_orchards_endpoint, create_alert_rule_endpoint, evaluate_alerts_endpoint
+    from app.db.models.frost import Orchard, AlertRule
+
+    raw_phone = "+989123456789"
+    orchard_id = uuid.uuid4()
+    rule_id = uuid.uuid4()
+
+    mock_orchard = Orchard(
+        id=orchard_id,
+        name="باغ پسته",
+        geometry=SAMPLE_POLYGON,
+        crop="pistachio",
+        default_phenology_stage="early_bloom",
+        elevation=1200.0,
+    )
+    mock_rule = AlertRule(
+        id=rule_id,
+        orchard_id=orchard_id,
+        recipient=raw_phone,
+        channel="sms",
+        lead_time_h=24,
+        enabled=True,
+        orchard=mock_orchard,
+    )
+    mock_orchard.alert_rules = [mock_rule]
+
+    class MockDb:
+        async def execute(self, stmt):
+            m = MagicMock()
+            stmt_s = str(stmt)
+            if "alert_rules" in stmt_s:
+                m.scalars.return_value.all.return_value = [mock_rule]
+            elif "orchards" in stmt_s:
+                m.scalars.return_value.all.return_value = [mock_orchard]
+                m.scalar_one_or_none.return_value = mock_orchard
+            else:
+                m.scalars.return_value.all.return_value = []
+            return m
+
+        def add(self, obj):
+            pass
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, obj):
+            pass
+
+    db = MockDb()
+
+    # 1. list_orchards_endpoint masks recipient
+    orchards_out = await list_orchards_endpoint(db=db)
+    assert orchards_out[0]["alert_rules"][0]["recipient"] == "+989***89"
+    assert raw_phone not in orchards_out[0]["alert_rules"][0]["recipient"]
+
+    # 2. create_alert_rule_endpoint masks recipient
+    rule_out = await create_alert_rule_endpoint(
+        orchard_id=orchard_id,
+        rule_in={"recipient": raw_phone, "channel": "sms", "lead_time_h": 24},
+        db=db,
+    )
+    assert rule_out["recipient"] == "+989***89"
+    assert raw_phone not in rule_out["recipient"]
+
+    # 3. Captured logs during alert evaluation must NOT contain the raw phone number
+    with caplog.at_level(logging.INFO):
+        await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=db,
+        )
+    assert raw_phone not in caplog.text
+
+
+def test_concurrent_duplicate_alert_insertion_db_constraint(tmp_path):
+    """Verify that database unique constraint enforces idempotency against concurrent duplicate alert inserts."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.exc import IntegrityError
+    from app.db.base import Base
+    from app.db.models.frost import NotificationLog
+
+    test_db = tmp_path / "idempotency_test.db"
+    engine = create_engine(f"sqlite:///{test_db}")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        # First insert succeeds
+        log1 = NotificationLog(
+            idempotency_key="orchard-uuid-1:2026-03-20:warning",
+            recipient="+989123456789",
+            channel="sms",
+            payload={"msg": "first insert"},
+            status="dry_run",
+        )
+        session.add(log1)
+        session.commit()
+
+        # Concurrent/duplicate insert with identical idempotency_key must be rejected by DB constraint
+        log2 = NotificationLog(
+            idempotency_key="orchard-uuid-1:2026-03-20:warning",
+            recipient="+989123456789",
+            channel="sms",
+            payload={"msg": "concurrent second insert"},
+            status="dry_run",
+        )
+        session.add(log2)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 

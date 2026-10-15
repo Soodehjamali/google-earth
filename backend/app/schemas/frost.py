@@ -71,8 +71,9 @@ class OrchardResponse(BaseModel):
 
 
 class EvaluateAlertsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dry_run: bool = Field(True, description="If True, dispatches in dry-run mode without real delivery.")
-    admin_override: bool = Field(False, description="Explicit admin override to allow real delivery despite placeholder thresholds.")
     force_crop: Optional[str] = Field(None, description="Optional override crop for all orchards.")
     use_live_gee: bool = Field(False, description="Query live GEE instead of deterministic provider.")
 
