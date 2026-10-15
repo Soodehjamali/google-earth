@@ -251,6 +251,22 @@ And live server log line under Uvicorn:
 INFO: 127.0.0.1:62209 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.png?token=***MASKED*** HTTP/1.1" 403 Forbidden
 ```
 
+---
+
+## Item C8 Decisions: Response Contract Integrity
+
+### C8.1 Response Contract Specifications
+All responses from the frost assessment endpoint (`POST /api/v1/agriculture/frost/assess`) adhere strictly to the Phase 3 contract:
+1. `thresholds_verified: false` — Explicit boolean indicator preventing premature operational lock-in.
+2. `evidence_level: "B"` — Conservative confidence tier ($\le \text{B}$) denoting numerical weather prediction and proxy modeling without direct sensor telemetry.
+3. `quality_state: "coarse_context"` — Honestly flagging the synoptic ~28km grid resolution.
+4. `native_spatial_resolution_m: 27830.0` — Disclosing NOAA GFS 0.25° grid footprint.
+5. `issue_time_utc` — ISO 8601 UTC timestamp of model run origin.
+6. Per-step uncertainty metrics — Every timestep in `series` carries `lead_time_uncertainty_c`, `elevation_uncertainty_c`, and `total_uncertainty_c`.
+7. Persian advisory & warning text — `thresholds_warning_fa`, `disclaimer_fa`, `stage_fa`, `crop_fa`, and `overall_risk_level_fa`.
+8. Unknown-stage fallback — When an empty, unknown, or unrecognized phenological stage is supplied, the system adopts the precautionary principle, selecting the most sensitive developmental stage (e.g., fruit set / `fruit_set` with $T_{c10} = -1.0^\circ\text{C}$ for pistachio) and appending a descriptive warning in Persian.
+
+
 
 
 

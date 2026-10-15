@@ -440,18 +440,13 @@ def assess_frost_risk(
 
     crop_cfg = configs[crop]
     unknown_stage_note_fa = ""
-    if not phenological_stage or phenological_stage == "unknown":
+    if not phenological_stage or phenological_stage == "unknown" or phenological_stage not in crop_cfg.stages:
         # Conservative safety fallback: select the most sensitive phenological stage (highest critical temperature)
         most_sensitive = max(crop_cfg.stages.values(), key=lambda s: s.t_critical_10_c)
         stage_cfg = most_sensitive
         unknown_stage_note_fa = (
             f"مرحله فنولوژیکی نامشخص است؛ بر مبنای اصل احتیاط کشاورزی، حساس‌ترین مرحله رشد "
             f"({stage_cfg.name_fa} با آستانه ۱۰٪ خسارت {stage_cfg.t_critical_10_c}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
-        )
-    elif phenological_stage not in crop_cfg.stages:
-        raise ValueError(
-            f"Stage '{phenological_stage}' not found for crop '{crop}'. "
-            f"Available stages: {list(crop_cfg.stages.keys())}"
         )
     else:
         stage_cfg = crop_cfg.stages[phenological_stage]

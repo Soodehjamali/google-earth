@@ -164,11 +164,30 @@ def test_assess_frost_risk_endpoint_adhoc():
     assert data["thresholds_status"] == "placeholder"
     assert data["thresholds_verified"] is False
     assert len(data["thresholds_warning_fa"]) > 0
+    assert data["evidence_level"] <= "B"
+    assert data["evidence_level"] == "B"
     assert "forecast" in data
+    assert data["forecast"]["quality_state"] == "coarse_context"
+    assert data["forecast"]["native_spatial_resolution_m"] == 27830.0
+    assert data["forecast"]["issue_time_utc"] is not None
+    assert len(data["forecast"]["series"]) > 0
+    assert data["forecast"]["series"][0]["lead_time_uncertainty_c"] is not None
+    assert data["forecast"]["series"][0]["elevation_uncertainty_c"] is not None
+    assert data["forecast"]["series"][0]["total_uncertainty_c"] is not None
     assert "nightly_risks" in data
     assert len(data["nightly_risks"]) >= 2
     assert "overall_risk_level" in data
     assert "overall_risk_level_fa" in data
+
+    # Unknown stage fallback verification
+    payload_unknown = dict(payload)
+    payload_unknown["phenological_stage"] = "unrecognized_stage_xyz"
+    resp_unknown = client.post("/api/v1/agriculture/frost/assess", json=payload_unknown)
+    assert resp_unknown.status_code == 200
+    data_unknown = resp_unknown.json()
+    assert data_unknown["phenological_stage"] == "fruit_set"
+    assert data_unknown["t_critical_10_c"] == -1.0
+    assert "مرحله فنولوژیکی نامشخص است" in data_unknown["thresholds_warning_fa"]
 
 
 def test_assess_frost_risk_endpoint_gee_outage_503_envelope():
