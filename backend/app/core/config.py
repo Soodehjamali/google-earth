@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # Database (async driver — matches asyncpg in requirements and
     # create_async_engine in app/db/session.py)
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5434/agri_intelligence"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres123@localhost:5434/agri_intelligence"
 
     # Database connection pool
     DB_POOL_SIZE: int = 5
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
 
     # Google Earth Engine
-    EE_PROJECT_ID: Optional[str] = None
+    EE_PROJECT_ID: Optional[str] = "proverbial-will-507706-e1"
     EE_SERVICE_ACCOUNT: Optional[str] = None
     EE_PRIVATE_KEY_FILE: Optional[str] = None
 
