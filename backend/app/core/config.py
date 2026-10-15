@@ -40,8 +40,8 @@ class Settings(BaseSettings):
 
     # Google Earth Engine
     EE_PROJECT_ID: Optional[str] = "proverbial-will-507706-e1"
-    EE_SERVICE_ACCOUNT: Optional[str] = None
-    EE_PRIVATE_KEY_FILE: Optional[str] = None
+    EE_SERVICE_ACCOUNT: Optional[str] = "agricultural-ai@proverbial-will-507706-e1.iam.gserviceaccount.com"
+    EE_PRIVATE_KEY_FILE: Optional[str] = "backend/credentials/gee-key.json"
 
     # Redis
     REDIS_URL: Optional[str] = None

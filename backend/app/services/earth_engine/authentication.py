@@ -255,9 +255,13 @@ def _key_file() -> Optional[Path]:
     if key_path.exists():
         return key_path
     backend_root = Path(__file__).resolve().parent.parent.parent.parent
-    candidate = backend_root / "credentials" / "gee-key.json"
-    if candidate.exists():
-        return candidate
+    for parent in [backend_root, *backend_root.parents]:
+        cand = parent / "credentials" / "gee-key.json"
+        if cand.exists():
+            return cand
+        cand = parent / "backend" / "credentials" / "gee-key.json"
+        if cand.exists():
+            return cand
     return key_path
 
 
