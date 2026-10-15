@@ -23,8 +23,10 @@ This document records architectural, agronomic, and operational decisions made d
 - **Why:** Complies with security cleanliness for current tracked tree while preserving immutable git history.
 
 ### G4. Tile Token Log Masking
-- **Decision:** Mask both path-based tile tokens (`/api/v1/agriculture/tiles/{token}/...`) and query-string tokens (`?token=...`) across all logging formatters and filters.
-- **Why:** Prevents credential/session leakage into access logs.
+- **Decision:** Mask both path-based tile tokens (`/tiles/{token}/...`) and query-string tokens (`?token=...` or `?tile_token=...`) across all logging formatters and filters. Implemented recursive masking in `TileTokenMaskingFilter` for string messages, tuples, dicts, and lists in `LogRecord.args`. Added unit tests in `backend/tests/unit/test_logging.py` covering path segments, query parameters, and `uvicorn.access` format structures. Verified with a real live uvicorn process receiving a tile request, capturing:
+  `INFO: 127.0.0.1:62209 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.png?token=***MASKED*** HTTP/1.1" 403 Forbidden`
+- **Alternatives Considered:** Masking only `uvicorn.access` or only path patterns. Rejected because clients or proxies can pass tokens in query strings, and application loggers may also log full URLs.
+- **Why:** Prevents secret/session token leakage into server logs across all request forms.
 
 ### G5. Frontend Test Suite Expectations
 - **Decision:** Reconcile outdated assertion strings in legacy frontend tests to match the current localized (Persian) UI and modular architecture, without deleting or skipping tests. Document remaining exclusions if any.
