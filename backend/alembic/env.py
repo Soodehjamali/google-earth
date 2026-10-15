@@ -31,14 +31,6 @@ from app.db.models import (  # noqa: F401
 # this is the Alembic Config object
 config = context.config
 
-# Compile PostgreSQL JSONB as standard JSON for SQLite environments (e.g. tests)
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.compiler import compiles
-
-@compiles(JSONB, 'sqlite')
-def compile_jsonb_sqlite(type_, compiler, **kw):
-    return 'JSON'
-
 # The database URL comes from the DATABASE_URL environment variable (via the
 # application settings) unless explicitly provided by caller/config (e.g. tests).
 existing_url = config.get_main_option("sqlalchemy.url")

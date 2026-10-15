@@ -59,6 +59,7 @@ def upgrade() -> None:
     op.create_table(
         'notification_log',
         sa.Column('id', UUID(as_uuid=True), primary_key=True),
+        sa.Column('idempotency_key', sa.String(255), unique=True, nullable=True),
         sa.Column('dispatched_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('orchard_id', UUID(as_uuid=True), sa.ForeignKey('orchards.id', ondelete='SET NULL'), nullable=True),
         sa.Column('alert_rule_id', UUID(as_uuid=True), sa.ForeignKey('alert_rules.id', ondelete='SET NULL'), nullable=True),
@@ -79,6 +80,7 @@ def upgrade() -> None:
     op.create_index('ix_notification_log_dispatched_at', 'notification_log', ['dispatched_at'])
     op.create_index('ix_notification_log_orchard_id', 'notification_log', ['orchard_id'])
     op.create_index('ix_notification_log_status', 'notification_log', ['status'])
+    op.create_index('ix_notification_log_idempotency_key', 'notification_log', ['idempotency_key'], unique=True)
 
 
 def downgrade() -> None:

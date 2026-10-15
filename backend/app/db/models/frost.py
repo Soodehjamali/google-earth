@@ -82,10 +82,14 @@ class NotificationLog(Base, TimestampMixin):
         Index("ix_notification_log_dispatched_at", "dispatched_at"),
         Index("ix_notification_log_orchard_id", "orchard_id"),
         Index("ix_notification_log_status", "status"),
+        Index("ix_notification_log_idempotency_key", "idempotency_key", unique=True),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    idempotency_key: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
     )
     dispatched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

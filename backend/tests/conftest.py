@@ -81,3 +81,15 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+# Compile PostgreSQL JSONB as standard JSON for SQLite in test environments
+try:
+    from sqlalchemy.dialects.postgresql import JSONB
+    from sqlalchemy.ext.compiler import compiles
+
+    @compiles(JSONB, "sqlite")
+    def compile_jsonb_sqlite(type_, compiler, **kw):
+        return "JSON"
+except Exception:
+    pass
