@@ -79,7 +79,8 @@ Eight test files that existed in `071767b` were modified between `071767b` and `
    - Verified via unit test `test_night_minimum_spanning_utc_midnight_local_assignment`.
 4. **Physical Elevation Correction**:
    - Standard environmental lapse rate $\Gamma = -6.5^\circ\text{C/km}$ ($-0.0065^\circ\text{C/m}$).
-   - $\Delta T = -\Gamma \times (z_{\text{site}} - z_{\text{grid}})$.
+   - Formula in code: $\Delta z_{\text{km}} = (z_{\text{site}} - z_{\text{cell}}) / 1000.0$, $\Delta T = \Gamma \times \Delta z_{\text{km}}$, $T_{\text{corr}} = T_{\text{cell}} + \Delta T$.
+   - With $\Gamma = -6.5$, a higher site ($\Delta z > 0$) yields $\Delta T < 0$ (cooler by 1.95 °C at +300m); a lower site yields $\Delta T > 0$ (warmer by 1.95 °C at -300m).
    - Provenance exposes `raw_value`, `corrected_value`, `delta_c`, `uncertainty_c`.
    - **Quality Invariant**: Elevation-corrected temperatures remain `QualityState.COARSE_CONTEXT` and are **never** counted in the field-scale valid count ($N$).
 

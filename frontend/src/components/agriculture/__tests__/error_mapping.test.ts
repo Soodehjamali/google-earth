@@ -67,4 +67,51 @@ describe('Step 3: Stable Error Codes & Persian Error Mapping', () => {
     assert.strictEqual(unknownErr.code, 'ERR_INTERNAL_SERVER_ERROR');
     assert.strictEqual(unknownErr.titleFa, ERROR_CODE_MAP.ERR_INTERNAL_SERVER_ERROR.titleFa);
   });
+
+  it('5. maps tile-related error codes (ERR_TILE_FORBIDDEN, ERR_TILE_EXPIRED, ERR_TILE_OUT_OF_BOUNDS)', () => {
+    const expiredTileErr = new ApiError({
+      code: 'ERR_TILE_EXPIRED',
+      reason: 'Tile signature timestamp is expired',
+      status: 403,
+    });
+    const mapExpired = mapErrorToPersian(expiredTileErr);
+    assert.strictEqual(mapExpired.code, 'ERR_TILE_EXPIRED');
+    assert.strictEqual(mapExpired.titleFa, ERROR_CODE_MAP.ERR_TILE_EXPIRED.titleFa);
+
+    const forbiddenTileErr = new ApiError({
+      code: 'ERR_TILE_FORBIDDEN',
+      reason: 'Tile token signature verification failed',
+      status: 403,
+    });
+    const mapForbidden = mapErrorToPersian(forbiddenTileErr);
+    assert.strictEqual(mapForbidden.code, 'ERR_TILE_FORBIDDEN');
+    assert.strictEqual(mapForbidden.titleFa, ERROR_CODE_MAP.ERR_TILE_FORBIDDEN.titleFa);
+
+    const oobTileErr = new ApiError({
+      code: 'ERR_TILE_OUT_OF_BOUNDS',
+      reason: 'Zoom or coordinates outside valid range',
+      status: 404,
+    });
+    const mapOob = mapErrorToPersian(oobTileErr);
+    assert.strictEqual(mapOob.code, 'ERR_TILE_OUT_OF_BOUNDS');
+    assert.strictEqual(mapOob.titleFa, ERROR_CODE_MAP.ERR_TILE_OUT_OF_BOUNDS.titleFa);
+  });
+
+  it('6. correctly parses unified {code, reason, status_code} payload', () => {
+    const unifiedPayload = {
+      code: 'ERR_VALIDATION_FAILED',
+      reason: 'Request parameter validation failed: invalid or missing parameters',
+      status_code: 422,
+    };
+    const apiErr = new ApiError({
+      code: unifiedPayload.code,
+      reason: unifiedPayload.reason,
+      status: unifiedPayload.status_code,
+    });
+    assert.strictEqual(apiErr.code, 'ERR_VALIDATION_FAILED');
+    assert.strictEqual(apiErr.status, 422);
+    const mapped = mapErrorToPersian(apiErr);
+    assert.strictEqual(mapped.code, 'ERR_VALIDATION_FAILED');
+    assert.strictEqual(mapped.titleFa, ERROR_CODE_MAP.ERR_VALIDATION_FAILED.titleFa);
+  });
 });

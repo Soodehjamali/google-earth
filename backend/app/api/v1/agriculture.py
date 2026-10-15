@@ -1254,8 +1254,14 @@ async def get_proxied_tile(
     from app.services.agriculture.tile_auth import verify_layer_token
     from app.services.cache_service import cache_service
 
-    # 1. Rate limiting per client IP
-    client_ip = request.client.host if request.client and request.client.host else "unknown"
+    # 1. Rate limiting per client IP (respecting X-Forwarded-For behind reverse proxies)
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    elif request.client and request.client.host:
+        client_ip = request.client.host
+    else:
+        client_ip = "unknown"
     now = time.time()
     history = [t for t in _tile_ip_requests.get(client_ip, []) if now - t < 60.0]
     if len(history) >= _MAX_TILE_REQUESTS_PER_MINUTE:

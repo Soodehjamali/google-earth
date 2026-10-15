@@ -86,3 +86,38 @@ def test_rate_limit_error_code():
     exc = RateLimitError()
     assert exc.code == "ERR_RATE_LIMIT_EXCEEDED"
     assert exc.status_code == 429
+
+
+def test_unified_error_envelope_shapes_on_fastapi_app():
+    """Verify that every error handler returns the unified {code, reason, status_code} envelope."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # 1. 404 Route Not Found (StarletteHTTPException)
+    resp_404 = client.get("/api/v1/nonexistent_route_404")
+    assert resp_404.status_code == 404
+    data_404 = resp_404.json()
+    assert set(data_404.keys()) == {"code", "reason", "status_code"}
+    assert data_404["code"] == "ERR_RECORD_NOT_FOUND"
+    assert data_404["status_code"] == 404
+
+    # 2. 405 Method Not Allowed (StarletteHTTPException)
+    resp_405 = client.delete("/api/v1/health")
+    assert resp_405.status_code == 405
+    data_405 = resp_405.json()
+    assert set(data_405.keys()) == {"code", "reason", "status_code"}
+    assert data_405["code"] == "ERR_METHOD_NOT_ALLOWED"
+    assert data_405["status_code"] == 405
+
+    # 3. 422 RequestValidationError (never echoes raw input or internal model names)
+    resp_422 = client.post("/api/v1/agriculture/analysis", json={"invalid": "payload"})
+    assert resp_422.status_code == 422
+    data_422 = resp_422.json()
+    assert set(data_422.keys()) == {"code", "reason", "status_code"}
+    assert data_422["code"] == "ERR_VALIDATION_FAILED"
+    assert data_422["status_code"] == 422
+    assert "payload" not in str(data_422)  # no user input echoed
+    assert "PointGeometry" not in str(data_422)  # no internal model names
+

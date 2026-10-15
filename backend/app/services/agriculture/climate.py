@@ -497,9 +497,14 @@ class TemperatureMeanMetric(_ERA5Metric):
     conversion = "celsius = kelvin - 273.15"
     is_temperature = True
     is_night_minimum = False
-    description = "Mean air temperature at 2 m over the period."
+    description = (
+        "Mean air temperature at 2 m over the period (UTC-day aggregated from "
+        "ECMWF/ERA5_LAND/DAILY_AGGR)."
+    )
     limitations = (
-        "Modelled at roughly 11 km, not measured at the field.",
+        "Modelled at roughly 11 km from ECMWF/ERA5_LAND/DAILY_AGGR, not measured at the field.",
+        "Aggregated by UTC calendar day (00:00 to 23:59 UTC). Must not be used for "
+        "local frost risk or diurnal GDD calculations, which require local-day hourly aggregation.",
         "Air temperature at 2 m differs from temperature within the crop "
         "canopy, which can be several degrees warmer or cooler.",
     )

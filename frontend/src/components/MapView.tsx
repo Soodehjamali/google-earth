@@ -198,10 +198,14 @@ export default function MapView({
   useEffect(() => {
     if (!mapContainer.current) return
 
-    // Initialize map with complete multi-layer Geographic Context
-    // 1. Satellite: Google Satellite Imagery (lyrs=s, replaces blocked Esri World_Imagery/MapServer)
-    // 2. Labels & Boundaries: Google Hybrid Reference (lyrs=h, replaces blocked Reference/World_Boundaries_and_Places/MapServer)
-    // 3. OSM: OpenStreetMap (complete street and administrative map)
+    // Basemap Provider Configuration:
+    // Default = OpenStreetMap standard tiles + Sentinel-2 true-color proxy overlay.
+    // Direct Google tiles only behind ALLOW_GOOGLE_DIRECT_TILES (default false).
+    const allowGoogleDirect = typeof window !== 'undefined' && Boolean(
+      (window as any).__ALLOW_GOOGLE_DIRECT_TILES__ ||
+      (import.meta.env && import.meta.env.VITE_ALLOW_GOOGLE_DIRECT_TILES === 'true')
+    )
+
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: {
@@ -209,23 +213,29 @@ export default function MapView({
         sources: {
           satellite: {
             type: 'raster',
-            tiles: [
-              'https://mt0.google.com/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}',
-              'https://mt1.google.com/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}',
-            ],
+            tiles: allowGoogleDirect
+              ? [
+                  'https://mt0.google.com/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}',
+                  'https://mt1.google.com/vt/lyrs=s&hl=fa&x={x}&y={y}&z={z}',
+                ]
+              : ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
             tileSize: 256,
-            maxzoom: 19,
-            attribution: '© Google Satellite',
+            maxzoom: allowGoogleDirect ? 19 : 18,
+            attribution: allowGoogleDirect
+              ? '© Google Satellite'
+              : '© OpenStreetMap contributors | Sentinel-2 True-Color (Proxy)',
           },
           labels: {
             type: 'raster',
-            tiles: [
-              'https://mt0.google.com/vt/lyrs=h&hl=fa&x={x}&y={y}&z={z}',
-              'https://mt1.google.com/vt/lyrs=h&hl=fa&x={x}&y={y}&z={z}',
-            ],
+            tiles: allowGoogleDirect
+              ? [
+                  'https://mt0.google.com/vt/lyrs=h&hl=fa&x={x}&y={y}&z={z}',
+                  'https://mt1.google.com/vt/lyrs=h&hl=fa&x={x}&y={y}&z={z}',
+                ]
+              : ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
             tileSize: 256,
-            maxzoom: 19,
-            attribution: '© Google Reference',
+            maxzoom: allowGoogleDirect ? 19 : 18,
+            attribution: allowGoogleDirect ? '© Google Reference' : '© OpenStreetMap contributors',
           },
           osm: {
             type: 'raster',
@@ -492,6 +502,15 @@ export default function MapView({
     const onMapError = (e: any) => {
       const srcId = e?.sourceId || e?.tile?.source || ''
       const errMsg = typeof e?.error?.message === 'string' ? e.error.message : ''
+      const is403 = e?.error?.status === 403 || e?.status === 403 || /403/i.test(errMsg)
+
+      // Operational Invariant (Phase 2 Closeout):
+      // A 403 from an expired token or analysis raster layer must NOT count toward
+      // the "5 consecutive failures -> switch basemap" counter.
+      if (srcId === 'ee-raster-source' || is403 || errMsg.includes('/tiles/')) {
+        return
+      }
+
       const isSatellite =
         srcId === 'satellite' ||
         srcId === 'labels' ||
@@ -761,6 +780,12 @@ export default function MapView({
 
     const onError = (e: any) => {
       if (e?.sourceId === 'ee-raster-source' || e?.error?.message?.includes('raster') || e?.error?.status >= 400) {
+        // Operational Invariant (Phase 2 Closeout):
+        // 403 from an expired token triggers token refresh / auto-retry
+        const is403 = e?.error?.status === 403 || e?.status === 403 || /403/i.test(e?.error?.message || '')
+        if (is403) {
+          setRasterRetryCount((prev) => (prev < 3 ? prev + 1 : prev))
+        }
         setRasterTileStatus('error')
       }
     }

@@ -329,6 +329,54 @@ def test_elevation_correction_physics_and_signs():
     assert "اینورژن" in res_night.uncertainty_note_fa
 
 
+def test_elevation_correction_300m_exact_production_call():
+    """Verify exact 300m lapse rate temperature change using production function.
+
+    Convention:
+      Standard lapse rate: gamma = -6.5 °C/km
+      delta_z_km = (z_site - z_cell) / 1000.0
+      delta_c = gamma * delta_z_km
+      corrected = t_cell + delta_c
+
+    Verification criteria:
+      1. Site 300 m ABOVE ERA5 cell mean (z_site=1300, z_cell=1000):
+         delta_c must be -1.95 °C (colder by ~1.95 °C).
+      2. Site 300 m BELOW ERA5 cell mean (z_site=700, z_cell=1000):
+         delta_c must be +1.95 °C (warmer by ~1.95 °C).
+      3. Equal elevation (z_site=1000, z_cell=1000):
+         delta_c must be 0.0 °C.
+    """
+    # 1. 300 m ABOVE: colder by ~1.95 °C
+    res_above = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=1300.0,
+    )
+    assert res_above.delta_c == -1.95
+    assert res_above.corrected_value == 18.05
+    assert res_above.corrected_value < res_above.raw_value
+
+    # 2. 300 m BELOW: warmer by ~1.95 °C
+    res_below = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=700.0,
+    )
+    assert res_below.delta_c == 1.95
+    assert res_below.corrected_value == 21.95
+    assert res_below.corrected_value > res_below.raw_value
+
+    # 3. Equal elevation: delta 0.0
+    res_equal = correct_temperature_for_elevation(
+        t_cell=20.0,
+        z_cell=1000.0,
+        z_site=1000.0,
+    )
+    assert res_equal.delta_c == 0.0
+    assert res_equal.corrected_value == 20.0
+
+
+
 def test_aggregate_hourly_to_local_days():
     """Verify that UTC timestamps are grouped accurately into Asia/Tehran civil days."""
     from datetime import datetime, timezone

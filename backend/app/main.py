@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
@@ -72,37 +73,81 @@ app.add_middleware(
 )
 
 
+_STATUS_TO_ERROR_CODE = {
+    400: "ERR_VALIDATION_FAILED",
+    401: "ERR_UNAUTHORIZED",
+    403: "ERR_FORBIDDEN",
+    404: "ERR_RECORD_NOT_FOUND",
+    405: "ERR_METHOD_NOT_ALLOWED",
+    422: "ERR_VALIDATION_FAILED",
+    429: "ERR_RATE_LIMIT_EXCEEDED",
+    502: "ERR_GEE_UNAVAILABLE",
+    503: "ERR_GEE_UNAVAILABLE",
+    504: "ERR_GEE_TIMEOUT",
+}
+
+_STATUS_TO_REASON = {
+    400: "Input parameters failed validation",
+    401: "Authentication credentials are required or invalid",
+    403: "Access to the requested resource is forbidden",
+    404: "The requested resource was not found",
+    405: "The requested HTTP method is not allowed for this route",
+    422: "Request parameter validation failed: invalid or missing parameters",
+    429: "Too many requests. Please wait before submitting further requests",
+    502: "Upstream satellite service bad gateway",
+    503: "Satellite processing service is temporarily unavailable",
+    504: "Satellite processing service request timed out",
+}
+
+
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    """Handle custom application exceptions with stable codes and clean reasons."""
+    """Handle custom application exceptions with unified error envelope."""
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "error": exc.message,
             "code": getattr(exc, "code", "ERR_INTERNAL_SERVER_ERROR"),
-            "reason": getattr(exc, "reason", exc.message),
-            "detail": exc.detail,
+            "reason": getattr(exc, "reason", "An error occurred during request processing"),
+            "status_code": exc.status_code,
         },
     )
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle request validation errors with stable code ERR_VALIDATION_FAILED."""
+    """Handle request validation errors with unified envelope, never echoing raw input or models."""
     return JSONResponse(
         status_code=422,
         content={
-            "error": "Request validation failed",
             "code": "ERR_VALIDATION_FAILED",
-            "reason": "Invalid or missing parameters in request body",
-            "detail": {"errors": exc.errors()},
+            "reason": "Request parameter validation failed: invalid or missing parameters",
+            "status_code": 422,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle standard HTTP exceptions with unified error envelope."""
+    code = _STATUS_TO_ERROR_CODE.get(exc.status_code, "ERR_INTERNAL_SERVER_ERROR")
+    reason = (
+        exc.detail
+        if isinstance(exc.detail, str) and exc.detail and not any(kw in exc.detail for kw in ("Traceback", "Exception", "Error:"))
+        else _STATUS_TO_REASON.get(exc.status_code, "HTTP request failed")
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "code": code,
+            "reason": reason,
+            "status_code": exc.status_code,
         },
     )
 
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
-    """Handle uncaught exceptions.
+    """Handle uncaught exceptions with unified error envelope.
 
     The full traceback goes to the server logs only; clients receive a
     stable error code and clean generic reason so internals never leak.
@@ -111,10 +156,9 @@ async def generic_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
-            "error": "Internal server error",
             "code": "ERR_INTERNAL_SERVER_ERROR",
             "reason": "An unexpected server error occurred during processing",
-            "detail": {"error_type": type(exc).__name__},
+            "status_code": 500,
         },
     )
 
