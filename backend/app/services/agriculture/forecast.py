@@ -6,7 +6,7 @@ and honest cadence disclosure.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone, timedelta
 import math
 from typing import Any, Dict, List, Optional, Tuple
@@ -80,6 +80,9 @@ class ForecastResult:
     horizon_hours: int
     disclaimer_fa: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 class ForecastProvider(ABC):

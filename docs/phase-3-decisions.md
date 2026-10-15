@@ -114,5 +114,30 @@ This document records architectural, agronomic, and operational decisions made d
   Chemical and hormonal recommendations (e.g. anti-transpirants, copper sprays, gibberellins, or unproven foliar sprays) are strictly excluded from the recommendation database.
 - **Why:** Regulatory safety, scientific honesty, and avoidance of hazardous agronomic practices.
 
+---
+
+## Task 3.4: API & Minimal Storage Decisions
+
+### 3.4.1 Alembic Migration 002_frost & Multi-Dialect Compatibility
+- **Decision:** Implemented Alembic migration `002_frost_tables.py` creating `orchards`, `alert_rules`, and `notification_log` tables with foreign key cascades and composite indexes. Added SQLite JSONB compiler shim (`@compiles(JSONB, 'sqlite')`) to support local SQLite in-memory test suites while keeping native PostgreSQL `JSONB` and `UUID` in production. Fully verified upgrade -> downgrade -> upgrade cycle in automated tests.
+- **Why:** Production relational schema integrity without requiring a live PostgreSQL instance for unit testing.
+
+### 3.4.2 Outbound Dispatch Safety Lock
+- **Decision:** Implemented an automated safety lock (`dispatch_alert_with_safety_lock`). If `thresholds_verified=False` (unverified placeholder thresholds), any attempt to dispatch notifications through real external network providers (SMS, Telegram, webhook, email) is strictly refused with `UnverifiedThresholdsSafetyLockError` unless an explicit `admin_override=True` flag is supplied. Only `StubNotificationProvider` and dry-run dispatches are permitted.
+- **Why:** Prevents accidental panic or false-alarm broadcasts to real farmers using uncalibrated placeholder thresholds.
+
+### 3.4.3 PII and Recipient Protection in Server Logs
+- **Decision:** Implemented `mask_recipient()` which masks phone numbers (e.g. `+989123456789` -> `+989***89`) and emails before writing to server logs or returning summary notifications.
+- **Why:** Strict adherence to privacy requirements forbidding plain phone numbers in application logs.
+
+### 3.4.4 Idempotency & Upward-Only Escalation
+- **Decision:** Alert evaluation targets the earliest upcoming night with elevated frost risk. Queries `notification_log` for previous dispatches for `(orchard_id, target_night)`. If an alert has already been dispatched at equal or greater severity, dispatch is skipped (idempotent). If the forecast worsens (e.g. from `watch` to `warning`), an escalation alert is dispatched ("escalate upward only").
+- **Why:** Protects growers from alert fatigue while guaranteeing immediate escalation when forecast freeze severity increases.
+
+### 3.4.5 GEE Outage Error Envelope
+- **Decision:** When `use_live_gee=True` encounters an Earth Engine timeout or service outage, the API returns a structured HTTP 503 response conforming to the unified error envelope with `code: ERR_GEE_UNAVAILABLE`.
+- **Why:** Clear error contract without leaking raw exception tracebacks to API consumers.
+
+
 
 

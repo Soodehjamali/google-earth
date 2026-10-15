@@ -5,5 +5,16 @@ from app.db.models.analysis import Analysis
 from app.db.models.dataset import DatasetUsage
 from app.db.models.timeseries import TimeSeries
 from app.db.models.report import Report
+from app.db.models.frost import Orchard, AlertRule, NotificationLog
 
-__all__ = ["Location", "Analysis", "DatasetUsage", "TimeSeries", "Report"]
+__all__ = [
+    "Location",
+    "Analysis",
+    "DatasetUsage",
+    "TimeSeries",
+    "Report",
+    "Orchard",
+    "AlertRule",
+    "NotificationLog",
+]
+

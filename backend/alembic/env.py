@@ -17,7 +17,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db.base import Base
-from app.db.models import Location, Analysis, DatasetUsage, TimeSeries, Report  # noqa: F401
+from app.db.models import (  # noqa: F401
+    Location,
+    Analysis,
+    DatasetUsage,
+    TimeSeries,
+    Report,
+    Orchard,
+    AlertRule,
+    NotificationLog,
+)
 
 # this is the Alembic Config object
 config = context.config
