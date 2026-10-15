@@ -224,12 +224,12 @@ describe('4. child pages never trigger analysis requests directly', () => {
     assert.ok(files.length > 0);
     for (const file of files) {
       const text = readFileSync(file, 'utf-8');
-      // DomainPage.tsx and PestDiseasePage.tsx own independent domain analysis request forms; other views do not
-      if (!file.endsWith('DomainPage.tsx') && !file.endsWith('PestDiseasePage.tsx')) {
+      // DomainPage.tsx, PestDiseasePage.tsx, and FrostRiskPage.tsx own independent domain analysis request forms; other views do not
+      if (!file.endsWith('DomainPage.tsx') && !file.endsWith('PestDiseasePage.tsx') && !file.endsWith('FrostRiskPage.tsx')) {
         assert.ok(!text.includes('agricultureApi.analyze'), file);
         assert.ok(!text.includes('runAnalysis('), file);
       }
-      if (!file.endsWith('PestDiseasePage.tsx')) {
+      if (!file.endsWith('PestDiseasePage.tsx') && !file.endsWith('FrostRiskPage.tsx')) {
         assert.ok(text.includes('useAgricultureContext'), file);
       }
     }
@@ -298,6 +298,7 @@ describe('9. land-crop renders scalar summaries, never distributions', () => {
     // overlays backend monthly NDVI points with the same library.
     const P52_CHART_FILES = new Set(['TemporalLineChart.tsx', 'TemporalChartCard.tsx']);
     const P1_CHART_FILES = new Set(['YearComparisonSection.tsx']);
+    const PHASE3_CHART_FILES = new Set(['FrostTimelineChart.tsx']);
     const chartTokens = ['recharts', 'BarChart', 'DistributionChart'];
     const distributionTokens = ['Histogram', 'histogram'];
     for (const file of files) {
@@ -306,6 +307,7 @@ describe('9. land-crop renders scalar summaries, never distributions', () => {
       for (const token of chartTokens) {
         if (token === 'recharts' && P52_CHART_FILES.has(base)) continue;
         if (token === 'recharts' && P1_CHART_FILES.has(base)) continue;
+        if (token === 'recharts' && PHASE3_CHART_FILES.has(base)) continue;
         assert.ok(!text.includes(token), `${file} contains ${token}`);
       }
       if (!F3B_DISTRIBUTION_FILES.has(base)) {

@@ -57,6 +57,26 @@ export const agricultureApi = {
   /** Run synthesis from pre-built evidence (for development/testing) */
   synthesisOnly: (data: SynthesisOnlyRequest) =>
     apiPost<AgriculturalAnalysisResponse>('/agriculture/analysis/synthesis-only', data),
+
+  /** Run frost risk assessment (Phase 3) */
+  assessFrost: (data: import('../types').FrostAssessRequest) =>
+    apiPost<import('../types').FrostAssessmentResponse>('/agriculture/frost/assess', data),
+
+  /** List registered orchards for frost alerts (Phase 3) */
+  listFrostOrchards: () =>
+    apiGet<import('../types').FrostOrchard[]>('/agriculture/frost/orchards'),
+
+  /** Register an orchard for frost alerts (Phase 3) */
+  createFrostOrchard: (data: import('../types').FrostOrchardCreate) =>
+    apiPost<import('../types').FrostOrchard>('/agriculture/frost/orchards', data),
+
+  /** Add an alert rule for an orchard (Phase 3) */
+  createFrostAlertRule: (orchardId: string, data: import('../types').FrostAlertRuleCreate) =>
+    apiPost<import('../types').FrostAlertRule>(`/agriculture/frost/orchards/${orchardId}/alert-rules`, data),
+
+  /** Evaluate frost alert rules (dry_run or dispatch) (Phase 3) */
+  evaluateFrostAlerts: (data: import('../types').EvaluateAlertsRequest) =>
+    apiPost<import('../types').EvaluateAlertsResponse>('/agriculture/frost/evaluate-alerts', data),
 };
 
 

@@ -275,8 +275,8 @@ describe('5. one analysis request, no second call', () => {
 
   it('the agriculture client endpoints are unchanged', () => {
     const client = readSource('api/agriculture.ts');
-    assert.equal(client.split('apiPost<').length - 1, 6);
-    assert.equal(client.split('apiGet<').length - 1, 3);
+    assert.equal(client.split('apiPost<').length - 1, 10);
+    assert.equal(client.split('apiGet<').length - 1, 4);
     assert.ok(client.includes("'/agriculture/analysis'"));
   });
 

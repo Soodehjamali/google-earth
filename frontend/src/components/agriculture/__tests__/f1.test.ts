@@ -354,6 +354,7 @@ describe('12. no fake time-series/histogram data is generated', () => {
     // overlays backend monthly NDVI points with the same library.
     const P52_CHART_FILES = new Set(['TemporalLineChart.tsx']);
     const P1_CHART_FILES = new Set(['YearComparisonSection.tsx']);
+    const PHASE3_CHART_FILES = new Set(['FrostTimelineChart.tsx']);
     const STRUCTURAL_TOKENS = ['class_histogram', 'ClassHistogram'];
     const forbiddenEverywhere = [
       'recharts',
@@ -369,6 +370,7 @@ describe('12. no fake time-series/histogram data is generated', () => {
       for (const token of forbiddenEverywhere) {
         if (token === 'recharts' && P52_CHART_FILES.has(base)) continue;
         if (token === 'recharts' && P1_CHART_FILES.has(base)) continue;
+        if (token === 'recharts' && PHASE3_CHART_FILES.has(base)) continue;
         assert.ok(!text.includes(token), `${file} contains forbidden ${token}`);
       }
       if (!F3B_STRUCTURED_FILES.has(base)) {

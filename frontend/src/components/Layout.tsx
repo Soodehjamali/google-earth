@@ -49,6 +49,7 @@ const navItems: NavEntry[] = [
       { path: '/agriculture/terrain', label: 'توپوگرافی', labelEn: 'Terrain', icon: '⛰️' },
       { path: '/agriculture/history', label: 'تاریخچه', labelEn: 'History', icon: '🕓' },
       { path: '/agriculture/pest-disease', label: 'پایش آفت، بیماری و اعتبارسنجی', labelEn: 'Pest/Disease & Ground Truth', icon: '🔬' },
+      { path: '/agriculture/frost', label: 'هشدار سرمازدگی', labelEn: 'Frost Risk Advisory', icon: '❄️' },
     ],
   },
   { path: '/historical', label: 'تحلیل تاریخی', labelEn: 'Historical Analysis', icon: '📈' },

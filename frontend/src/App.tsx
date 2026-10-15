@@ -10,6 +10,7 @@ import Settings from './pages/Settings'
 import AgricultureLayout from './components/agriculture/AgricultureLayout'
 import DomainPage from './pages/agriculture/DomainPage'
 import PestDiseasePage from './pages/agriculture/PestDiseasePage'
+import FrostRiskPage from './pages/agriculture/FrostRiskPage'
 
 function RedirectPreservingSearch({ to }: { to: string }) {
   const location = useLocation()
@@ -45,6 +46,7 @@ function App() {
           <Route path="history" element={<DomainPage pageKey="history" />} />
           <Route path="pest-disease" element={<PestDiseasePage />} />
           <Route path="pest-disease-validation" element={<PestDiseasePage />} />
+          <Route path="frost" element={<FrostRiskPage />} />
         </Route>
         <Route path="/historical" element={<Historical />} />
         <Route path="/reports" element={<Reports />} />

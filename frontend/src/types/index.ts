@@ -1139,6 +1139,7 @@ export const DOMAIN_META: Record<string, DomainMeta> = {
   stress: { key: 'stress', label: 'Stress', labelFa: 'تنش', icon: '⚠️' },
   irrigation: { key: 'irrigation', label: 'Irrigation', labelFa: 'آبیاری', icon: '🚿' },
   cross_domain: { key: 'cross_domain', label: 'Cross-domain', labelFa: 'میان‌حوزه‌ای', icon: '🔗' },
+  frost: { key: 'frost', label: 'Frost Risk', labelFa: 'هشدار سرمازدگی', icon: '❄️' },
 };
 
 export const PATTERN_META: Record<string, PatternMeta> = {
@@ -1970,5 +1971,7 @@ export interface PestDiseaseInspectionRequest {
   ground_truth?: GroundTruthObservation[] | any[];
   cloud_max_percent?: number;
 }
+
+export * from './frost.ts';
 
 

@@ -138,6 +138,34 @@ This document records architectural, agronomic, and operational decisions made d
 - **Decision:** When `use_live_gee=True` encounters an Earth Engine timeout or service outage, the API returns a structured HTTP 503 response conforming to the unified error envelope with `code: ERR_GEE_UNAVAILABLE`.
 - **Why:** Clear error contract without leaking raw exception tracebacks to API consumers.
 
+---
+
+## Task 3.5: Frontend "Frost" Domain Page Decisions
+
+### 3.5.1 Navigation IA & Autonomous Domain Page Design
+- **Decision:** Added Frost Risk Advisory (`id: 'frost'`, `labelFa: 'هشدار سرمازدگی'`, icon: `❄️`) to `Layout.tsx` under the Agriculture Navigation hierarchy, and routed to `FrostRiskPage.tsx` under `/agriculture/frost` in `App.tsx`. Like `PestDiseasePage.tsx`, Frost Risk is designed as an autonomous operational dashboard with its own forecast parameter controls, coordinates input, live GEE toggle, and orchard alert subscription management rather than a static evidence-bundle viewer.
+- **Why:** Frost risk requires forward-looking hourly forecast time-series, topographic pooling proxies, and alert rules rather than standard retrospective satellite indices.
+
+### 3.5.2 Timeline Chart with Uncertainty Bands & Night Shading
+- **Decision:** Implemented `FrostTimelineChart.tsx` using Recharts `ComposedChart`. Plots:
+  1. Corrected temperature forecast line ($T_{\text{corr}} = T_{\text{grid}} - \Gamma \cdot \Delta z$).
+  2. Uncertainty envelope ($T_{\min} \dots T_{\max}$) derived from quadrature lead-time and elevation uncertainty.
+  3. Phenological critical threshold reference lines ($T_{c10}$, $T_{c90}$) and zero freezing line ($0\,^\circ\text{C}$).
+  4. Shaded nocturnal windows crossing midnight (18:00 to 09:00 local time).
+- **Why:** Gives growers and agronomists an honest, scientifically grounded visualization of freezing risk and forecast confidence.
+
+### 3.5.3 Explicit Unverified Thresholds Warning & Coarse Context Disclosures
+- **Decision:** Rendered `FrostWarningBanner.tsx` prominently whenever `thresholds_verified === false`, explicitly noting that current thresholds are placeholders requiring local calibration. Integrated `CoarseContextBadge` displaying `"تفکیک مکانی ~۲۸ کیلومتر (GFS)"` to honestly disclose the synoptic NWP resolution.
+- **Why:** Avoids false confidence and prevents growers from treating uncalibrated placeholder models as definitive agronomic facts.
+
+### 3.5.4 Cold-Air-Pooling Map Overlay & Ramp Legend
+- **Decision:** Implemented `ColdAirPoolingSection.tsx` with topographic metrics, heuristic proxy disclaimer, and an interactive raster map toggle that loads the signed tile URL (`pooling.tile_url`) in `MapView` with the 5-step color ramp (`["#f7fcf0", "#bae4bc", "#7bccc4", "#43a2ca", "#0868ac"]`).
+- **Why:** Allows growers to visualize micro-topographic cold air stagnation bowls directly on high-resolution satellite basemaps.
+
+### 3.5.5 LTR Presentation & Mathematical Minus Sign Isolation
+- **Decision:** All sub-zero temperatures, negative adjustments, and uncertainty intervals are rendered with `<FormattedNumber>` and tabular numerals, ensuring mathematical minus signs (`U+2212`) always remain on the left of digits without RTL inversion in Persian UI contexts.
+- **Why:** Prevents dangerous temperature reading confusions (e.g. reading $-2.5\,^\circ\text{C}$ as $+2.5\,^\circ\text{C}$).
+
 
 
 
