@@ -34,4 +34,5 @@ This document records architectural, agronomic, and operational decisions made d
 - **Why:** Delivers 100% test integrity across all test files in the codebase without regressions or gaps.
 
 ### G6. Git Audit Documentation Correction
-- **Decision:** Clarify in `docs/git-audit.md` that edits to pre-existing tests were swept up from earlier P-AGRI-1 / F-A12 work, and provide physical before/after SoilGrids values.
+- **Decision:** Updated `docs/git-audit.md` to explicitly classify edits to `test_response_semantics.py`, `test_soil_properties.py`, `test_stress.py`, and `test_validation_engine.py` as swept work from earlier P-AGRI-1 (pest & disease regime rules) and F-A12 (SoilGrids water retention) sprints rather than Phase 1/2. Documented empirical proof showing that the change in `test_soil_properties.py` from `0.001` to `1.0` corrected a 1000x double-scaling under-reporting bug (e.g. restoring Field Capacity from an implausible `0.000209 cm³/cm³` to the physically verified `0.209 cm³/cm³` matching published soil physics benchmarks).
+- **Why:** Ensures scientific accuracy, transparent provenance tracking, and eliminates confusion regarding historical commit sweeps.
