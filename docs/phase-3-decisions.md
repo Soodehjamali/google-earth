@@ -228,6 +228,30 @@ This document records architectural, agronomic, and operational decisions made d
 ### C6.4 Database-Level Idempotency Verification
 - Proved via `test_concurrent_duplicate_alert_insertion_db_constraint` that attempting to insert duplicate records for the same parcel, date, and risk tier triggers an `IntegrityError` / `UniqueViolation` in the database engine, preventing multi-dispatch race conditions.
 
+---
+
+## Item C7 Decisions: Log Masking and Tile Token Scrubbing
+
+### C7.1 Tile Token Transport Channels
+Tile tokens travel via two primary channels depending on client integration:
+1. **URL Path Segment:** Standard slippy map tile URLs follow `/api/v1/agriculture/tiles/{tile_token}/{z}/{x}/{y}.png`. Here the token is a path parameter.
+2. **Query String Parameter:** Proxied tile requests or ad-hoc imagery queries supply `?token={token}` or `?tile_token={token}`.
+
+### C7.2 Sanitization Filter & Verification
+`TileTokenMaskingFilter` intercepts and scrubs both channels recursively across string messages, tuples, dicts, and list arguments in `logging.LogRecord`:
+- Regex `r'(/tiles/)[^/?\s]+'` sanitizes path segments to `/tiles/***MASKED***`.
+- Regex `r'([?&](?:token|tile_token|api_key|secret)=)[^&\s]+'` sanitizes query strings to `\1***MASKED***`.
+
+Verified via `test_uvicorn_access_logrecord_filtering` in `backend/tests/unit/test_logging.py`, producing sanitized output:
+```text
+INFO: 127.0.0.1:54321 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.png?token=***MASKED***&x=1 HTTP/1.1" 200
+```
+And live server log line under Uvicorn:
+```text
+INFO: 127.0.0.1:62209 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.png?token=***MASKED*** HTTP/1.1" 403 Forbidden
+```
+
+
 
 
 
