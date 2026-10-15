@@ -71,6 +71,7 @@ from app.services.agriculture.types import (
     MetricResult,
     Provenance,
     QualityLevel,
+    QualityState,
     TemporalKind,
 )
 
@@ -188,9 +189,14 @@ class EvidenceItem:
     temporal_start: Optional[date]
     temporal_end: Optional[date]
     quality_level: QualityLevel
-    provenance: Optional[Provenance]
-    source_dataset_id: Optional[str]
+    quality_state: QualityState = QualityState.UNAVAILABLE
+    provenance: Optional[Provenance] = None
+    source_dataset_id: Optional[str] = None
     display_name: str = ""
+    native_resolution_m: Optional[float] = None
+    support_description: Optional[str] = None
+    cell_elevation_m: Optional[float] = None
+    site_elevation_m: Optional[float] = None
     #: Serialized spread statistics (`SpatialStats.to_dict()` output) when
     #: the metric populated `MetricResult.stats`. None otherwise — in
     #: particular never present on unavailable results.
@@ -213,15 +219,20 @@ class EvidenceItem:
 
         Extracts temporal context from ``provenance.requested_start`` /
         ``provenance.requested_end`` and quality from
-        ``provenance.quality_level``.  If provenance is absent, quality
-        defaults to ``UNAVAILABLE`` and status to ``DERIVED``.
+        ``provenance.quality_level`` and ``provenance.quality_state``.
         """
         prov = result.provenance
         basis = result.measurement_basis
         quality = result.quality_level
+        q_state = result.quality_state or (prov.quality_state if prov else QualityState.UNAVAILABLE)
         dataset_id: Optional[str] = None
         start: Optional[date] = None
         end: Optional[date] = None
+        native_res_m = prov.native_resolution_m if prov else None
+        supp_desc = prov.support_description if prov else None
+        cell_elev = prov.cell_elevation_m if prov else None
+        site_elev = prov.site_elevation_m if prov else None
+
         if prov is not None:
             dataset_id = prov.source_dataset_id
             if prov.requested_start:
@@ -246,9 +257,14 @@ class EvidenceItem:
             temporal_start=start,
             temporal_end=end,
             quality_level=quality,
+            quality_state=q_state,
             provenance=prov,
             source_dataset_id=dataset_id,
             display_name=result.display_name,
+            native_resolution_m=native_res_m,
+            support_description=supp_desc,
+            cell_elevation_m=cell_elev,
+            site_elevation_m=site_elev,
             stats=result.stats.to_dict() if result.stats else None,
             class_histogram=(
                 result.class_histogram.to_dict()
@@ -268,12 +284,23 @@ class EvidenceItem:
 
     @property
     def is_usable(self) -> bool:
-        """True when this item carries a usable value."""
+        """True when this item carries a usable value (field or regional context)."""
+        is_quality_usable = self.quality_level.is_usable or self.quality_state.is_usable_data
         return (
             self.value is not None
             and self.status != EvidenceStatus.UNAVAILABLE
-            and self.quality_level.is_usable
+            and is_quality_usable
         )
+
+    @property
+    def is_coarse_context(self) -> bool:
+        """True when this item carries real data but has a coarse footprint larger than the field."""
+        return self.quality_state == QualityState.COARSE_CONTEXT
+
+    @property
+    def is_field_scale(self) -> bool:
+        """True when this item is adequate for field/orchard scale analysis."""
+        return self.quality_state == QualityState.VALID
 
     @property
     def is_proxy(self) -> bool:

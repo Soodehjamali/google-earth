@@ -417,6 +417,11 @@ class Metric(ABC):
         fallback_from: Optional[str] = None,
         extra_limitations: Sequence[str] = (),
         extra_caveats: Sequence[str] = (),
+        quality_state: Optional[Any] = None,
+        native_resolution_m: Optional[float] = None,
+        support_description: Optional[str] = None,
+        cell_elevation_m: Optional[float] = None,
+        site_elevation_m: Optional[float] = None,
     ) -> Provenance:
         """Assemble a provenance record with the metric's own limitations.
 
@@ -439,6 +444,36 @@ class Metric(ABC):
             # the user's request.
             product_date = dataset.available_from
 
+        from app.services.agriculture.support import (
+            POINT_QUERYABLE_DATASET_IDS,
+            parse_native_resolution_m,
+        )
+        from app.services.agriculture.quality_gating import (
+            QualityState,
+            classify_quality_state,
+            describe_support,
+        )
+
+        res_m = native_resolution_m or parse_native_resolution_m(dataset.spatial_resolution)
+        if quality_state is None:
+            if quality in (QualityLevel.UNAVAILABLE, QualityLevel.INSUFFICIENT):
+                q_state = QualityState.UNAVAILABLE
+            else:
+                q_state = classify_quality_state(
+                    native_resolution_m=res_m,
+                    polygon_extent_m=context.option("polygon_extent_m") or context.option("extent_m"),
+                    has_valid_pixels=True,
+                    qc_passed=True,
+                    dataset_id=dataset.id,
+                )
+        else:
+            q_state = quality_state
+
+        supp_desc = support_description or describe_support(
+            res_m,
+            is_point_queryable=(dataset.id in POINT_QUERYABLE_DATASET_IDS),
+        )
+
         return Provenance(
             source_dataset_id=dataset.id,
             source_dataset_name=dataset.name,
@@ -451,6 +486,11 @@ class Metric(ABC):
             aggregation_method=aggregation_method,
             measurement_basis=self.measurement_basis,
             quality_level=quality,
+            quality_state=q_state,
+            native_resolution_m=res_m,
+            support_description=supp_desc,
+            cell_elevation_m=cell_elevation_m,
+            site_elevation_m=site_elevation_m,
             requested_start=context.start_date,
             requested_end=context.end_date,
             product_date=product_date,

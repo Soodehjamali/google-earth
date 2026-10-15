@@ -9,6 +9,7 @@ import { BAND_LABELS } from './DynamicWorldBands';
 import { SupportBadge, UnavailableReason } from './SupportNotice';
 import { supportInfoOf } from './support';
 import { getMetricInterpretation } from './metricInterpretation';
+import CoarseContextBadge from './CoarseContextBadge';
 
 interface MetricKpiGridProps {
   title: string;
@@ -142,7 +143,7 @@ export default function MetricKpiGrid({
                 }
                 unit={dwCandidate ? (item.unit ?? '') : item.unit}
                 icon="📊"
-                status={qualityToKpiStatus(item.quality)}
+                status={qualityToKpiStatus(item.quality, item.quality_state)}
                 subtitle={`${bundleName}${item.is_proxy ? ' • proxy' : ''}${
                   item.source_dataset ? ` • ${item.source_dataset}` : ''
                 }${windowText ? ` • ${windowText}` : ''}`}
@@ -152,6 +153,7 @@ export default function MetricKpiGrid({
                 statusLabelFa={interp.statusLabelFa}
                 footer={
                   <div className="kpi-support">
+                    <CoarseContextBadge item={item} provenance={item.provenance} />
                     <SupportBadge provenance={item.provenance} />
                     {support && (
                       <div className="kpi-support-note">

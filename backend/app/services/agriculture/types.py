@@ -22,10 +22,12 @@ import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from app.services.agriculture.quality_gating import QualityState
 
 __all__ = [
     "QualityLevel",
+    "QualityState",
     "MeasurementBasis",
     "AggregationMethod",
     "TemporalKind",
@@ -476,6 +478,11 @@ class Provenance:
 
     measurement_basis: MeasurementBasis = MeasurementBasis.DIRECT
     quality_level: QualityLevel = QualityLevel.UNAVAILABLE
+    quality_state: QualityState = QualityState.UNAVAILABLE
+    native_resolution_m: Optional[float] = None
+    support_description: Optional[str] = None
+    cell_elevation_m: Optional[float] = None
+    site_elevation_m: Optional[float] = None
 
     #: What the source dataset's dates mean, carried through so a reader
     #: of a single result can tell whether ``date_start``/``date_end``
@@ -547,6 +554,11 @@ class Provenance:
             "aggregation_method": self.aggregation_method,
             "measurement_basis": self.measurement_basis.value,
             "quality_level": self.quality_level.value,
+            "quality_state": self.quality_state.value,
+            "native_resolution_m": self.native_resolution_m,
+            "support_description": self.support_description,
+            "cell_elevation_m": self.cell_elevation_m,
+            "site_elevation_m": self.site_elevation_m,
             "requested_start": self.requested_start,
             "requested_end": self.requested_end,
             "product_date": self.product_date,
@@ -702,6 +714,7 @@ class MetricResult:
 
     unit: str = ""
     provenance: Optional[Provenance] = None
+    quality_state: Optional[QualityState] = None
 
     #: Why the metric is unavailable, when status is not ``ok``.
     reason: Optional[str] = None
@@ -711,30 +724,43 @@ class MetricResult:
     warnings: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        if self.quality_state is None:
+            if self.provenance is not None:
+                self.quality_state = self.provenance.quality_state
+            else:
+                self.quality_state = QualityState.UNAVAILABLE
+
         # Guard the core safety property: a usable numeric value must be
         # backed by provenance and must not sit under a quality level that
         # means "we have no value to report".
         #
-        # Both UNAVAILABLE and INSUFFICIENT mean "no number exists". The
-        # difference between them is why we have no number, not whether we
-        # do, so a value under either level is a contradiction.
+        # Both UNAVAILABLE and INSUFFICIENT mean "no number exists".
+        # COARSE_CONTEXT is explicitly allowed to carry real regional data.
         if self.value is not None and self.provenance is None:
             raise ValueError(
                 f"Metric {self.metric_key!r} carries a value but no "
                 "provenance. Refusing to construct an unattributable result."
             )
         if self.value is not None and self.provenance is not None:
-            forbidden = (
-                QualityLevel.UNAVAILABLE,
-                QualityLevel.INSUFFICIENT,
+            is_coarse = (
+                self.provenance.quality_state is QualityState.COARSE_CONTEXT
+                or self.quality_state is QualityState.COARSE_CONTEXT
             )
-            if self.provenance.quality_level in forbidden:
-                raise ValueError(
-                    f"Metric {self.metric_key!r} carries a value but its "
-                    f"provenance says quality is "
-                    f"'{self.provenance.quality_level.value}', which means no "
-                    "value should exist. Contradictory result."
+            if not is_coarse:
+                forbidden = (
+                    QualityLevel.UNAVAILABLE,
+                    QualityLevel.INSUFFICIENT,
                 )
+                if (
+                    self.provenance.quality_level in forbidden
+                    or self.provenance.quality_state is QualityState.UNAVAILABLE
+                ):
+                    raise ValueError(
+                        f"Metric {self.metric_key!r} carries a value but its "
+                        f"provenance says quality is "
+                        f"'{self.provenance.quality_level.value}', which means no "
+                        "value should exist. Contradictory result."
+                    )
 
         # A class histogram is a result in its own right, so it must be
         # attributable exactly like a numeric value is.
@@ -747,15 +773,22 @@ class MetricResult:
         if (
             self.class_histogram is not None
             and self.provenance is not None
-            and self.provenance.quality_level
-            in (QualityLevel.UNAVAILABLE, QualityLevel.INSUFFICIENT)
         ):
-            raise ValueError(
-                f"Metric {self.metric_key!r} carries a class histogram but "
-                f"its provenance says quality is "
-                f"'{self.provenance.quality_level.value}', which means no "
-                "result should exist. Contradictory result."
+            is_coarse = (
+                self.provenance.quality_state is QualityState.COARSE_CONTEXT
+                or self.quality_state is QualityState.COARSE_CONTEXT
             )
+            if not is_coarse and (
+                self.provenance.quality_level
+                in (QualityLevel.UNAVAILABLE, QualityLevel.INSUFFICIENT)
+                or self.provenance.quality_state is QualityState.UNAVAILABLE
+            ):
+                raise ValueError(
+                    f"Metric {self.metric_key!r} carries a class histogram but "
+                    f"its provenance says quality is "
+                    f"'{self.provenance.quality_level.value}', which means no "
+                    "result should exist. Contradictory result."
+                )
 
         # Categorical and continuous summaries must not be mixed for the
         # same quantity: a mean of land-cover class codes is meaningless.
@@ -786,6 +819,7 @@ class MetricResult:
         """
         if provenance is not None:
             provenance.quality_level = QualityLevel.UNAVAILABLE
+            provenance.quality_state = QualityState.UNAVAILABLE
         return cls(
             metric_key=metric_key,
             display_name=display_name,
@@ -796,6 +830,7 @@ class MetricResult:
             provenance=provenance,
             reason=reason,
             message=message,
+            quality_state=QualityState.UNAVAILABLE,
         )
 
     @classmethod
@@ -811,6 +846,7 @@ class MetricResult:
         """Build a result meaning 'we tried, but there was not enough data'."""
         if provenance is not None:
             provenance.quality_level = QualityLevel.INSUFFICIENT
+            provenance.quality_state = QualityState.UNAVAILABLE
         return cls(
             metric_key=metric_key,
             display_name=display_name,
@@ -821,6 +857,7 @@ class MetricResult:
             provenance=provenance,
             reason=NOT_AVAILABLE_REASON_INSUFFICIENT,
             message=message,
+            quality_state=QualityState.UNAVAILABLE,
         )
 
     @classmethod
@@ -846,6 +883,7 @@ class MetricResult:
             unit=unit,
             reason=NOT_AVAILABLE_REASON_ERROR,
             message=message,
+            quality_state=QualityState.UNAVAILABLE,
         )
 
     # -- derived properties ------------------------------------------------
@@ -859,18 +897,20 @@ class MetricResult:
         value. Requiring ``value`` alone would silently mark every
         land-cover result unusable.
         """
-        # ``bool(...)`` rather than a bare truthiness test: ``and`` returns
-        # the operand, so a histogram with no entries would otherwise make
-        # this property return an empty list instead of ``False``.
         has_payload = self.value is not None or bool(
             self.class_histogram is not None
             and self.class_histogram.entries
+        )
+        is_usable_quality = (
+            (self.provenance is not None and self.provenance.quality_level.is_usable)
+            or (self.provenance is not None and self.provenance.quality_state.is_usable_data)
+            or (self.quality_state is not None and self.quality_state.is_usable_data)
         )
         return bool(
             self.status in (STATUS_OK, STATUS_PARTIAL)
             and has_payload
             and self.provenance is not None
-            and self.provenance.quality_level.is_usable
+            and is_usable_quality
         )
 
     @property
@@ -908,6 +948,7 @@ class MetricResult:
                 dict(self.band_means) if self.band_means else None
             ),
             "provenance": self.provenance.to_dict() if self.provenance else None,
+            "quality_state": self.quality_state.value if self.quality_state else None,
             "reason": self.reason,
             "message": self.message,
             "warnings": list(self.warnings),

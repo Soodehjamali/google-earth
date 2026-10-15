@@ -163,6 +163,12 @@ class ProvenanceResponse(BaseModel):
     aggregation_method: str = ""
     measurement_basis: str = ""
     quality_level: str = ""
+    quality_state: Optional[str] = None
+    native_resolution_m: Optional[float] = None
+    support_description: Optional[str] = None
+    support_description_fa: Optional[str] = None
+    cell_elevation_m: Optional[float] = None
+    site_elevation_m: Optional[float] = None
     temporal_kind: str = ""
     requested_start: Optional[str] = None
     requested_end: Optional[str] = None
@@ -187,6 +193,23 @@ class ProvenanceResponse(BaseModel):
     support_native_resolution_m: Optional[float] = None
     original_geometry: Optional[Dict[str, Any]] = None
     support_inputs: Optional[List[Dict[str, Any]]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_provenance(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "native_resolution_m" not in data or data["native_resolution_m"] is None:
+                from app.services.agriculture.support import parse_native_resolution_m
+                data["native_resolution_m"] = parse_native_resolution_m(data.get("spatial_resolution"))
+            if "quality_state" not in data or data["quality_state"] is None:
+                from app.services.agriculture.quality_gating import normalize_legacy_quality_state
+                data["quality_state"] = normalize_legacy_quality_state(data, default_resolution_m=data.get("native_resolution_m"))
+            if "support_description_fa" not in data or not data.get("support_description_fa"):
+                from app.services.agriculture.quality_gating import describe_support_fa
+                res_m = data.get("native_resolution_m") or data.get("support_native_resolution_m")
+                if res_m:
+                    data["support_description_fa"] = describe_support_fa(res_m)
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -227,12 +250,19 @@ class EvidenceItemResponse(BaseModel):
     unit: str
     status: str
     quality: str
+    quality_state: Optional[str] = None
+    native_resolution_m: Optional[float] = None
+    support_description: Optional[str] = None
+    support_description_fa: Optional[str] = None
+    cell_elevation_m: Optional[float] = None
+    site_elevation_m: Optional[float] = None
     source_dataset: Optional[str] = None
     display_name: str = ""
     temporal_start: Optional[str] = None
     temporal_end: Optional[str] = None
     is_usable: bool = False
     is_proxy: bool = False
+    is_coarse_context: bool = False
     provenance: Optional[ProvenanceResponse] = None
     stats: Optional[Dict[str, Any]] = None
     class_histogram: Optional[Dict[str, Any]] = None
@@ -241,6 +271,25 @@ class EvidenceItemResponse(BaseModel):
     #: it. ``None`` for every item that carries a value.
     unavailable_reason: Optional[str] = None
     unavailable_message: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_evidence_item(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "quality_state" not in data or data["quality_state"] is None:
+                from app.services.agriculture.quality_gating import normalize_legacy_quality_state
+                data["quality_state"] = normalize_legacy_quality_state(data)
+            q_state = data.get("quality_state")
+            if q_state == "coarse_context":
+                data["is_coarse_context"] = True
+                if data.get("value") is not None and data.get("status") in ("ok", "partial", "observed", "modelled", "derived"):
+                    data["is_usable"] = True
+            if "support_description_fa" not in data or not data.get("support_description_fa"):
+                from app.services.agriculture.quality_gating import describe_support_fa
+                res_m = data.get("native_resolution_m")
+                if res_m:
+                    data["support_description_fa"] = describe_support_fa(res_m)
+        return data
 
 
 class EvidenceConflictResponse(BaseModel):

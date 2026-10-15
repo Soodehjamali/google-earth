@@ -272,6 +272,8 @@ export interface SynthesisOnlyRequest {
   spatial_context?: string | null;
 }
 
+export type QualityState = 'valid' | 'coarse_context' | 'unavailable';
+
 export interface ProvenanceResponse {
   source_dataset_id?: string | null;
   source_dataset_name?: string | null;
@@ -283,6 +285,12 @@ export interface ProvenanceResponse {
   aggregation_method: string;
   measurement_basis: string;
   quality_level: string;
+  quality_state?: QualityState | null;
+  native_resolution_m?: number | null;
+  support_description?: string | null;
+  support_description_fa?: string | null;
+  cell_elevation_m?: number | null;
+  site_elevation_m?: number | null;
   temporal_kind: string;
   requested_start?: string | null;
   requested_end?: string | null;
@@ -359,12 +367,19 @@ export interface EvidenceItemResponse {
   unit: string;
   status: string;
   quality: string;
+  quality_state?: QualityState | null;
+  native_resolution_m?: number | null;
+  support_description?: string | null;
+  support_description_fa?: string | null;
+  cell_elevation_m?: number | null;
+  site_elevation_m?: number | null;
   source_dataset?: string | null;
   display_name: string;
   temporal_start?: string | null;
   temporal_end?: string | null;
   is_usable: boolean;
   is_proxy: boolean;
+  is_coarse_context?: boolean;
   provenance?: ProvenanceResponse | null;
   stats?: SpatialStatsDTO | null;
   class_histogram?: ClassHistogramDTO | null;

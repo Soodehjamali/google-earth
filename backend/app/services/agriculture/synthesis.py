@@ -69,6 +69,7 @@ from app.services.agriculture.evidence import (
     SufficiencyLevel,
 )
 from app.services.agriculture.types import QualityLevel
+from app.services.agriculture.quality_gating import QualityState
 from app.services.agriculture.regime import (
     RegimeAssessment,
     VegetationRegime,
@@ -489,6 +490,13 @@ def _evaluate_rule(
     sufficiency = SufficiencyLevel.INSUFFICIENT
     if evidence.sufficiency is not None:
         sufficiency = evidence.sufficiency.level
+
+    # Hard invariant (Phase 2): coarse_context cannot raise sufficiency to
+    # SUFFICIENT (Level A) for field-level statements (rules outside CLIMATE).
+    if rule.domain != SynthesisDomain.CLIMATE:
+        all_coarse = all(getattr(i, "is_coarse_context", False) for i in items)
+        if all_coarse and sufficiency == SufficiencyLevel.SUFFICIENT:
+            sufficiency = SufficiencyLevel.LIMITED
 
     # Collect conflicts involving this rule's evidence
     relevant_conflicts = [

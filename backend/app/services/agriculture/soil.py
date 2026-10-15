@@ -251,7 +251,7 @@ class _SmapSurfaceMetric(Metric):
             image_count=max(image_count, 1),
             coverage_percent=stats.coverage_percent,
             valid_pixel_count=stats.valid_pixel_count,
-            thresholds=MODIS_THRESHOLDS,
+            thresholds=REANALYSIS_THRESHOLDS,
         )
 
         provenance = self.build_provenance(
@@ -285,7 +285,7 @@ class _SmapSurfaceMetric(Metric):
                 provenance=provenance,
             )
 
-        if not stats.has_values or quality is QualityLevel.INSUFFICIENT:
+        if not stats.has_values:
             return MetricResult.insufficient(
                 metric_key=self.key,
                 display_name=self.display_name,

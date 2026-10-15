@@ -52,7 +52,8 @@ export function shouldRenderKpi(
 export type KpiTone = 'good' | 'warning' | 'danger' | 'neutral';
 
 /** Map backend quality strings to the existing KPICard tones. */
-export function qualityToKpiStatus(quality: unknown): KpiTone {
+export function qualityToKpiStatus(quality: unknown, qualityState?: unknown): KpiTone {
+  if (qualityState === 'coarse_context') return 'neutral';
   if (quality === 'good' || quality === 'excellent') return 'good';
   if (quality === 'moderate') return 'warning';
   if (quality === 'poor' || quality === 'insufficient' || quality === 'unavailable') {
