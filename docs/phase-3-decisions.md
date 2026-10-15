@@ -61,3 +61,29 @@ This document records architectural, agronomic, and operational decisions made d
 - **Decision:** NOAA GFS provides 1-hourly output for hours 0–120 and 3-hourly output for hours 120–384. Every timestep explicitly carries boolean `is_interpolated`. The overall response flags `native_spatial_resolution_m: 27800` and `quality_state: coarse_context`.
 - **Why:** Adheres to the core project mandate of honest resolution and provenance disclosure.
 
+---
+
+## Task 3.2: Cold-Air-Pooling Index Decisions
+
+### 3.2.1 Heuristic Proxy Framing vs. Physical CFD
+- **Decision:** The cold-air-pooling metric is explicitly formulated and documented as a **topography-derived heuristic proxy** (`pooling_risk_proxy`), NOT a microclimate CFD or numerical atmospheric boundary layer simulation. All schemas, docstrings, UI labels, and test suites strictly enforce this naming convention and include explanatory Persian disclaimers (`POOLING_DISCLAIMER_FA`).
+- **Why:** Scientific honesty and legal compliance: satellite DEM-derived derivatives reflect geometric vulnerability to cold air drainage and accumulation, not dynamic atmospheric micrometeorology.
+
+### 3.2.2 Topographic Components & Basin Confinement
+- **Decision:** Computed from NASADEM 30m (`NASA/NASADEM_HGT/001`) with four weighted normalized components:
+  1. Local relief confinement & height above floor ($w_1 = 0.35$): $f_{\text{floor}} = \text{confinement} \cdot \max(0, 1 - (z - z_{\min}) / 50\,\text{m})$, where $\text{confinement} = \min(1.0, (z_{\max} - z_{\min}) / 50\,\text{m})$. Modulating by local relief ensures an open, unconfined flat plain does not falsely register as an enclosed deep valley floor.
+  2. Micro-scale TPI 300m ($w_2 = 0.25$): $f_{\text{tpi\_300}} = \text{clip}(0.5 - (z - \bar{z}_{300}) / 30\,\text{m}, 0, 1)$.
+  3. Meso-scale TPI 1000m ($w_3 = 0.25$): $f_{\text{tpi\_1000}} = \text{clip}(0.5 - (z - \bar{z}_{1000}) / 60\,\text{m}, 0, 1)$.
+  4. Slope flatness ($w_4 = 0.15$): $f_{\text{slope}} = \max(0, 1 - \theta / 15^\circ)$ (slopes $> 15^\circ$ drain cold air rapidly, impeding stagnation).
+- **Why:** Accurately distinguishes concavities, valleys, plains, and ridges while obeying strict physical and mathematical properties:
+  - Synthetic Bowl: ~0.98 (severe pooling susceptibility)
+  - Flat table-land: ~0.40 (neutral baseline)
+  - Synthetic Ridge / Peak: ~0.17 (minimal pooling susceptibility)
+  - Monotonicity: Deeper topographic bowls strictly increase the proxy.
+  - Elevation Invariance: Any constant offset $z \to z + C$ produces bitwise identical index grids.
+
+### 3.2.3 Signed Slippy Map Raster Integration
+- **Decision:** Integrated with `tile_auth.generate_signed_layer_token` and `cache_service`. Generates HMAC-signed layer tokens bound to metric `pooling_risk_proxy`, bounding box, and 7200s TTL, serving through `/api/v1/agriculture/tiles/{layer_token}/{z}/{x}/{y}.png` with color ramp `["#f7fcf0", "#bae4bc", "#7bccc4", "#43a2ca", "#0868ac"]`.
+- **Why:** Seamless integration with frontend map viewers without exposing Earth Engine URLs or credentials.
+
+
