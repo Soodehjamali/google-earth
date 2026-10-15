@@ -24,7 +24,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
@@ -150,6 +150,15 @@ def _serialize_provenance(prov: Optional[Provenance]) -> Optional[ProvenanceResp
         limitations=list(prov.limitations),
         caveats=list(prov.caveats),
         citation=prov.citation,
+        quality_state=prov.quality_state.value if hasattr(prov.quality_state, "value") else str(prov.quality_state) if prov.quality_state else None,
+        native_resolution_m=prov.native_resolution_m,
+        support_description=prov.support_description,
+        cell_elevation_m=prov.cell_elevation_m,
+        site_elevation_m=prov.site_elevation_m,
+        raw_value=prov.raw_value,
+        corrected_value=prov.corrected_value,
+        delta_c=prov.delta_c,
+        uncertainty_c=prov.uncertainty_c,
         geometry_type=prov.geometry_type,
         support_radius_m=prov.support_radius_m,
         support_area_sq_m=prov.support_area_sq_m,
@@ -184,6 +193,12 @@ def _serialize_evidence_item(item: EvidenceItem) -> EvidenceItemResponse:
         else None,
         is_usable=item.is_usable,
         is_proxy=item.is_proxy,
+        quality_state=item.provenance.quality_state.value if item.provenance and hasattr(item.provenance.quality_state, "value") else str(item.provenance.quality_state) if item.provenance and item.provenance.quality_state else None,
+        native_resolution_m=item.provenance.native_resolution_m if item.provenance else None,
+        raw_value=item.provenance.raw_value if item.provenance else None,
+        corrected_value=item.provenance.corrected_value if item.provenance else None,
+        delta_c=item.provenance.delta_c if item.provenance else None,
+        uncertainty_c=item.provenance.uncertainty_c if item.provenance else None,
         provenance=_serialize_provenance(item.provenance),
         stats=dict(item.stats) if item.stats else None,
         class_histogram=(
@@ -1207,6 +1222,12 @@ async def get_spatial_layer(
     return generate_spatial_layer(data)
 
 
+# Concurrency cap & rate-limiting state for hardened tile proxy (P-CLOSEOUT)
+_tile_concurrency_semaphore = asyncio.Semaphore(10)
+_tile_ip_requests: Dict[str, List[float]] = {}
+_MAX_TILE_REQUESTS_PER_MINUTE = 180
+
+
 @router.get(
     "/tiles/{layer_token}/{z}/{x}/{y}.png",
     tags=["Agriculture"],
@@ -1216,26 +1237,61 @@ async def get_proxied_tile(
     z: int,
     x: int,
     y: int,
+    request: Request,
 ):
-    """Proxy and cache Earth Engine map tiles.
+    """Proxy and cache Earth Engine map tiles with cryptographic integrity and security hardening.
 
-    Ensures the client browser never contacts Google/Earth Engine or external tile servers directly.
-    Responses are cached for high performance and resilience.
+    Ensures the client browser never contacts Google/Earth Engine directly.
+    - Validates cryptographic HMAC signature, date range, layer, and polygon bbox binding.
+    - Enforces zoom restrictions [8, 20] and spatial bounds (returns 404 outside).
+    - Caps concurrent upstream GEE fetches via Semaphore(10).
+    - Enforces per-client IP rate limiting.
+    - Emits Cache-Control: private headers.
+    - Never logs tokens or sensitive parameters.
     """
     from fastapi.responses import Response
     import httpx
+    from app.services.agriculture.tile_auth import verify_layer_token
     from app.services.cache_service import cache_service
 
-    tile_cache_key = f"tile_img:{layer_token}:{z}:{x}:{y}"
+    # 1. Rate limiting per client IP
+    client_ip = request.client.host if request.client and request.client.host else "unknown"
+    now = time.time()
+    history = [t for t in _tile_ip_requests.get(client_ip, []) if now - t < 60.0]
+    if len(history) >= _MAX_TILE_REQUESTS_PER_MINUTE:
+        raise AppException(
+            message="Tile request rate limit exceeded",
+            code="ERR_TILE_RATE_LIMIT",
+            reason="Too many tile requests per minute from this IP address.",
+            status_code=429,
+        )
+    history.append(now)
+    _tile_ip_requests[client_ip] = history
+
+    # 2. Cryptographic token verification & slippy bounds check
+    is_valid, status_code, err_code, reason, token_id, payload = verify_layer_token(
+        layer_token, z, x, y
+    )
+    if not is_valid:
+        raise AppException(
+            message=reason,
+            code=err_code,
+            reason=reason,
+            status_code=status_code,
+        )
+
+    # 3. Check pre-cached tile by token_id and tile coordinates
+    tile_cache_key = f"tile_img:{token_id}:{z}:{x}:{y}"
     cached_bytes = cache_service.get(tile_cache_key)
     if cached_bytes and isinstance(cached_bytes, (bytes, bytearray)):
         return Response(
             content=bytes(cached_bytes),
             media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={"Cache-Control": "private, max-age=86400"},
         )
 
-    url_template = cache_service.get(f"tile_template:{layer_token}")
+    # 4. Lookup upstream tile template
+    url_template = cache_service.get(f"tile_template:{token_id}")
     if not url_template or not isinstance(url_template, str):
         raise AppException(
             message="Map tile layer session expired or not found",
@@ -1246,23 +1302,37 @@ async def get_proxied_tile(
 
     target_url = url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
 
+    # 5. Fetch from upstream with concurrency cap (Semaphore 10) & 10s timeout
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(target_url)
-            if resp.status_code == 200:
-                cache_service.set(tile_cache_key, resp.content, ttl=86400)
-                return Response(
-                    content=resp.content,
-                    media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=86400"},
-                )
-            elif resp.status_code == 404:
-                return Response(status_code=404, content=b"")
-            else:
-                logger.warning(f"Tile proxy upstream error: {resp.status_code} for {target_url}")
-                return Response(status_code=resp.status_code, content=resp.content)
+        async with _tile_concurrency_semaphore:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(target_url)
+                if resp.status_code == 200:
+                    cache_service.set(tile_cache_key, resp.content, ttl=86400)
+                    return Response(
+                        content=resp.content,
+                        media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=86400"},
+                    )
+                elif resp.status_code == 404:
+                    return Response(status_code=404, content=b"")
+                else:
+                    logger.warning(
+                        "Tile proxy upstream error %s for z=%s x=%s y=%s",
+                        resp.status_code,
+                        z,
+                        x,
+                        y,
+                    )
+                    return Response(status_code=resp.status_code, content=resp.content)
     except Exception as exc:
-        logger.warning(f"Tile proxy fetch failed for {target_url}: {exc}")
+        logger.warning(
+            "Tile proxy fetch failed for z=%s x=%s y=%s: %s",
+            z,
+            x,
+            y,
+            type(exc).__name__,
+        )
         return Response(status_code=502, content=b"")
 
 

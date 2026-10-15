@@ -542,3 +542,45 @@ def test_to_dict_round_trips_through_the_api_contract_models():
     assert len(model.points) == 3
     assert model.points[0].value == pytest.approx(0.50)
     assert model.step == "calendar_month"
+
+
+def test_fake_profile_call_order_preservation_on_nonzero_scenes():
+    """Verify that FakeProfileEE._peek_scenes does NOT pop or consume outcomes
+    when scenes > 0, ensuring that call order between size() and reduceRegion()
+    is strictly preserved and no out-of-order execution is masked."""
+    outcomes = [
+        {"scenes": 5, "mean": 0.45},
+        {"scenes": 8, "mean": 0.52},
+        {"scenes": 0, "mean": None},
+        {"scenes": 4, "mean": 0.60},
+    ]
+    fake = FakeProfileEE(outcomes)
+
+    # 1. Non-zero scene window 1: peek does not pop
+    assert fake._peek_scenes() == 5
+    assert len(fake._queue) == 4
+    assert fake._peek_scenes() == 5  # repeated call gives same result
+    assert len(fake._queue) == 4
+    # reduceRegion pops the stats
+    stats1 = fake._pop_stats()
+    assert stats1["mean"] == pytest.approx(0.45)
+    assert len(fake._queue) == 3
+
+    # 2. Non-zero scene window 2: peek does not pop
+    assert fake._peek_scenes() == 8
+    assert len(fake._queue) == 3
+    stats2 = fake._pop_stats()
+    assert stats2["mean"] == pytest.approx(0.52)
+    assert len(fake._queue) == 2
+
+    # 3. Zero-scene window 3: peek pops automatically because reduceRegion is skipped
+    assert fake._peek_scenes() == 0
+    assert len(fake._queue) == 1
+
+    # 4. Non-zero scene window 4: peek does not pop
+    assert fake._peek_scenes() == 4
+    assert len(fake._queue) == 1
+    stats4 = fake._pop_stats()
+    assert stats4["mean"] == pytest.approx(0.60)
+    assert len(fake._queue) == 0
+

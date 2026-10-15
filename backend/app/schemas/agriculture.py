@@ -169,6 +169,10 @@ class ProvenanceResponse(BaseModel):
     support_description_fa: Optional[str] = None
     cell_elevation_m: Optional[float] = None
     site_elevation_m: Optional[float] = None
+    raw_value: Optional[float] = None
+    corrected_value: Optional[float] = None
+    delta_c: Optional[float] = None
+    uncertainty_c: Optional[float] = None
     temporal_kind: str = ""
     requested_start: Optional[str] = None
     requested_end: Optional[str] = None
@@ -256,6 +260,10 @@ class EvidenceItemResponse(BaseModel):
     support_description_fa: Optional[str] = None
     cell_elevation_m: Optional[float] = None
     site_elevation_m: Optional[float] = None
+    raw_value: Optional[float] = None
+    corrected_value: Optional[float] = None
+    delta_c: Optional[float] = None
+    uncertainty_c: Optional[float] = None
     source_dataset: Optional[str] = None
     display_name: str = ""
     temporal_start: Optional[str] = None
@@ -289,6 +297,15 @@ class EvidenceItemResponse(BaseModel):
                 res_m = data.get("native_resolution_m")
                 if res_m:
                     data["support_description_fa"] = describe_support_fa(res_m)
+            prov = data.get("provenance")
+            if isinstance(prov, dict):
+                for k in ("raw_value", "corrected_value", "delta_c", "uncertainty_c"):
+                    if data.get(k) is None and prov.get(k) is not None:
+                        data[k] = prov.get(k)
+            elif hasattr(prov, "delta_c"):
+                for k in ("raw_value", "corrected_value", "delta_c", "uncertainty_c"):
+                    if data.get(k) is None and getattr(prov, k, None) is not None:
+                        data[k] = getattr(prov, k)
         return data
 
 

@@ -787,6 +787,7 @@ export default function MapView({
           type: 'raster',
           tiles: [rasterTileUrl],
           tileSize: 256,
+          attribution: 'Contains modified Copernicus Sentinel data',
         })
 
         const beforeId = current.getLayer('drawn-polygon-fill')
@@ -1853,6 +1854,35 @@ export default function MapView({
           </div>
         </div>
       )}
+
+      {/* Map Layer Attributions */}
+      <div
+        data-testid="map-attribution-bar"
+        style={{
+          position: 'absolute',
+          bottom: 4,
+          left: 4,
+          zIndex: 10,
+          background: 'rgba(255, 255, 255, 0.85)',
+          padding: '2px 8px',
+          borderRadius: 4,
+          fontSize: '0.68rem',
+          color: '#475569',
+          direction: 'ltr',
+          pointerEvents: 'none',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        }}
+      >
+        <span>© Google Satellite / Hybrid</span>
+        <span style={{ margin: '0 4px' }}>|</span>
+        <span>© OpenStreetMap contributors</span>
+        {rasterTileUrl && (
+          <>
+            <span style={{ margin: '0 4px' }}>|</span>
+            <span>Contains modified Copernicus Sentinel data</span>
+          </>
+        )}
+      </div>
     </div>
   )
 }

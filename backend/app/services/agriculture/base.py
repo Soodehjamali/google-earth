@@ -422,6 +422,10 @@ class Metric(ABC):
         support_description: Optional[str] = None,
         cell_elevation_m: Optional[float] = None,
         site_elevation_m: Optional[float] = None,
+        raw_value: Optional[float] = None,
+        corrected_value: Optional[float] = None,
+        delta_c: Optional[float] = None,
+        uncertainty_c: Optional[float] = None,
     ) -> Provenance:
         """Assemble a provenance record with the metric's own limitations.
 
@@ -491,6 +495,10 @@ class Metric(ABC):
             support_description=supp_desc,
             cell_elevation_m=cell_elevation_m,
             site_elevation_m=site_elevation_m,
+            raw_value=raw_value,
+            corrected_value=corrected_value,
+            delta_c=delta_c,
+            uncertainty_c=uncertainty_c,
             requested_start=context.start_date,
             requested_end=context.end_date,
             product_date=product_date,

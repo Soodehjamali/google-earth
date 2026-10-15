@@ -337,6 +337,10 @@ class _ERA5Metric(Metric):
             extra_limitations=tuple(extra_lim),
             cell_elevation_m=corr_result.z_cell_m if corr_result else z_cell,
             site_elevation_m=corr_result.z_site_m if corr_result else z_site,
+            raw_value=corr_result.raw_value if corr_result else None,
+            corrected_value=corr_result.corrected_value if corr_result else None,
+            delta_c=corr_result.delta_c if corr_result else None,
+            uncertainty_c=corr_result.uncertainty_c if corr_result else None,
         )
 
         if day_count == 0:

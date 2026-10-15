@@ -360,23 +360,63 @@ def test_tile_proxy_endpoint_and_cache():
     """Verify the /api/v1/agriculture/tiles/ proxy returns cached tiles and protects clients."""
     from starlette.testclient import TestClient
     from app.main import app
+    from app.services.agriculture.tile_auth import generate_signed_layer_token
     from app.services.cache_service import cache_service
 
     client = TestClient(app)
-    layer_token = "testtoken1234567"
-    cache_service.set(f"tile_template:{layer_token}", "https://mock.earthengine.google.com/{z}/{x}/{y}")
+    # Coordinate: lon=53.688, lat=32.4279 -> slippy tile at z=14 is x=10635, y=6630
+    bbox = [53.65, 32.40, 53.72, 32.45]
+    token_id = "testlayerid12345"
+    signed_token = generate_signed_layer_token(
+        metric="ndvi",
+        start_date="2025-06-01",
+        end_date="2025-09-01",
+        bbox=bbox,
+        token_id=token_id,
+        ttl_seconds=3600,
+    )
+    cache_service.set(f"tile_template:{token_id}", "https://mock.earthengine.google.com/{z}/{x}/{y}")
 
-    # Case 1: Pre-cached tile returns directly without network call
-    cache_service.set(f"tile_img:{layer_token}:14:10:20", b"fake_png_bytes")
-    resp = client.get(f"/api/v1/agriculture/tiles/{layer_token}/14/10/20.png")
+    # Case 1: Pre-cached tile returns directly with private cache-control
+    cache_service.set(f"tile_img:{token_id}:14:10635:6630", b"fake_png_bytes")
+    resp = client.get(f"/api/v1/agriculture/tiles/{signed_token}/14/10635/6630.png")
     assert resp.status_code == 200
     assert resp.content == b"fake_png_bytes"
     assert "image/png" in resp.headers["content-type"]
-    assert "public, max-age=86400" in resp.headers["cache-control"]
+    assert "private" in resp.headers["cache-control"]
 
-    # Case 2: Unknown or expired layer token returns 404
-    resp_expired = client.get("/api/v1/agriculture/tiles/nonexistent_layer/14/10/20.png")
-    assert resp_expired.status_code == 404
-    assert resp_expired.json()["code"] == "ERR_TILE_LAYER_EXPIRED"
+    # Case 2: Forged token signature returns 403 Forbidden
+    forged_token = signed_token[:-4] + "dead"
+    resp_forged = client.get(f"/api/v1/agriculture/tiles/{forged_token}/14/10635/6630.png")
+    assert resp_forged.status_code == 403
+    assert resp_forged.json()["code"] == "ERR_TILE_FORBIDDEN"
+
+    # Case 3: Expired token returns 403 Forbidden
+    expired_token = generate_signed_layer_token(
+        metric="ndvi",
+        start_date="2025-06-01",
+        end_date="2025-09-01",
+        bbox=bbox,
+        token_id="expired_tid_123",
+        ttl_seconds=-10,  # expired 10 seconds ago
+    )
+    resp_expired = client.get(f"/api/v1/agriculture/tiles/{expired_token}/14/10635/6630.png")
+    assert resp_expired.status_code == 403
+    assert resp_expired.json()["code"] == "ERR_TILE_EXPIRED"
+
+    # Case 4: Zoom level out of bounds (< 8 or > 20) returns 404
+    resp_z7 = client.get(f"/api/v1/agriculture/tiles/{signed_token}/7/80/50.png")
+    assert resp_z7.status_code == 404
+    assert resp_z7.json()["code"] == "ERR_TILE_OUT_OF_BOUNDS"
+
+    resp_z21 = client.get(f"/api/v1/agriculture/tiles/{signed_token}/21/1000/1000.png")
+    assert resp_z21.status_code == 404
+    assert resp_z21.json()["code"] == "ERR_TILE_OUT_OF_BOUNDS"
+
+    # Case 5: Spatial bounding box out of bounds returns 404
+    # Tile at z=14 x=500 y=500 is in the Atlantic/Europe, far outside Ardakan bbox [53.65, 32.40, ...]
+    resp_oob = client.get(f"/api/v1/agriculture/tiles/{signed_token}/14/500/500.png")
+    assert resp_oob.status_code == 404
+    assert resp_oob.json()["code"] == "ERR_TILE_OUT_OF_BOUNDS"
 
 

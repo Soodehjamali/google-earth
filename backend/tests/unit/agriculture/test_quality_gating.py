@@ -619,3 +619,112 @@ def test_agricultural_analysis_response_legacy_coverage_auto_derivation():
     assert resp.coverage.valid_ratio == pytest.approx(round(1 / 118, 4), abs=0.0001)
 
 
+def test_local_day_20_30_utc_boundary_exact():
+    """Verify exact 20:30 UTC boundary partitioning into Asia/Tehran local calendar days."""
+    from datetime import datetime, timezone
+    from app.services.agriculture.quality_gating import aggregate_hourly_to_local_days
+
+    # In Asia/Tehran (+03:30):
+    # 2024-05-10 20:29:59 UTC -> 2024-05-10 23:59:59 (belongs to May 10 local)
+    # 2024-05-10 20:30:00 UTC -> 2024-05-11 00:00:00 (belongs to May 11 local)
+    records = [
+        (datetime(2024, 5, 10, 20, 29, 59, tzinfo=timezone.utc), 19.5),
+        (datetime(2024, 5, 10, 20, 30, 0, tzinfo=timezone.utc), 17.2),
+    ]
+
+    grouped = aggregate_hourly_to_local_days(records, timezone_str="Asia/Tehran")
+    assert "2024-05-10" in grouped
+    assert "2024-05-11" in grouped
+
+    assert grouped["2024-05-10"]["min"] == 19.5
+    assert grouped["2024-05-10"]["count"] == 1
+
+    assert grouped["2024-05-11"]["min"] == 17.2
+    assert grouped["2024-05-11"]["count"] == 1
+
+
+def test_night_minimum_spanning_utc_midnight_local_assignment():
+    """Verify night minimum hours spanning UTC midnight land in the single local Tehran night."""
+    from datetime import datetime, timezone
+    from app.services.agriculture.quality_gating import aggregate_hourly_to_local_days
+
+    # Night of May 11 Tehran local: spans 22:00 UTC (01:30 Tehran) to 01:30 UTC (05:00 Tehran)
+    records = [
+        # 22:00 UTC on May 10 -> 01:30 Tehran May 11
+        (datetime(2024, 5, 10, 22, 0, tzinfo=timezone.utc), 12.0),
+        # 00:00 UTC on May 11 -> 03:30 Tehran May 11
+        (datetime(2024, 5, 11, 0, 0, tzinfo=timezone.utc), 10.5),
+        # 01:30 UTC on May 11 -> 05:00 Tehran May 11
+        (datetime(2024, 5, 11, 1, 30, tzinfo=timezone.utc), 11.2),
+    ]
+
+    grouped = aggregate_hourly_to_local_days(records, timezone_str="Asia/Tehran")
+    # All three must land in "2024-05-11"
+    assert list(grouped.keys()) == ["2024-05-11"]
+    assert grouped["2024-05-11"]["min"] == 10.5
+    assert grouped["2024-05-11"]["count"] == 3
+
+
+def test_elevation_corrected_provenance_schema_and_coarse_safety():
+    """Verify raw_value, corrected_value, delta_c, uncertainty_c serialize cleanly and stay coarse_context."""
+    from app.services.agriculture.quality_gating import compute_coverage_summary
+
+    prov = Provenance(
+        source_dataset_id="ECMWF/ERA5_LAND/HOURLY",
+        source_dataset_name="ERA5-Land Hourly",
+        bands=["temperature_2m"],
+        formula="elevation corrected",
+        unit="°C",
+        spatial_resolution="11132 m",
+        temporal_resolution="hourly",
+        temporal_kind=TemporalKind.OBSERVATION,
+        aggregation_method="spatial mean",
+        measurement_basis=MeasurementBasis.MODELLED,
+        quality_level=QualityLevel.MODERATE,
+        quality_state=QualityState.COARSE_CONTEXT,
+        native_resolution_m=11132.0,
+        cell_elevation_m=950.0,
+        site_elevation_m=1200.0,
+        raw_value=25.0,
+        corrected_value=23.375,
+        delta_c=-1.625,
+        uncertainty_c=1.0,
+    )
+
+    item = EvidenceItem(
+        metric_key="temperature_mean",
+        value=23.375,
+        unit="°C",
+        status=EvidenceStatus.MODELLED,
+        temporal_start=None,
+        temporal_end=None,
+        quality_level=QualityLevel.MODERATE,
+        quality_state=QualityState.COARSE_CONTEXT,
+        provenance=prov,
+        source_dataset_id="ECMWF/ERA5_LAND/HOURLY",
+    )
+
+    bundle = EvidenceBundle(name="climate", items=[item])
+    cov = compute_coverage_summary(
+        evidence_bundles={"climate": bundle},
+        requested_domains=["climate"],
+    )
+
+    # Elevation-corrected temperature MUST remain coarse_context and NOT count as valid!
+    assert cov["valid"] == 0
+    assert cov["coarse_context"] == 1
+    assert cov["by_domain"]["climate"]["valid"] == 0
+    assert cov["by_domain"]["climate"]["coarse_context"] == 1
+
+    # Verify response serialization
+    from app.api.v1.agriculture import _serialize_evidence_item
+
+    resp_item = _serialize_evidence_item(item)
+    assert resp_item.raw_value == 25.0
+    assert resp_item.corrected_value == 23.375
+    assert resp_item.delta_c == -1.625
+    assert resp_item.uncertainty_c == 1.0
+    assert resp_item.provenance.raw_value == 25.0
+    assert resp_item.provenance.delta_c == -1.625
+
+

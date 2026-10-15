@@ -483,6 +483,10 @@ class Provenance:
     support_description: Optional[str] = None
     cell_elevation_m: Optional[float] = None
     site_elevation_m: Optional[float] = None
+    raw_value: Optional[float] = None
+    corrected_value: Optional[float] = None
+    delta_c: Optional[float] = None
+    uncertainty_c: Optional[float] = None
 
     #: What the source dataset's dates mean, carried through so a reader
     #: of a single result can tell whether ``date_start``/``date_end``

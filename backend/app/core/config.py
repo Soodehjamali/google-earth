@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # Cache
     CACHE_TTL: int = 3600
 
+    # Tile Proxy Security
+    TILE_SIGNING_SECRET: str = "agri_tile_secret_default_key_change_in_production"
+
     @property
     def is_development(self) -> bool:
         return self.APP_ENV == "development"

@@ -291,6 +291,10 @@ export interface ProvenanceResponse {
   support_description_fa?: string | null;
   cell_elevation_m?: number | null;
   site_elevation_m?: number | null;
+  raw_value?: number | null;
+  corrected_value?: number | null;
+  delta_c?: number | null;
+  uncertainty_c?: number | null;
   temporal_kind: string;
   requested_start?: string | null;
   requested_end?: string | null;
@@ -373,6 +377,10 @@ export interface EvidenceItemResponse {
   support_description_fa?: string | null;
   cell_elevation_m?: number | null;
   site_elevation_m?: number | null;
+  raw_value?: number | null;
+  corrected_value?: number | null;
+  delta_c?: number | null;
+  uncertainty_c?: number | null;
   source_dataset?: string | null;
   display_name: string;
   temporal_start?: string | null;

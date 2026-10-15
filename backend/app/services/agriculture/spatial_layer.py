@@ -26,6 +26,7 @@ from app.schemas.agriculture import (
     SpatialLayerResponse,
     SpatialMetricType,
 )
+from app.services.agriculture.tile_auth import generate_signed_layer_token
 from app.services.cache_service import cache_service
 from app.services.earth_engine import initialize_earth_engine
 
@@ -746,9 +747,17 @@ def generate_spatial_layer(request: SpatialLayerRequest) -> SpatialLayerResponse
         map_id = clipped.getMapId(vis_params)
         tile_url_template = map_id["tile_fetcher"].url_format
 
-        # Backend proxy layer token
-        layer_token = hashlib.sha256(tile_url_template.encode("utf-8")).hexdigest()[:16]
-        cache_service.set(f"tile_template:{layer_token}", tile_url_template, ttl=7200)
+        # Backend proxy layer token (HMAC-signed, bound to metric, date range, and bbox)
+        token_id = hashlib.sha256(tile_url_template.encode("utf-8")).hexdigest()[:16]
+        cache_service.set(f"tile_template:{token_id}", tile_url_template, ttl=7200)
+        layer_token = generate_signed_layer_token(
+            metric=metric_str,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            bbox=bounds,
+            token_id=token_id,
+            ttl_seconds=7200,
+        )
         proxied_tile_url_template = f"/api/v1/agriculture/tiles/{layer_token}/{{z}}/{{x}}/{{y}}.png"
 
         display_title = (
