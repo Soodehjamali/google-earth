@@ -32,6 +32,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
   height = 360,
 }) => {
   const chartData = useMemo(() => {
+    if (!points || !Array.isArray(points)) return [];
     return points.map((p) => {
       // Format local hour for x-axis
       const d = new Date(p.time_utc);
@@ -220,7 +221,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             <Area
               type="monotone"
               dataKey="tempRange"
-              name="باند عدم‌قطعیت پیش‌بینی (±σ)"
+              name="باند عدم‌قطعیت پیش‌بینی (دمای تصحیح‌شده ± عدم‌قطعیت)"
               fill="#bfdbfe"
               fillOpacity={0.3}
               stroke="none"
@@ -228,7 +229,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             <Line
               type="monotone"
               dataKey="temperature_max_c"
-              name="حد بالای باند (Tmax)"
+              name="حد بالای عدم‌قطعیت (+σ)"
               stroke="#93c5fd"
               strokeDasharray="3 3"
               strokeWidth={1}
@@ -237,7 +238,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             <Line
               type="monotone"
               dataKey="temperature_min_c"
-              name="حد پایین باند (Tmin)"
+              name="حد پایین عدم‌قطعیت (−σ)"
               stroke="#93c5fd"
               strokeDasharray="3 3"
               strokeWidth={1}

@@ -266,6 +266,27 @@ All responses from the frost assessment endpoint (`POST /api/v1/agriculture/fros
 7. Persian advisory & warning text — `thresholds_warning_fa`, `disclaimer_fa`, `stage_fa`, `crop_fa`, and `overall_risk_level_fa`.
 8. Unknown-stage fallback — When an empty, unknown, or unrecognized phenological stage is supplied, the system adopts the precautionary principle, selecting the most sensitive developmental stage (e.g., fruit set / `fruit_set` with $T_{c10} = -1.0^\circ\text{C}$ for pistachio) and appending a descriptive warning in Persian.
 
+---
+
+## Item C9 Decisions: UI Evidence & Responsive Verification
+
+### C9.1 Screenshot Artifacts (Saved Outside Repository)
+- Desktop Viewport (1280x1600): `C:\Users\Jamali\Desktop\google_ui_screenshots\frost_desktop_1280.png` (224 KB).
+- Mobile Viewport (390x2000): `C:\Users\Jamali\Desktop\google_ui_screenshots\frost_mobile_390.png` (303 KB).
+
+### C9.2 Visual & Semantic Audit
+1. **Unverified-Thresholds Banner:** Prominently rendered with warning icon and explicit notice:
+   `آستانه‌ها هنوز توسط کارشناس تأیید نشده‌اند (وضعیت: Placeholder)`.
+2. **Coarse-Context Badge:** Prominently discloses NWP resolution:
+   `تفکیک مکانی ~۲۸ کیلومتر (GFS) - پیش‌بینی منطقه‌ای با تصحیح تراز ارتفاع DEM`.
+3. **Timeline Shaded Band:** Fixed legend and tooltip labels in `FrostTimelineChart.tsx` to prevent confusion with climatological extremes:
+   - Area: `باند عدم‌قطعیت پیش‌بینی (دمای تصحیح‌شده ± عدم‌قطعیت)`
+   - Upper bound: `حد بالای عدم‌قطعیت (+σ)`
+   - Lower bound: `حد پایین عدم‌قطعیت (−σ)`
+4. **Mathematical Negative Numbers:** Sub-zero temperatures are rendered with mathematical minus (`U+2212`) wrapped in LTR isolation tags (`<FormattedNumber>` / `<span dir="ltr">`), preventing inverted minus glyphs in Persian RTL context.
+5. **Color Hierarchy:** Red (`#dc2626`, `#ef4444`) is strictly reserved for critical 90% threshold lines and severe warning alerts. Standard advisory levels use informational blue (`#3b82f6`, `#0891b2`) and amber (`#f59e0b`).
+
+
 
 
 

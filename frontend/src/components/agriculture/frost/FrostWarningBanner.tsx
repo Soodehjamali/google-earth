@@ -42,7 +42,7 @@ export const FrostWarningBanner: React.FC<FrostWarningBannerProps> = ({
         </div>
         <div>
           آستانه‌های دمایی حساسیت فنولوژیکی برای محصول <strong>{cropNameFa}</strong> در مرحله{' '}
-          <strong>{stageNameFa}</strong> هنوز توسط کارشناس محلی تأیید نشده‌اند (Placeholder).
+          <strong>{stageNameFa}</strong>: آستانه‌ها هنوز توسط کارشناس تأیید نشده‌اند (وضعیت: Placeholder).
           {t10 !== undefined && t90 !== undefined && (
             <span style={{ marginRight: '6px' }}>
               آستانه‌های فعلی: ۱۰٪ خسارت در{' '}

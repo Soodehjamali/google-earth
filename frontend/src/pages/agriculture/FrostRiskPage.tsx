@@ -64,8 +64,73 @@ export default function FrostRiskPage() {
         horizon_h: horizonH,
         use_live_gee: useLiveGee,
       };
-      const res = await agricultureApi.assessFrost(req);
-      setAssessment(res);
+      const res: any = await agricultureApi.assessFrost(req);
+      const normalized: FrostAssessmentResponse = {
+        crop: res.crop,
+        crop_name_fa: res.crop_fa || res.crop_name_fa || 'پسته',
+        phenological_stage: res.phenological_stage,
+        phenological_stage_fa: res.stage_fa || res.phenological_stage_fa || 'اوایل گلدهی',
+        thresholds_verified: Boolean(res.thresholds_verified),
+        critical_temp_10_c: res.t_critical_10_c ?? res.critical_temp_10_c,
+        critical_temp_90_c: res.t_critical_90_c ?? res.critical_temp_90_c,
+        cold_air_pooling_proxy: res.pooling_risk_proxy ?? res.cold_air_pooling_proxy,
+        overall_max_severity: (res.overall_risk_level || res.overall_max_severity || 'none') as any,
+        earliest_critical_night: res.nightly_risks?.find((n: any) => n.risk_level === 'warning' || n.risk_level === 'critical')?.night_date || null,
+        nights: (res.nightly_risks || res.nights || []).map((n: any) => ({
+          night_date: n.night_date,
+          window_start_utc: n.start_time_utc || n.window_start_utc,
+          window_end_utc: n.end_time_utc || n.window_end_utc,
+          window_start_local: n.night_display_fa || n.window_start_local || '',
+          window_end_local: n.end_time_utc || '',
+          min_temp_c: n.tmin_forecast_c ?? n.min_temp_c,
+          adjusted_min_temp_c: n.tmin_adjusted_c ?? n.adjusted_min_temp_c,
+          pooling_cooling_bump_c: n.pooling_cooling_bump_c ?? 0,
+          duration_below_t10_h: n.hours_below_tc10 ?? n.duration_below_t10_h ?? 0,
+          duration_below_t90_h: n.hours_below_tc90 ?? n.duration_below_t90_h ?? 0,
+          severity: n.risk_level || n.severity || 'none',
+          reasons: n.recommendations_fa || n.reasons || [],
+          recommendations_fa: n.recommendations_fa || [],
+        })),
+        forecast: res.forecast ? {
+          grid_elevation_m: res.forecast.cell_elevation_m ?? res.forecast.grid_elevation_m ?? 0,
+          site_elevation_m: res.forecast.site_elevation_m ?? 0,
+          elevation_delta_m: res.forecast.series?.[0]?.elevation_delta_m ?? res.forecast.elevation_delta_m ?? 0,
+          temperature_adjustment_c: res.forecast.series?.[0]?.elevation_correction_c ?? res.forecast.temperature_adjustment_c ?? 0,
+          dem_source: res.forecast.source ?? res.forecast.dem_source ?? 'NASADEM',
+          elevation_uncertainty_c: res.forecast.series?.[0]?.elevation_uncertainty_c ?? res.forecast.elevation_uncertainty_c ?? 0,
+          lead_time_uncertainty_table: res.forecast.lead_time_uncertainty_table || {},
+          points: (res.forecast.series || res.forecast.points || []).map((s: any) => ({
+            time_utc: s.timestamp_utc || s.time_utc,
+            lead_time_h: s.lead_hours ?? s.lead_time_h,
+            raw_temperature_c: s.temperature_2m_c_raw ?? s.raw_temperature_c,
+            corrected_temperature_c: s.temperature_2m_c ?? s.corrected_temperature_c,
+            uncertainty_c: s.total_uncertainty_c ?? s.uncertainty_c,
+            temperature_min_c: s.temperature_min_c,
+            temperature_max_c: s.temperature_max_c,
+            dewpoint_2m_c: s.dewpoint_2m_c,
+            relative_humidity_percent: s.relative_humidity_percent,
+            wind_speed_10m_mps: s.wind_speed_10m_mps,
+            total_cloud_cover_percent: s.total_cloud_cover_percent,
+            is_interpolated: s.is_interpolated,
+          })),
+          native_spatial_resolution_m: res.forecast.native_spatial_resolution_m,
+          quality_state: res.forecast.quality_state,
+        } : undefined,
+        cold_air_pooling: res.cold_air_pooling ? {
+          pooling_risk_proxy: res.cold_air_pooling.mean_pooling_risk_proxy ?? res.cold_air_pooling.pooling_risk_proxy,
+          risk_label: res.cold_air_pooling.risk_level || res.cold_air_pooling.risk_label || 'neutral',
+          risk_label_fa: res.cold_air_pooling.risk_level_fa || res.cold_air_pooling.risk_label_fa || 'خنثی',
+          site_elevation_m: res.cold_air_pooling.site_elevation_m ?? 0,
+          min_elevation_m: res.cold_air_pooling.min_elevation_m ?? 0,
+          max_elevation_m: res.cold_air_pooling.max_elevation_m ?? 0,
+          relief_m: res.cold_air_pooling.relief_m ?? 0,
+          mean_slope_deg: res.cold_air_pooling.mean_slope_deg ?? 0,
+          disclaimer_fa: res.cold_air_pooling.disclaimer_fa || '',
+          tile_url: res.cold_air_pooling.tile_url,
+          color_ramp: res.cold_air_pooling.color_ramp,
+        } : undefined,
+      };
+      setAssessment(normalized);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'خطا در اجرای ارزیابی ریسک سرمازدگی');
     } finally {
