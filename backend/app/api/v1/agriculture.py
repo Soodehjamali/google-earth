@@ -2037,11 +2037,11 @@ async def evaluate_alerts_endpoint(
 
         current_weight = risk_hierarchy.get(target_night.risk_level, 0)
 
-        # Idempotency check: find maximum category previously dispatched for (orchard_id, night_date)
+        # Idempotency check: find maximum category previously dispatched for this rule (alert_rule_id, night_date)
         prev_stmt = (
             select(NotificationLog)
             .where(
-                NotificationLog.orchard_id == orchard.id,
+                NotificationLog.alert_rule_id == rule.id,
                 NotificationLog.status.in_(["sent", "dry_run"]),
             )
         )
@@ -2056,9 +2056,10 @@ async def evaluate_alerts_endpoint(
                 prev_max_weight = max(prev_max_weight, risk_hierarchy.get(p_lvl, 0))
 
         if current_weight <= prev_max_weight:
-            # Already alerted at this or higher severity for this night -> do not duplicate!
+            # Already alerted at this or higher severity for this rule and night -> do not duplicate!
             logger.info(
-                "Skipping alert dispatch for orchard %s night %s: already notified at level %d >= %d",
+                "Skipping alert dispatch for rule %s (orchard %s) night %s: already notified at level %d >= %d",
+                rule.id,
                 orchard.id,
                 target_night.night_date,
                 prev_max_weight,
@@ -2102,7 +2103,7 @@ async def evaluate_alerts_endpoint(
             status = "failed"
             err_msg = str(exc)
 
-        idem_key = f"{orchard.id}:{target_night.night_date}:{target_night.risk_level}"
+        idem_key = f"{rule.id}:{target_night.night_date}:{target_night.risk_level}"
         log_entry = NotificationLog(
             orchard_id=orchard.id,
             alert_rule_id=rule.id,

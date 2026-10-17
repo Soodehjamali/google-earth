@@ -436,4 +436,115 @@ def test_concurrent_duplicate_alert_insertion_db_constraint(tmp_path):
             session.commit()
 
 
+@pytest.mark.asyncio
+async def test_evaluate_alerts_multiple_rules_per_orchard_different_recipients():
+    """Verify that multiple alert rules on the same orchard (different recipient/channel) all dispatch."""
+    from app.api.v1.agriculture import evaluate_alerts_endpoint
+    from app.db.models.frost import Orchard, AlertRule, NotificationLog
+    from app.services.agriculture.forecast import FakeForecastProvider
+
+    orchard_id = uuid.uuid4()
+    rule1_id = uuid.uuid4()
+    rule2_id = uuid.uuid4()
+
+    mock_orchard = Orchard(
+        id=orchard_id,
+        name="باغ پسته دوقلو",
+        geometry=SAMPLE_POLYGON,
+        crop="pistachio",
+        default_phenology_stage="early_bloom",
+        elevation=1200.0,
+    )
+    rule1 = AlertRule(
+        id=rule1_id,
+        orchard_id=orchard_id,
+        recipient="+989121111111",
+        channel="sms",
+        lead_time_h=24,
+        enabled=True,
+        orchard=mock_orchard,
+    )
+    rule2 = AlertRule(
+        id=rule2_id,
+        orchard_id=orchard_id,
+        recipient="owner@example.com",
+        channel="email",
+        lead_time_h=24,
+        enabled=True,
+        orchard=mock_orchard,
+    )
+    mock_orchard.alert_rules = [rule1, rule2]
+
+    db_entries: list[NotificationLog] = []
+
+    class MockDbSession:
+        async def execute(self, stmt):
+            stmt_str = str(stmt)
+            mock_res = MagicMock()
+            if "alert_rules" in stmt_str:
+                mock_res.scalars.return_value.all.return_value = [rule1, rule2]
+            elif "notification_log" in stmt_str:
+                params = stmt.compile().params
+                rule_id = next((v for k, v in params.items() if "alert_rule_id" in k), None)
+                if rule_id is not None:
+                    matched = [e for e in db_entries if e.alert_rule_id == rule_id]
+                else:
+                    matched = list(db_entries)
+                mock_res.scalars.return_value.all.return_value = matched
+            else:
+                mock_res.scalars.return_value.all.return_value = []
+            return mock_res
+
+        def add(self, obj):
+            db_entries.append(obj)
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, obj):
+            pass
+
+    mock_db = MockDbSession()
+
+    with patch(
+        "app.services.agriculture.forecast.FakeForecastProvider",
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-1.0, z_site_m=1200.0),
+    ):
+        # 1. First evaluation: BOTH rules should dispatch (e.g. at moderate risk)!
+        res1 = await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=mock_db,
+        )
+        assert res1["evaluated_orchards"] == 1
+        assert res1["evaluated_rules"] == 2
+        # Must dispatch 2 notifications (one for SMS rule, one for Email rule)
+        assert res1["dispatched_notifications"] == 2
+        assert len(db_entries) == 2
+        recipients = {entry.recipient for entry in db_entries}
+        assert "+989121111111" in recipients
+        assert "owner@example.com" in recipients
+
+        # 2. Second evaluation with identical forecast: neither rule should re-dispatch (idempotent)!
+        res2 = await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=mock_db,
+        )
+        assert res2["dispatched_notifications"] == 0
+        assert len(db_entries) == 2
+
+    # 3. Third evaluation with escalated risk (lower temperature -> severe): both rules should escalate!
+    with patch(
+        "app.services.agriculture.forecast.FakeForecastProvider",
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-6.0, z_site_m=1200.0),
+    ):
+        res3 = await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=mock_db,
+        )
+        assert res3["dispatched_notifications"] == 2
+        assert len(db_entries) == 4
+
+
+
+
 

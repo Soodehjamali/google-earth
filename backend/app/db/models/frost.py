@@ -81,8 +81,10 @@ class NotificationLog(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_notification_log_dispatched_at", "dispatched_at"),
         Index("ix_notification_log_orchard_id", "orchard_id"),
+        Index("ix_notification_log_alert_rule_id", "alert_rule_id"),
         Index("ix_notification_log_status", "status"),
         Index("ix_notification_log_idempotency_key", "idempotency_key", unique=True),
+        Index("ix_notification_log_rule_idempotency", "alert_rule_id", "idempotency_key"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
