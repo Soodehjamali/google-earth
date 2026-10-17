@@ -1318,11 +1318,25 @@ async def get_proxied_tile(
 
     target_url = url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
 
-    # 5. Fetch from upstream with concurrency cap (Semaphore 10) & 10s timeout
+    # Obtain authorized headers for upstream Earth Engine tile fetch
+    ee_headers: Dict[str, str] = {}
+    try:
+        import ee
+        import google.auth.transport.requests
+        if hasattr(ee.data, "_credentials") and ee.data._credentials:
+            creds = ee.data._credentials
+            if not getattr(creds, "valid", False):
+                creds.refresh(google.auth.transport.requests.Request())
+            if getattr(creds, "token", None):
+                ee_headers = {"Authorization": f"Bearer {creds.token}"}
+    except Exception:
+        pass
+
+    # 5. Fetch from upstream with concurrency cap (Semaphore 10) & 60s timeout
     try:
         async with _tile_concurrency_semaphore:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(target_url)
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(target_url, headers=ee_headers)
                 if resp.status_code == 200:
                     cache_service.set(tile_cache_key, resp.content, ttl=86400)
                     return Response(

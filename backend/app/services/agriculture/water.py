@@ -1334,6 +1334,7 @@ class _UnavailableMetric(Metric):
 
 class CWSIMetric(_UnavailableMetric):
     key = "cwsi"
+    dataset_ids = ("MODIS/061/MOD11A2",)
     display_name = "Crop Water Stress Index (not produced)"
     display_name_fa = "شاخص تنش آبی گیاه (تولید نمی‌شود)"
     unit = "dimensionless"
@@ -1362,6 +1363,7 @@ class CWSIMetric(_UnavailableMetric):
 
 class WDIMetric(_UnavailableMetric):
     key = "wdi"
+    dataset_ids = ("MODIS/061/MOD11A2",)
     display_name = "Water Deficit Index (not produced)"
     display_name_fa = "شاخص کمبود آب (تولید نمی‌شود)"
     unit = "dimensionless"

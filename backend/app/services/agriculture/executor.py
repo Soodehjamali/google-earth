@@ -339,10 +339,12 @@ def execute_metrics(
     resolved: List[Metric] = []
 
     for key in metric_keys:
-        if has_metric(key):
+        if isinstance(key, Metric):
+            resolved.append(key)
+        elif isinstance(key, str) and has_metric(key):
             resolved.append(get_metric(key))
         else:
-            unknown.append(key)
+            unknown.append(key.key if isinstance(key, Metric) else str(key))
 
     if unknown:
         logger.warning("Unknown metrics requested: %s", ", ".join(unknown))
