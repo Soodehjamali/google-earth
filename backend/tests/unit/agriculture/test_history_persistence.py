@@ -148,17 +148,24 @@ class TestErrorSanitization:
         assert "Secret" not in sanitized
 
 
+import os
 import pytest_asyncio
 
 @pytest_asyncio.fixture
 async def async_db_session():
-    """Shared database session fixture tied to the current test event loop."""
-    try:
-        engine = create_async_engine(settings.DATABASE_URL)
-        async with engine.connect() as conn:
-            pass
-    except Exception as exc:
-        pytest.skip(f"Database not available or authentication failed: {exc}")
+    """Shared database session fixture tied to the current test event loop.
+
+    D7 requirement:
+    - Skips ONLY when DATABASE_URL is unset in the environment.
+    - When DATABASE_URL is set and connection or authentication fails, does not skip and fails the test.
+    """
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        pytest.skip("DATABASE_URL is unset; skipping database history tests.")
+
+    engine = create_async_engine(db_url)
+    async with engine.connect() as conn:
+        pass
 
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
@@ -304,7 +311,8 @@ class TestHistoryPersistenceIntegration:
 
     async def test_persistence_across_completely_closed_session(self, async_db_session, mock_analysis_response):
         """Stage 4 Requirement: Persist analysis, close session, open brand new connection, verify data."""
-        engine = create_async_engine(settings.DATABASE_URL)
+        db_url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+        engine = create_async_engine(db_url)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         test_id = uuid.uuid4()
         req = AgricultureAnalysisRequest(
