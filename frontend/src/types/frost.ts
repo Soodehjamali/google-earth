@@ -6,8 +6,10 @@ export interface FrostPoint {
   raw_temperature_c: number;
   corrected_temperature_c: number;
   uncertainty_c: number;
-  temperature_min_c: number;
-  temperature_max_c: number;
+  lower_bound_c: number;
+  upper_bound_c: number;
+  temperature_min_c?: number; // deprecated alias
+  temperature_max_c?: number; // deprecated alias
   dewpoint_2m_c?: number | null;
   relative_humidity_percent?: number | null;
   wind_speed_10m_mps?: number | null;

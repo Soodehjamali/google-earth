@@ -59,11 +59,20 @@ class ForecastTimestep:
     elevation_uncertainty_c: float
     lead_time_uncertainty_c: float
     total_uncertainty_c: float
-    temperature_min_c: float
-    temperature_max_c: float
+    lower_bound_c: float
+    upper_bound_c: float
     is_interpolated: bool
     relative_humidity_percent: Optional[float] = None
     wind_speed_10m_mps: Optional[float] = None
+    # Deprecated backwards-compatibility aliases
+    temperature_min_c: Optional[float] = None
+    temperature_max_c: Optional[float] = None
+
+    def __post_init__(self):
+        if self.temperature_min_c is None:
+            self.temperature_min_c = self.lower_bound_c
+        if self.temperature_max_c is None:
+            self.temperature_max_c = self.upper_bound_c
 
 
 @dataclass
@@ -289,6 +298,8 @@ class NoaaGfsForecastProvider(ForecastProvider):
                     elevation_uncertainty_c=corr.uncertainty_c,
                     lead_time_uncertainty_c=lead_unc,
                     total_uncertainty_c=total_unc,
+                    lower_bound_c=round(corr.corrected_value - total_unc, 2),
+                    upper_bound_c=round(corr.corrected_value + total_unc, 2),
                     temperature_min_c=round(corr.corrected_value - total_unc, 2),
                     temperature_max_c=round(corr.corrected_value + total_unc, 2),
                     is_interpolated=False,
@@ -390,6 +401,8 @@ class FakeForecastProvider(ForecastProvider):
                     elevation_uncertainty_c=corr.uncertainty_c,
                     lead_time_uncertainty_c=lead_unc,
                     total_uncertainty_c=total_unc,
+                    lower_bound_c=round(corr.corrected_value - total_unc, 2),
+                    upper_bound_c=round(corr.corrected_value + total_unc, 2),
                     temperature_min_c=round(corr.corrected_value - total_unc, 2),
                     temperature_max_c=round(corr.corrected_value + total_unc, 2),
                     is_interpolated=is_interpolated,

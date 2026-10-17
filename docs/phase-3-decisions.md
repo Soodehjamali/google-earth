@@ -50,11 +50,13 @@ This document records architectural, agronomic, and operational decisions made d
 - **Decision:** Apply the production `correct_temperature_for_elevation` function from `backend/app/services/agriculture/quality_gating.py` to every forecast timestep. Cell mean elevation ($z_{\text{cell}}$) is computed over the GFS cell radius ($13,915\,\text{m} \approx 27.8\,\text{km} / 2$) from NASADEM 30m, and site elevation ($z_{\text{site}}$) is computed over the parcel geometry. The lapse rate $\Gamma = -6.5\,^\circ\text{C/km}$ calculates $\Delta T = \Gamma \cdot \frac{z_{\text{site}} - z_{\text{cell}}}{1000}$, ensuring that when a site is higher than the cell mean ($\Delta z > 0$), $\Delta T$ is negative and the corrected temperature is colder ($T_{\text{corr}} = T_{\text{cell}} + \Delta T$).
 - **Why:** Prevents elevation-induced warm/cold bias in mountainous or basin terrain (e.g. Iranian central plateau pistachio regions).
 
-### 3.1.3 Forecast Uncertainty Formulation
+### 3.1.3 Forecast Uncertainty Formulation and API Contract
 - **Decision:** Total temperature uncertainty is formulated as the quadrature sum of elevation correction uncertainty and lead-time forecast uncertainty:
   $$\sigma_{\text{total}} = \sqrt{\sigma_{\text{elevation}}^2 + \sigma_{\text{lead\_time}}^2}$$
   with default piecewise lead-time bounds: $0-24\text{h}: 1.0\,^\circ\text{C}$; $24-48\text{h}: 1.5\,^\circ\text{C}$; $48-72\text{h}: 2.0\,^\circ\text{C}$; $72-120\text{h}: 2.5\,^\circ\text{C}$; $120-240\text{h}: 3.5\,^\circ\text{C}$; $240-384\text{h}: 4.5\,^\circ\text{C}$.
-  Bounds $[T_{\min}, T_{\max}]$ are computed as $T \pm \sigma_{\text{total}}$.
+  Forecast series bounds are canonicalized as `lower_bound_c` and `upper_bound_c` ($T \pm \sigma_{\text{total}}$). The previous naming `temperature_min_c` / `temperature_max_c` is retained as a deprecated alias to avoid breaking legacy consumers, but documentation, schemas, and UI components now standardize on `lower_bound_c` / `upper_bound_c` to make clear they denote uncertainty envelopes ($T \pm \sigma$) rather than diurnal extremes.
+- **Rounding Rule:** To eliminate float discrepancies where `round(raw) + round(delta) != round(corrected)`, rounding is applied consistently: `raw_rounded = round(t_cell, 2)`, `delta_rounded = round(delta_c, 2)`, and `corrected_rounded = round(raw_rounded + delta_rounded, 2)`. This ensures $T_{\text{corr}} = T_{\text{raw}} + \Delta T$ strictly holds across all outputs.
+- **Calibration Status:** The elevation lapse rate ($\Gamma = -6.5\,^\circ\text{C/km}$) and daytime/nighttime elevation uncertainties ($1.0\,^\circ\text{C}$ and $2.0\,^\circ\text{C}$) are empirical defaults marked as placeholders "needs calibration" in `config/frost_thresholds.yaml` and `QualityGatingConfig`, pending regional sensor network tuning.
 - **Why:** Provides scientifically honest confidence envelopes for farmers and agronomists, transparently reflecting diminishing model skill with lead time.
 
 ### 3.1.4 Cadence Disclosure

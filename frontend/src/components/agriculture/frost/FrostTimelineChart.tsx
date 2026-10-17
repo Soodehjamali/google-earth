@@ -47,9 +47,11 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
         lead_time_h: p.lead_time_h,
         corrected_temperature_c: p.corrected_temperature_c,
         raw_temperature_c: p.raw_temperature_c,
-        temperature_min_c: p.temperature_min_c,
-        temperature_max_c: p.temperature_max_c,
-        tempRange: [p.temperature_min_c, p.temperature_max_c],
+        lower_bound_c: p.lower_bound_c ?? p.temperature_min_c,
+        upper_bound_c: p.upper_bound_c ?? p.temperature_max_c,
+        temperature_min_c: p.lower_bound_c ?? p.temperature_min_c,
+        temperature_max_c: p.upper_bound_c ?? p.temperature_max_c,
+        tempRange: [p.lower_bound_c ?? p.temperature_min_c, p.upper_bound_c ?? p.temperature_max_c],
         uncertainty_c: p.uncertainty_c,
         dewpoint_2m_c: p.dewpoint_2m_c,
         relative_humidity_percent: p.relative_humidity_percent,
@@ -63,8 +65,10 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
     let minVal = -5;
     let maxVal = 25;
     points.forEach((p) => {
-      if (p.temperature_min_c < minVal) minVal = p.temperature_min_c;
-      if (p.temperature_max_c > maxVal) maxVal = p.temperature_max_c;
+      const low = p.lower_bound_c ?? p.temperature_min_c;
+      const high = p.upper_bound_c ?? p.temperature_max_c;
+      if (low < minVal) minVal = low;
+      if (high > maxVal) maxVal = high;
     });
     if (criticalTemp10 !== undefined && criticalTemp10 < minVal) minVal = criticalTemp10;
     if (criticalTemp90 !== undefined && criticalTemp90 < minVal) minVal = criticalTemp90;
@@ -104,10 +108,10 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
           <FormattedNumber value={p.corrected_temperature_c} unit="°C" />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginBottom: 2 }}>
-          <span>بازه عدم‌قطعیت (±σ):</span>
+          <span>بازه عدم‌قطعیت (T ± σ):</span>
           <span dir="ltr">
-            [<FormattedNumber value={p.temperature_min_c} digits={1} /> ..{' '}
-            <FormattedNumber value={p.temperature_max_c} digits={1} /> °C]
+            [<FormattedNumber value={p.lower_bound_c ?? p.temperature_min_c} digits={1} /> ..{' '}
+            <FormattedNumber value={p.upper_bound_c ?? p.temperature_max_c} digits={1} /> °C]
           </span>
         </div>
         {p.dewpoint_2m_c !== null && p.dewpoint_2m_c !== undefined && (
@@ -228,7 +232,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             />
             <Line
               type="monotone"
-              dataKey="temperature_max_c"
+              dataKey="upper_bound_c"
               name="حد بالای عدم‌قطعیت (+σ)"
               stroke="#93c5fd"
               strokeDasharray="3 3"
@@ -237,7 +241,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             />
             <Line
               type="monotone"
-              dataKey="temperature_min_c"
+              dataKey="lower_bound_c"
               name="حد پایین عدم‌قطعیت (−σ)"
               stroke="#93c5fd"
               strokeDasharray="3 3"

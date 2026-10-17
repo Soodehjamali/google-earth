@@ -61,3 +61,13 @@ cold_air_pooling:
   max_cooling_bump_c: 2.5            # Maximum cooling bump in °C under calm radiative conditions
   wind_speed_calm_mps: 1.5           # Wind speed at or below which full pooling develops (m/s)
   wind_speed_drain_mps: 4.0          # Wind speed at or above which turbulent mixing drains cold pool (m/s)
+
+# Elevation-uncertainty formula and values configuration
+# All values are empirical placeholders marked "needs calibration" against local weather stations and microclimate sensors.
+elevation_uncertainty:
+  status: "placeholder"
+  notes: "Needs calibration against local weather stations and microclimate sensors"
+  default_lapse_rate_c_per_km: -6.5
+  temp_day_uncertainty_c: 1.0
+  temp_night_uncertainty_c: 2.0
+

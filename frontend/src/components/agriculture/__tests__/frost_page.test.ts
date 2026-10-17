@@ -153,6 +153,8 @@ describe('Phase 3 Task 3.5: Frost-Risk Domain Page & Component Contracts', () =>
       raw_temperature_c: 4.2,
       corrected_temperature_c: 2.25,
       uncertainty_c: 1.02,
+      lower_bound_c: 1.23,
+      upper_bound_c: 3.27,
       temperature_min_c: 1.23,
       temperature_max_c: 3.27,
       dewpoint_2m_c: -1.5,
@@ -162,10 +164,14 @@ describe('Phase 3 Task 3.5: Frost-Risk Domain Page & Component Contracts', () =>
       is_interpolated: false,
     };
 
-    assert.ok(point.temperature_min_c < point.corrected_temperature_c);
-    assert.ok(point.corrected_temperature_c < point.temperature_max_c);
+    assert.strictEqual(point.lower_bound_c, 1.23);
+    assert.strictEqual(point.upper_bound_c, 3.27);
+    assert.ok(point.lower_bound_c < point.corrected_temperature_c);
+    assert.ok(point.corrected_temperature_c < point.upper_bound_c);
     assert.strictEqual(point.is_interpolated, false);
-    assert.ok(Math.abs(point.temperature_min_c - (point.corrected_temperature_c - point.uncertainty_c)) < 1e-4);
-    assert.ok(Math.abs(point.temperature_max_c - (point.corrected_temperature_c + point.uncertainty_c)) < 1e-4);
+    assert.ok(Math.abs(point.lower_bound_c - (point.corrected_temperature_c - point.uncertainty_c)) < 1e-4);
+    assert.ok(Math.abs(point.upper_bound_c - (point.corrected_temperature_c + point.uncertainty_c)) < 1e-4);
+    assert.strictEqual(point.temperature_min_c, point.lower_bound_c);
+    assert.strictEqual(point.temperature_max_c, point.upper_bound_c);
   });
 });

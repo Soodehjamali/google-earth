@@ -114,9 +114,10 @@ async def test_uncertainty_quadrature_and_bounds():
             (step.elevation_uncertainty_c**2 + step.lead_time_uncertainty_c**2) ** 0.5,
             abs=0.05,
         )
-        assert step.total_uncertainty_c == expected_total
-        assert step.temperature_min_c == pytest.approx(step.temperature_2m_c - step.total_uncertainty_c, abs=0.01)
-        assert step.temperature_max_c == pytest.approx(step.temperature_2m_c + step.total_uncertainty_c, abs=0.01)
+        assert step.lower_bound_c == pytest.approx(step.temperature_2m_c - step.total_uncertainty_c, abs=0.01)
+        assert step.upper_bound_c == pytest.approx(step.temperature_2m_c + step.total_uncertainty_c, abs=0.01)
+        assert step.temperature_min_c == step.lower_bound_c
+        assert step.temperature_max_c == step.upper_bound_c
 
 
 @pytest.mark.requires_gee

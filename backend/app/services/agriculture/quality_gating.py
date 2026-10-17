@@ -275,13 +275,18 @@ def correct_temperature_for_elevation(
 
     delta_z_km = (z_site - z_cell) / 1000.0
     delta_c = gamma * delta_z_km
-    corrected = t_cell + delta_c
+
+    # Rounding rule: round raw and delta first, then calculate corrected = raw + delta
+    # This guarantees corrected = raw + delta strictly without floating-point off-by-one discrepancies.
+    raw_rounded = round(t_cell, 2)
+    delta_rounded = round(delta_c, 2)
+    corrected_rounded = round(raw_rounded + delta_rounded, 2)
 
     if is_night_minimum:
         uncertainty = cfg.temp_night_uncertainty_c
         note_fa = (
             "تصحیح بر اساس نرخ افت دما (-۶.۵ °C/km)؛ توجه: در شب‌های صاف و آرام به دلیل "
-            "احتمال وارونگی دمایی (اینورژن) و تجمع هوای سرد در گودی‌ها، این تخمین عدم قطعیت بالاتری دارد (نیاز به کالیبراسیون محلی)."
+            "احتمال وارونگی دمایی (اینورژن) و تجمع هوای سرد در گودی‌ها، این تخمین عدم قطعیت بالاتری دارد (نیازمند کالیبراسیون محلی)."
         )
     else:
         uncertainty = cfg.temp_day_uncertainty_c
@@ -291,9 +296,9 @@ def correct_temperature_for_elevation(
         )
 
     return ElevationCorrectionResult(
-        raw_value=round(t_cell, 2),
-        corrected_value=round(corrected, 2),
-        delta_c=round(delta_c, 2),
+        raw_value=raw_rounded,
+        corrected_value=corrected_rounded,
+        delta_c=delta_rounded,
         uncertainty_c=round(uncertainty, 2),
         uncertainty_note_fa=note_fa,
         z_cell_m=round(z_cell, 1),
