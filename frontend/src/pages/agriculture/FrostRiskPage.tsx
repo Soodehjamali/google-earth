@@ -71,6 +71,7 @@ export default function FrostRiskPage() {
         phenological_stage: res.phenological_stage,
         phenological_stage_fa: res.stage_fa || res.phenological_stage_fa || 'اوایل گلدهی',
         thresholds_verified: Boolean(res.thresholds_verified),
+        evidence_level: res.evidence_level || (Boolean(res.thresholds_verified) ? 'B' : 'C'),
         critical_temp_10_c: res.t_critical_10_c ?? res.critical_temp_10_c,
         critical_temp_90_c: res.t_critical_90_c ?? res.critical_temp_90_c,
         cold_air_pooling_proxy: res.pooling_risk_proxy ?? res.cold_air_pooling_proxy,
@@ -254,6 +255,30 @@ export default function FrostRiskPage() {
               <span>🌐</span>
               <span>تفکیک مکانی ~۲۸ کیلومتر (GFS) - پیش‌بینی منطقه‌ای با تصحیح تراز ارتفاع DEM</span>
             </div>
+            {assessment && (
+              <div
+                data-testid="evidence-level-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: assessment.evidence_level === 'B' ? '#e0f2fe' : '#fef2f2',
+                  color: assessment.evidence_level === 'B' ? '#0369a1' : '#991b1b',
+                  border: `1px solid ${assessment.evidence_level === 'B' ? '#7dd3fc' : '#f87171'}`,
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}
+              >
+                <span>📊</span>
+                <span>
+                  {assessment.evidence_level === 'B'
+                    ? 'سطح شواهد: B (آستانه‌های تأیید شده)'
+                    : 'سطح شواهد: C (آستانه‌های آزمایشی/کالیبره‌نشده)'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -262,6 +287,7 @@ export default function FrostRiskPage() {
       {assessment && !assessment.thresholds_verified && (
         <FrostWarningBanner
           thresholdsVerified={assessment.thresholds_verified}
+          evidenceLevel={assessment.evidence_level}
           cropNameFa={assessment.crop_name_fa}
           stageNameFa={assessment.phenological_stage_fa}
           t10={assessment.critical_temp_10_c}

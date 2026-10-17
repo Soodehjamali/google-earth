@@ -167,8 +167,7 @@ def test_assess_frost_risk_endpoint_adhoc():
     assert data["thresholds_status"] == "placeholder"
     assert data["thresholds_verified"] is False
     assert len(data["thresholds_warning_fa"]) > 0
-    assert data["evidence_level"] <= "B"
-    assert data["evidence_level"] == "B"
+    assert data["evidence_level"] == "C"
     assert "forecast" in data
     assert data["forecast"]["quality_state"] == "coarse_context"
     assert data["forecast"]["native_spatial_resolution_m"] == 27830.0

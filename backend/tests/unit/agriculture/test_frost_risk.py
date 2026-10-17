@@ -25,6 +25,7 @@ from app.services.agriculture.frost_risk import (
     RISK_LEVEL_NONE,
     RISK_LEVEL_WARNING,
     RISK_LEVEL_WATCH,
+    CropThresholdConfig,
     aggregate_forecast_by_local_night,
     assess_frost_risk,
     calculate_pooling_cooling_bump,
@@ -376,23 +377,51 @@ def test_cold_air_pooling_config_driven_values():
 
 @pytest.mark.asyncio
 async def test_frost_assessment_evidence_level_and_unknown_stage():
-    """Verify evidence_level <= B and conservative fallback for unknown stage."""
+    """Verify evidence_level is C when thresholds_verified=False, B when verified, and conservative fallback for unknown stage."""
+    from unittest.mock import patch
+
     provider = FakeForecastProvider(base_tmin_c=-2.0, base_tmax_c=10.0)
     forecast = await provider.get_hourly_forecast(None, horizon_h=48)
 
-    # Case 1: Unknown stage -> selects most sensitive stage with explanatory note
-    assessment_unknown = assess_frost_risk(
+    # Case 1: Unverified crop (pistachio) -> thresholds_verified=False -> evidence_level == "C"
+    assessment_unverified = assess_frost_risk(
         forecast=forecast,
         crop="pistachio",
         phenological_stage="unknown",
         pooling_risk_proxy=0.70,
     )
-    assert assessment_unknown.evidence_level <= "B"
-    assert assessment_unknown.evidence_level == "B"
-    assert "مرحله فنولوژیکی نامشخص است" in assessment_unknown.thresholds_warning_fa
+    assert assessment_unverified.thresholds_verified is False
+    assert assessment_unverified.evidence_level == "C"
+    assert "مرحله فنولوژیکی نامشخص است" in assessment_unverified.thresholds_warning_fa
     # Most sensitive stage for pistachio has the warmest tc10 (e.g. fruit_set at -1.0C)
-    assert assessment_unknown.t_critical_10_c == -1.0
-    assert assessment_unknown.phenological_stage == "fruit_set"
+    assert assessment_unverified.t_critical_10_c == -1.0
+    assert assessment_unverified.phenological_stage == "fruit_set"
+
+    # Case 2: Verified crop -> thresholds_verified=True -> evidence_level == "B"
+    real_configs = load_frost_thresholds_config()
+    pst_cfg = real_configs["pistachio"]
+    verified_pst = CropThresholdConfig(
+        crop_key=pst_cfg.crop_key,
+        common_name_fa=pst_cfg.common_name_fa,
+        scientific_name=pst_cfg.scientific_name,
+        status="verified",
+        source="Agricultural Research Station Calibration",
+        verified=True,
+        verification_warning_fa="",
+        stages=pst_cfg.stages,
+    )
+    mocked_configs = dict(real_configs)
+    mocked_configs["pistachio"] = verified_pst
+
+    with patch("app.services.agriculture.frost_risk.load_frost_thresholds_config", return_value=mocked_configs):
+        assessment_verified = assess_frost_risk(
+            forecast=forecast,
+            crop="pistachio",
+            phenological_stage="early_bloom",
+            pooling_risk_proxy=0.70,
+        )
+        assert assessment_verified.thresholds_verified is True
+        assert assessment_verified.evidence_level == "B"
 
 
 def test_lead_time_uncertainty_table_monotonic_growth():

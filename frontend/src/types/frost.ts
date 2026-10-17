@@ -66,6 +66,7 @@ export interface FrostAssessmentResponse {
   phenological_stage: string;
   phenological_stage_fa: string;
   thresholds_verified: boolean;
+  evidence_level?: string;
   critical_temp_10_c: number;
   critical_temp_90_c: number;
   cold_air_pooling_proxy?: number | null;

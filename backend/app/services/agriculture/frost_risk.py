@@ -305,7 +305,7 @@ class FrostRiskAssessment:
     nightly_risks: List[NightlyFrostRisk]
     disclaimer_fa: str
     recommendations_warning_fa: str = RECOMMENDATION_WARNING_FA
-    evidence_level: str = "B"
+    evidence_level: str = "C"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -578,5 +578,5 @@ def assess_frost_risk(
         nightly_risks=nightly_risks,
         disclaimer_fa=disclaimer,
         recommendations_warning_fa=RECOMMENDATION_WARNING_FA,
-        evidence_level="B",
+        evidence_level="B" if crop_cfg.verified else "C",
     )

@@ -3,6 +3,7 @@ import FormattedNumber from '../../common/FormattedNumber';
 
 interface FrostWarningBannerProps {
   thresholdsVerified: boolean;
+  evidenceLevel?: string;
   cropNameFa?: string;
   stageNameFa?: string;
   t10?: number;
@@ -11,6 +12,7 @@ interface FrostWarningBannerProps {
 
 export const FrostWarningBanner: React.FC<FrostWarningBannerProps> = ({
   thresholdsVerified,
+  evidenceLevel = 'C',
   cropNameFa = 'پسته',
   stageNameFa = 'اوایل گلدهی',
   t10,
@@ -38,11 +40,12 @@ export const FrostWarningBanner: React.FC<FrostWarningBannerProps> = ({
       </span>
       <div style={{ flex: 1, fontSize: '0.9rem', color: '#92400e' }}>
         <div style={{ fontWeight: 700, marginBottom: '4px' }}>
-          توجه مهم (آستانه‌ها تأیید نشده): داده‌های پیش‌فرض آزمایشی فعال هستند
+          توجه مهم (آستانه‌ها تأیید نشده - سطح شواهد {evidenceLevel}): داده‌های پیش‌فرض آزمایشی فعال هستند
         </div>
         <div>
           آستانه‌های دمایی حساسیت فنولوژیکی برای محصول <strong>{cropNameFa}</strong> در مرحله{' '}
           <strong>{stageNameFa}</strong>: آستانه‌ها هنوز توسط کارشناس تأیید نشده‌اند (وضعیت: Placeholder).
+          سطح شواهد جاری <strong>{evidenceLevel}</strong> است؛ ارتقا به سطح <strong>B</strong> منوط به تأیید و کالیبراسیون آستانه‌هاست.
           {t10 !== undefined && t90 !== undefined && (
             <span style={{ marginRight: '6px' }}>
               آستانه‌های فعلی: ۱۰٪ خسارت در{' '}

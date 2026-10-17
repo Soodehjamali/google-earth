@@ -49,6 +49,7 @@ describe('Phase 3 Task 3.5: Frost-Risk Domain Page & Component Contracts', () =>
       phenological_stage: 'early_bloom',
       phenological_stage_fa: 'اوایل گلدهی',
       thresholds_verified: false,
+      evidence_level: 'C',
       critical_temp_10_c: -2.0,
       critical_temp_90_c: -4.0,
       cold_air_pooling_proxy: 0.65,
@@ -57,10 +58,36 @@ describe('Phase 3 Task 3.5: Frost-Risk Domain Page & Component Contracts', () =>
     };
 
     assert.strictEqual(assessment.thresholds_verified, false, 'Placeholder thresholds must be unverified');
+    assert.strictEqual(assessment.evidence_level, 'C', 'Evidence level must be C when thresholds are unverified');
     assert.ok(
       assessment.critical_temp_90_c < assessment.critical_temp_10_c,
       'Tc90 must be colder than Tc10 (mortality curve monotonicity)',
     );
+  });
+
+  it('4b. validates evidence_level contract: C when unverified, B when verified', () => {
+    const unverifiedAssessment: FrostAssessmentResponse = {
+      crop: 'pistachio',
+      crop_name_fa: 'پسته',
+      phenological_stage: 'early_bloom',
+      phenological_stage_fa: 'اوایل گلدهی',
+      thresholds_verified: false,
+      evidence_level: 'C',
+      critical_temp_10_c: -2.0,
+      critical_temp_90_c: -4.0,
+      nights: [],
+      overall_max_severity: 'warning',
+    };
+    const verifiedAssessment: FrostAssessmentResponse = {
+      ...unverifiedAssessment,
+      thresholds_verified: true,
+      evidence_level: 'B',
+    };
+
+    assert.strictEqual(unverifiedAssessment.thresholds_verified, false);
+    assert.strictEqual(unverifiedAssessment.evidence_level, 'C');
+    assert.strictEqual(verifiedAssessment.thresholds_verified, true);
+    assert.strictEqual(verifiedAssessment.evidence_level, 'B');
   });
 
   it('5. validates nocturnal window crossing UTC midnight and severity ranking', () => {

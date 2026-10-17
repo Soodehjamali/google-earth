@@ -191,7 +191,7 @@ This document records architectural, agronomic, and operational decisions made d
   2. `max_cooling_bump_c: 2.5` — Maximum radiative cooling depression under calm stagnation conditions.
   3. `wind_speed_calm_mps: 1.5` — Wind threshold below which full cold-air pooling develops.
   4. `wind_speed_drain_mps: 4.0` — Wind threshold above which turbulent boundary-layer mixing completely disrupts the cold pool.
-- **Evidence Level:** All frost advisory outputs maintain an evidence level of $\le \text{B}$ (`evidence_level: "B"`), reflecting the combination of synoptic NWP forecast and topographic proxy modeling without direct in-canopy telemetry.
+- **Evidence Level:** All frost advisory outputs enforce strict evidence tiering: while phenological thresholds are unverified (`thresholds_verified=false`), `evidence_level = "C"` (uncalibrated placeholder thresholds). The evidence level transitions to `evidence_level = "B"` only when `thresholds_verified=true` following agronomic calibration and field verification against local phenological records. Level A would require in-situ canopy telemetry.
 
 ---
 
@@ -260,7 +260,7 @@ INFO: 127.0.0.1:62209 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.p
 ### C8.1 Response Contract Specifications
 All responses from the frost assessment endpoint (`POST /api/v1/agriculture/frost/assess`) adhere strictly to the Phase 3 contract:
 1. `thresholds_verified: false` — Explicit boolean indicator preventing premature operational lock-in.
-2. `evidence_level: "B"` — Conservative confidence tier ($\le \text{B}$) denoting numerical weather prediction and proxy modeling without direct sensor telemetry.
+2. `evidence_level: "C"` (or `"B"` only when `thresholds_verified: true`) — Rigorous confidence tier reflecting whether phenological thresholds have undergone local agronomist calibration.
 3. `quality_state: "coarse_context"` — Honestly flagging the synoptic ~28km grid resolution.
 4. `native_spatial_resolution_m: 27830.0` — Disclosing NOAA GFS 0.25° grid footprint.
 5. `issue_time_utc` — ISO 8601 UTC timestamp of model run origin.
