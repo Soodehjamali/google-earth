@@ -243,6 +243,11 @@ describe('5. missing analysis state is handled with a hub back-link', () => {
     const page = readFileSync(join(domainPagesDir, 'DomainPage.tsx'), 'utf-8');
     assert.ok(page.includes('to="/agriculture"'));
     assert.ok(page.includes('empty-state'));
+    // Restored equivalent: DomainPage does not auto-execute analysis in an unprompted mount effect
+    assert.ok(
+      !/useEffect\s*\(\s*\(\)\s*=>\s*\{[^}]*agricultureApi\.analyze/.test(page),
+      'DomainPage must not auto-call agricultureApi.analyze on mount',
+    );
   });
 
   it('absent evidence resolves to null (safe empty rows)', () => {

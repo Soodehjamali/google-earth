@@ -215,12 +215,77 @@ describe('4. no scientific computation in visualization sources', () => {
     ];
     const remaining = hits.filter((file) => {
       const normalized = file.replace(/\\/g, '/');
+      if (normalized.endsWith('components/agriculture/request.ts')) {
+        // Restored strictness: verify request.ts has no biological/stress labels outside REFERENCE_VARIABLES
+        const withoutVocabulary = readFileSync(file, 'utf-8').replace(
+          /export const REFERENCE_VARIABLES = \[[\s\S]*?\];/,
+          '',
+        );
+        return pattern.test(withoutVocabulary);
+      }
       if (PEST_DISEASE_FILES.some((f) => normalized.endsWith(f))) {
         return false;
       }
       return true;
     });
     assert.deepEqual(remaining, []);
+  });
+
+  it('P5.1 exemption audit: AgronomicDecisionSupportSection and PestDiseasePage hits are UI text/labels, not computation', () => {
+    // Audit AgronomicDecisionSupportSection.tsx
+    const dssPath = join(agricultureDir, 'AgronomicDecisionSupportSection.tsx');
+    const dssContent = readFileSync(dssPath, 'utf-8');
+    assert.ok(
+      !/(const|let|var)\s+\w*(stress|disease|pest)\w*\s*=\s*[^;\n]*(\+|\*|Math\.)/i.test(dssContent),
+      'AgronomicDecisionSupportSection must not compute stress or disease mathematically',
+    );
+    const dssLines = dssContent.split('\n');
+    for (let i = 0; i < dssLines.length; i++) {
+      const line = dssLines[i] ?? '';
+      if (/pest|disease|fungal/i.test(line)) {
+        assert.ok(
+          line.includes('//') ||
+            line.includes('{/*') ||
+            line.includes('import') ||
+            line.includes('data-testid') ||
+            line.includes('Surveillance') ||
+            line.includes('pestAssessment') ||
+            line.includes('آفات و بیماری'),
+          `Unexpected computation in AgronomicDecisionSupportSection line ${i + 1}: ${line}`,
+        );
+      }
+    }
+
+    // Audit PestDiseasePage.tsx
+    const pdPath = join(srcDir, 'pages', 'agriculture', 'PestDiseasePage.tsx');
+    const pdContent = readFileSync(pdPath, 'utf-8');
+    assert.ok(
+      !/(const|let|var)\s+\w*(stress|disease|pest)\w*\s*=\s*[^;\n]*(\+|\*|Math\.)/i.test(pdContent),
+      'PestDiseasePage must not compute stress or disease mathematically',
+    );
+    const pdLines = pdContent.split('\n');
+    for (let i = 0; i < pdLines.length; i++) {
+      const line = pdLines[i] ?? '';
+      if (/pest|disease|fungal/i.test(line)) {
+        assert.ok(
+          line.includes('//') ||
+            line.includes('{/*') ||
+            line.includes('import') ||
+            line.includes('interface') ||
+            line.includes('data-testid') ||
+            line.includes('inspection') ||
+            line.includes('Inspection') ||
+            line.includes('inspectPestDisease') ||
+            line.includes('pest_disease') ||
+            line.includes('pest_observation') ||
+            line.includes('disease_observation') ||
+            line.includes('Pest/Disease') ||
+            line.includes('PestDiseasePage') ||
+            line.includes('hasPestDiseaseData'),
+          `Unexpected computation in PestDiseasePage line ${i + 1}: ${line}`,
+        );
+      }
+    }
   });
 
   it('no score, risk, or probability vocabulary', () => {

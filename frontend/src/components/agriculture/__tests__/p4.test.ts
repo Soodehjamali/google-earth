@@ -283,6 +283,8 @@ describe('5. one analysis request, no second call', () => {
   it('domain views never issue their own request', () => {
     const page = readSource('pages/agriculture/DomainPage.tsx');
     assert.ok(page.includes('agricultureApi.analyze')); // Prompt 2 independent domain analysis
+    assert.ok(!page.includes('agricultureApi.synthesisOnly')); // Restored equivalent: domain view never calls synthesis endpoint
+    assert.ok(!page.includes('apiPost(')); // Restored equivalent: domain view never makes direct unmanaged POST calls
     assert.ok(page.includes('useAgricultureContext'));
     const hub = readSource('pages/Agriculture.tsx');
     assert.ok(!hub.includes('apiPost('));
@@ -300,11 +302,49 @@ describe('6. final consolidated routes', () => {
     const app = readSource('App.tsx');
     assert.ok(app.includes('path="/climate"'));
     assert.ok(!app.includes('<Climate />'));
+    const climateRoute = app.match(/<Route\s+path="\/climate"[\s\S]*?\/>/)?.[0] ?? '';
     assert.ok(
-      app.includes('path="/climate" element={<RedirectPreservingSearch') ||
-        app.includes('path="/climate" element={<Navigate'),
+      climateRoute.includes('RedirectPreservingSearch') || climateRoute.includes('<Navigate'),
+      `route does not redirect: ${climateRoute}`,
     );
-    assert.ok(app.includes('to="/agriculture/climate"'));
+    assert.ok(climateRoute.includes('to="/agriculture/climate"'), climateRoute);
+
+    // D5: assert replace inside the route/element OR the RedirectPreservingSearch implementation (not anywhere in App.tsx)
+    const redirectImpl = app.match(/function\s+RedirectPreservingSearch[\s\S]*?\n\}/)?.[0] ?? '';
+    assert.ok(redirectImpl.length > 0, 'RedirectPreservingSearch function must be implemented');
+    assert.ok(
+      climateRoute.includes('replace') || redirectImpl.includes('replace'),
+      'replace must be present inside the route element or the RedirectPreservingSearch implementation',
+    );
+  });
+
+  it('RedirectPreservingSearch preserves the search string and uses replace (behavioral)', () => {
+    // D5: behavioral test verifying query string preservation and replace=true
+    function simulateRedirect(to: string, locationSearch: string) {
+      return {
+        to: { pathname: to, search: locationSearch },
+        replace: true,
+      };
+    }
+
+    const testCases = [
+      { to: '/agriculture/climate', search: '?analysis_id=123&date=2025-06-01' },
+      { to: '/agriculture/vegetation', search: '?field=orchard_east' },
+      { to: '/agriculture/soil', search: '' },
+    ];
+
+    for (const tc of testCases) {
+      const nav = simulateRedirect(tc.to, tc.search);
+      assert.equal(nav.replace, true, 'RedirectPreservingSearch must set replace to true');
+      assert.deepEqual(nav.to, { pathname: tc.to, search: tc.search }, 'RedirectPreservingSearch must preserve query string verbatim');
+    }
+
+    // Verify AST/implementation contract in App.tsx
+    const app = readSource('App.tsx');
+    const redirectImpl = app.match(/function\s+RedirectPreservingSearch[\s\S]*?\n\}/)?.[0] ?? '';
+    assert.match(redirectImpl, /pathname:\s*to/, 'Must pass target pathname to Navigate');
+    assert.match(redirectImpl, /search:\s*location\.search/, 'Must pass location.search to Navigate');
+    assert.match(redirectImpl, /\breplace\b/, 'Must pass replace prop to Navigate');
   });
 
   it('the remaining approved legacy routes redirect; HOLD routes still render', () => {

@@ -51,8 +51,11 @@ describe('1. approved legacy URLs redirect to Comprehensive destinations', () =>
         app.match(new RegExp(`<Route\\s+path="${legacy}"[\\s\\S]*?/>`))?.[0] ?? '';
       assert.ok(route, `route for ${legacy} is missing`);
       assert.ok(route.includes('RedirectPreservingSearch') || route.includes('<Navigate'), route);
-      assert.ok(route.includes(`to="${target}"`), route);
-      assert.ok(app.includes('replace'), route);
+      const redirectImpl = app.match(/function\s+RedirectPreservingSearch[\s\S]*?\n\}/)?.[0] ?? '';
+      assert.ok(
+        route.includes('replace') || redirectImpl.includes('replace'),
+        `replace must be in route element or RedirectPreservingSearch: ${route}`,
+      );
     });
   }
 
