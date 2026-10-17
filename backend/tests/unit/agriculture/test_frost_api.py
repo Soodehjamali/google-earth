@@ -144,7 +144,10 @@ async def test_outbound_dispatch_safety_lock_enforcement():
 
 def test_assess_frost_risk_endpoint_adhoc():
     """Verify POST /api/v1/agriculture/frost/assess returns complete advisory assessment."""
+    from app.core.config import settings
+    settings.ADMIN_API_KEY = "admin-secret-token"
     client = TestClient(app)
+    headers = {"X-Admin-Token": "admin-secret-token"}
     payload = {
         "geometry": SAMPLE_POLYGON,
         "crop": "pistachio",
@@ -154,7 +157,7 @@ def test_assess_frost_risk_endpoint_adhoc():
         "use_live_gee": False,
     }
 
-    resp = client.post("/api/v1/agriculture/frost/assess", json=payload)
+    resp = client.post("/api/v1/agriculture/frost/assess", json=payload, headers=headers)
     assert resp.status_code == 200, f"Error {resp.status_code}: {resp.text}"
     data = resp.json()
 
@@ -182,7 +185,7 @@ def test_assess_frost_risk_endpoint_adhoc():
     # Unknown stage fallback verification
     payload_unknown = dict(payload)
     payload_unknown["phenological_stage"] = "unrecognized_stage_xyz"
-    resp_unknown = client.post("/api/v1/agriculture/frost/assess", json=payload_unknown)
+    resp_unknown = client.post("/api/v1/agriculture/frost/assess", json=payload_unknown, headers=headers)
     assert resp_unknown.status_code == 200
     data_unknown = resp_unknown.json()
     assert data_unknown["phenological_stage"] == "fruit_set"
@@ -192,7 +195,10 @@ def test_assess_frost_risk_endpoint_adhoc():
 
 def test_assess_frost_risk_endpoint_gee_outage_503_envelope():
     """Verify that live Earth Engine outage returns ERR_GEE_UNAVAILABLE and HTTP 503."""
+    from app.core.config import settings
+    settings.ADMIN_API_KEY = "admin-secret-token"
     client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Admin-Token": "admin-secret-token"}
     payload = {
         "geometry": SAMPLE_POLYGON,
         "crop": "pistachio",
@@ -205,7 +211,7 @@ def test_assess_frost_risk_endpoint_gee_outage_503_envelope():
         "app.services.agriculture.cold_air_pooling.calculate_cold_air_pooling_ee",
         side_effect=RuntimeError("Earth Engine connection timed out (Google service outage)"),
     ):
-        resp = client.post("/api/v1/agriculture/frost/assess", json=payload)
+        resp = client.post("/api/v1/agriculture/frost/assess", json=payload, headers=headers)
         assert resp.status_code == 503
         data = resp.json()
         assert data.get("code") == "ERR_GEE_UNAVAILABLE" or "ERR_GEE_UNAVAILABLE" in resp.text
@@ -292,20 +298,143 @@ async def test_evaluate_alerts_idempotency_and_escalation():
 
 def test_evaluate_alerts_endpoint_admin_auth_required():
     """Verify that POST /api/v1/agriculture/frost/evaluate-alerts requires admin authorization."""
+    from app.core.config import settings
     client = TestClient(app)
 
-    # 1. No auth header -> 403 Forbidden
+    # 1. Fail closed when ADMIN_API_KEY is unset on server
+    settings.ADMIN_API_KEY = None
+    resp_unset = client.post(
+        "/api/v1/agriculture/frost/evaluate-alerts",
+        json={"dry_run": True},
+        headers={"X-Admin-Token": "any-token"},
+    )
+    assert resp_unset.status_code == 403
+    assert "server key unset" in resp_unset.text
+
+    # Configure server key
+    settings.ADMIN_API_KEY = "admin-secret-token"
+
+    # 2. No auth header -> 403 Forbidden
     resp_no_auth = client.post("/api/v1/agriculture/frost/evaluate-alerts", json={"dry_run": True})
     assert resp_no_auth.status_code == 403
     assert "Admin authorization required" in resp_no_auth.text
 
-    # 2. Invalid auth token -> 403 Forbidden
+    # 3. Invalid auth token -> 403 Forbidden
     resp_bad_auth = client.post(
         "/api/v1/agriculture/frost/evaluate-alerts",
         json={"dry_run": True},
         headers={"X-Admin-Token": "unauthorized-token"},
     )
     assert resp_bad_auth.status_code == 403
+
+
+def test_frost_all_routes_require_auth_proving_403():
+    """Verify that every route under /agriculture/frost requires authentication and returns 403 without it (D4).
+
+    Routes:
+    1. POST /api/v1/agriculture/frost/assess
+    2. GET /api/v1/agriculture/frost/orchards
+    3. POST /api/v1/agriculture/frost/orchards
+    4. POST /api/v1/agriculture/frost/orchards/{id}/alert-rules
+    5. POST /api/v1/agriculture/frost/evaluate-alerts
+    """
+    from app.core.config import settings
+    settings.ADMIN_API_KEY = "admin-secret-token"
+    client = TestClient(app)
+
+    random_orchard_id = uuid.uuid4()
+    routes = [
+        ("POST", "/api/v1/agriculture/frost/assess", {"geometry": SAMPLE_POLYGON, "crop": "pistachio"}),
+        ("GET", "/api/v1/agriculture/frost/orchards", None),
+        ("POST", "/api/v1/agriculture/frost/orchards", {"name": "Test Orchard", "geometry": SAMPLE_POLYGON, "crop": "pistachio"}),
+        ("POST", f"/api/v1/agriculture/frost/orchards/{random_orchard_id}/alert-rules", {"recipient": "+989123456789", "channel": "sms"}),
+        ("POST", "/api/v1/agriculture/frost/evaluate-alerts", {"dry_run": True}),
+    ]
+
+    for method, path, payload in routes:
+        # Case 1: Without auth header -> must return 403 Forbidden!
+        if method == "POST":
+            resp_no_auth = client.post(path, json=payload or {})
+        else:
+            resp_no_auth = client.get(path)
+        assert resp_no_auth.status_code == 403, f"{method} {path} without token returned {resp_no_auth.status_code}"
+
+        # Case 2: With invalid token -> must return 403 Forbidden!
+        bad_headers = {"X-Admin-Token": "invalid-token", "X-API-Key": "invalid-key"}
+        if method == "POST":
+            resp_bad = client.post(path, json=payload or {}, headers=bad_headers)
+        else:
+            resp_bad = client.get(path, headers=bad_headers)
+        assert resp_bad.status_code == 403, f"{method} {path} with bad token returned {resp_bad.status_code}"
+
+
+def test_assess_geometry_caps():
+    """Verify that /frost/assess strictly caps geometry vertices and area (D4)."""
+    from app.core.config import settings
+    settings.ADMIN_API_KEY = "admin-secret-token"
+    client = TestClient(app)
+    headers = {"X-Admin-Token": "admin-secret-token"}
+
+    # 1. Vertices cap (>500 vertices) -> 400 ERR_GEOMETRY_TOO_COMPLEX
+    excessive_vertices = [
+        [54.0 + i * 0.0001, 32.0 + (i % 2) * 0.0001] for i in range(505)
+    ]
+    excessive_vertices.append(excessive_vertices[0])  # close ring
+    poly_many_vertices = {"type": "Polygon", "coordinates": [excessive_vertices]}
+    resp_vertices = client.post(
+        "/api/v1/agriculture/frost/assess",
+        json={"geometry": poly_many_vertices, "crop": "pistachio"},
+        headers=headers,
+    )
+    assert resp_vertices.status_code == 400
+    assert resp_vertices.json().get("code") == "ERR_GEOMETRY_TOO_COMPLEX"
+
+    # 2. Area cap (>10,000 hectares = 100,000,000 m2) -> 400 ERR_GEOMETRY_TOO_LARGE
+    huge_polygon = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [52.0, 30.0],
+                [54.0, 30.0],
+                [54.0, 32.0],
+                [52.0, 32.0],
+                [52.0, 30.0],
+            ]
+        ],
+    }
+    resp_area = client.post(
+        "/api/v1/agriculture/frost/assess",
+        json={"geometry": huge_polygon, "crop": "pistachio"},
+        headers=headers,
+    )
+    assert resp_area.status_code == 400
+    assert resp_area.json().get("code") == "ERR_GEOMETRY_TOO_LARGE"
+
+
+def test_assess_rate_limiting():
+    """Verify that /frost/assess enforces rate limiting per client IP (D4)."""
+    from app.core.config import settings
+    from app.api.v1.agriculture import _assess_rate_limiter_history
+    _assess_rate_limiter_history.clear()
+
+    settings.ADMIN_API_KEY = "admin-secret-token"
+    client = TestClient(app)
+    headers = {"X-Admin-Token": "admin-secret-token"}
+    payload = {
+        "geometry": SAMPLE_POLYGON,
+        "crop": "pistachio",
+        "use_live_gee": False,
+    }
+
+    # Simulate hitting rate limit by sending requests up to limit
+    for _ in range(60):
+        resp = client.post("/api/v1/agriculture/frost/assess", json=payload, headers=headers)
+        assert resp.status_code == 200
+
+    # 61st request must trigger 429 RateLimitError
+    resp_rate_limited = client.post("/api/v1/agriculture/frost/assess", json=payload, headers=headers)
+    assert resp_rate_limited.status_code == 429
+    assert resp_rate_limited.json().get("code") == "ERR_RATE_LIMIT_EXCEEDED"
 
 
 def test_evaluate_alerts_refuses_admin_override_in_request():

@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     TILE_SIGNING_SECRET: str = "agri_tile_secret_default_key_change_in_production"
     TRUSTED_PROXIES: List[str] = ["127.0.0.1", "::1"]
 
+    # Frost Risk Authentication & Administration
+    ADMIN_API_KEY: Optional[str] = None
+    ALERT_ADMIN_OVERRIDE: bool = False
+
     @property
     def is_development(self) -> bool:
         return self.APP_ENV == "development"

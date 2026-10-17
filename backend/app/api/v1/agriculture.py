@@ -19,8 +19,11 @@ This module is an orchestration/serialization boundary.  It does NOT:
 from __future__ import annotations
 
 import asyncio
+import hmac
+import math
 import time
 import uuid
+from collections import defaultdict
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -34,6 +37,7 @@ from app.core.exceptions import (
     AppException,
     DateRangeError,
     GeometryError,
+    RateLimitError,
     ValidationError,
 )
 from app.core.logging import get_logger
@@ -1729,13 +1733,138 @@ def _parse_evidence_bundles(
 # Frost Risk Advisory Endpoints (Phase 3)
 # ---------------------------------------------------------------------------
 
+_admin_token_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _constant_time_token_check(provided: Optional[str], expected: Optional[str]) -> bool:
+    if not provided or not expected:
+        return False
+    return hmac.compare_digest(provided.strip().encode("utf-8"), expected.strip().encode("utf-8"))
+
+
+async def require_admin_auth(
+    admin_token: Optional[str] = Security(_admin_token_header),
+) -> bool:
+    """Ensure caller has administrator rights to evaluate and dispatch alerts.
+
+    Security (D4):
+    1. Uses constant-time hmac.compare_digest.
+    2. Strictly fails closed (403) when ADMIN_API_KEY is unset.
+    3. Caller token values and server secrets are NEVER logged.
+    """
+    expected = getattr(settings, "ADMIN_API_KEY", None)
+    if not expected:
+        logger.warning("Admin authorization failed: ADMIN_API_KEY is unset on server (fail-closed)")
+        raise HTTPException(
+            status_code=403,
+            detail="Admin authorization required (server key unset).",
+        )
+    if not admin_token or not _constant_time_token_check(admin_token, expected):
+        logger.warning("Admin authorization failed: invalid or missing X-Admin-Token")
+        raise HTTPException(
+            status_code=403,
+            detail="Admin authorization required to trigger alert evaluation.",
+        )
+    return True
+
+
+async def require_frost_auth(
+    admin_token: Optional[str] = Security(_admin_token_header),
+    api_key: Optional[str] = Security(_api_key_header),
+) -> bool:
+    """Guard write and GEE-cost frost routes with server-side token authentication.
+
+    Security (D4):
+    1. Since the project has no user-auth system, all frost write and GEE-cost routes
+       are guarded by server-side token authentication.
+    2. Uses constant-time hmac.compare_digest.
+    3. Strictly fails closed (403) when ADMIN_API_KEY is unset.
+    4. Caller token values and server secrets are NEVER logged.
+    """
+    expected = getattr(settings, "ADMIN_API_KEY", None)
+    if not expected:
+        logger.warning("Frost route authorization failed: ADMIN_API_KEY is unset on server (fail-closed)")
+        raise HTTPException(
+            status_code=403,
+            detail="Authorization required (server key unset).",
+        )
+    provided = admin_token or api_key
+    if not provided or not _constant_time_token_check(provided, expected):
+        logger.warning("Frost route authorization failed: invalid or missing token")
+        raise HTTPException(
+            status_code=403,
+            detail="Authorization required for frost risk operations.",
+        )
+    return True
+
+
+# Rate Limiter & Geometry Caps for /frost/assess (D4)
+_assess_rate_limiter_history: Dict[str, List[float]] = defaultdict(list)
+
+
+def check_assess_rate_limit(client_ip: str, limit: int = 60, window_s: float = 60.0) -> None:
+    now = time.time()
+    history = _assess_rate_limiter_history[client_ip]
+    _assess_rate_limiter_history[client_ip] = [t for t in history if now - t < window_s]
+    if len(_assess_rate_limiter_history[client_ip]) >= limit:
+        logger.warning("Rate limit exceeded for /frost/assess from client: %s", client_ip)
+        raise RateLimitError(
+            message=f"Rate limit exceeded: maximum {limit} requests per minute for /frost/assess.",
+            detail={"limit": limit, "window_seconds": window_s},
+        )
+    _assess_rate_limiter_history[client_ip].append(now)
+
+
+def check_geometry_bounds(
+    geometry: Dict[str, Any],
+    max_vertices: int = 500,
+    max_area_m2: float = 100_000_000.0,
+) -> None:
+    """Enforce strict upper bounds on geometry vertex count and parcel area (D4)."""
+    if not isinstance(geometry, dict):
+        return
+    gtype = geometry.get("type")
+    if gtype == "Polygon":
+        rings = geometry.get("coordinates") or []
+        if not rings or not rings[0]:
+            return
+        exterior = rings[0]
+        if len(exterior) > max_vertices:
+            raise AppException(
+                status_code=400,
+                code="ERR_GEOMETRY_TOO_COMPLEX",
+                message=f"Geometry exceeds maximum vertices limit ({len(exterior)} > {max_vertices})",
+            )
+        lats = [pt[1] for pt in exterior if len(pt) >= 2]
+        lngs = [pt[0] for pt in exterior if len(pt) >= 2]
+        if not lats or not lngs:
+            return
+        lat_mean = sum(lats) / len(lats)
+        cos_lat = math.cos(math.radians(lat_mean))
+        m_per_deg_lat = 110574.0
+        m_per_deg_lng = 111320.0 * cos_lat
+
+        x = [(lng - lngs[0]) * m_per_deg_lng for lng in lngs]
+        y = [(lat - lats[0]) * m_per_deg_lat for lat in lats]
+        area = 0.5 * abs(sum(x[i] * y[i + 1] - x[i + 1] * y[i] for i in range(len(x) - 1)))
+        if area > max_area_m2:
+            raise AppException(
+                status_code=400,
+                code="ERR_GEOMETRY_TOO_LARGE",
+                message=f"Geometry area exceeds maximum limit of {max_area_m2 / 10000:.0f} hectares ({area / 10000:.1f} ha requested)",
+            )
+
+
 @router.post(
     "/frost/assess",
     tags=["Agriculture", "Frost"],
     summary="Ad-hoc frost risk assessment for a parcel",
 )
 async def assess_frost_risk_endpoint(
+    request: Request,
     request_data: Any = Body(...),
+    _: bool = Depends(require_frost_auth),
 ):
     """Compute hourly forecast, cold-air-pooling proxy, and phenological risk assessment."""
     from app.schemas.frost import FrostAssessRequest
@@ -1743,10 +1872,15 @@ async def assess_frost_risk_endpoint(
     from app.services.agriculture.cold_air_pooling import calculate_cold_air_pooling_ee
     from app.services.agriculture.frost_risk import assess_frost_risk
 
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    check_assess_rate_limit(client_ip)
+
     if isinstance(request_data, dict):
         req = FrostAssessRequest(**request_data)
     else:
         req = request_data
+
+    check_geometry_bounds(req.geometry)
 
     # Obtain forecast
     provider = None
@@ -1791,6 +1925,7 @@ async def assess_frost_risk_endpoint(
 )
 async def list_orchards_endpoint(
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
 ):
     """List all registered orchards and their active alert rules."""
     from app.db.models.frost import Orchard
@@ -1839,6 +1974,7 @@ async def list_orchards_endpoint(
 async def create_orchard_endpoint(
     orchard_in: Any = Body(...),
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
 ):
     """Register an orchard polygon and default crop."""
     from app.schemas.frost import OrchardCreate
@@ -1893,6 +2029,7 @@ async def create_alert_rule_endpoint(
     orchard_id: uuid.UUID,
     rule_in: Any = Body(...),
     db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
 ):
     """Add a notification recipient rule bound to an orchard."""
     from app.schemas.frost import AlertRuleCreate
@@ -1932,22 +2069,6 @@ async def create_alert_rule_endpoint(
         "enabled": rule.enabled,
         "created_at": rule.created_at.isoformat() if rule.created_at else None,
     }
-
-
-_admin_token_header = APIKeyHeader(name="X-Admin-Token", auto_error=False)
-
-
-async def require_admin_auth(
-    admin_token: Optional[str] = Security(_admin_token_header),
-) -> bool:
-    """Ensure caller has administrator rights to evaluate and dispatch alerts."""
-    expected_token = getattr(settings, "ADMIN_API_KEY", None) or "admin-secret-token"
-    if not admin_token or admin_token != expected_token:
-        raise HTTPException(
-            status_code=403,
-            detail="Admin authorization required to trigger alert evaluation.",
-        )
-    return True
 
 
 @router.post(
