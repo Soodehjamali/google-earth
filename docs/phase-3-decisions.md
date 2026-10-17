@@ -313,6 +313,61 @@ Visual proof captured via headless Chromium at `1440x2600` (device scale factor 
 2. **Pooling Legend:** Confirmed 5-step discrete ramp with hex codes `['#f7fcf0', '#bae4bc', '#7bccc4', '#43a2ca', '#0868ac']` and Persian morphological classifications.
 3. **No Smoothing Beyond Native Resolution:** GFS synoptic cell footprints (~28 km) are directly disclosed without synthetic spatial smoothing or sub-grid spatial interpolation.
 
+---
+
+## Item D12 Decisions: Full-History Secrets Audit & Commit Traversal
+
+### D12.1 `detect-secrets` Full History Audit Summary
+Executed `detect-secrets` over the full history of all commits across all branches (`git rev-list --all`, 150 commits total):
+```text
+================ FULL HISTORY AUDIT SUMMARY ================
+Total commits scanned across all refs: 150
+Total branch commits: 60 (branches: main, phase-1-bugfixes, phase-2-closeout, phase-2-data-quality, phase-2-selfcontained, phase-3-frost)
+External checkpoint/stash commits: 90 (cline session snapshots)
+
+Breakdown by Detector Type across full history:
+  - Basic Auth Credentials (example/dummy strings in .env.example / alembic.ini): 38
+  - Private Key (test/dummy mock keys in _diag_key.py / test_executor.py): 14
+  - Secret Keyword (placeholder in docker-compose.yml): 1
+
+Current Head State (Phase 3 Frost):
+  - Zero hardcoded passwords, production keys, or service-account JSON files committed.
+  - Gate G2 commit (1336149) purged legacy development defaults from configuration files.
+  - Phase 3 Close-Out strictly consumes credentials from shell environment variables exclusively.
+```
+
+### D12.2 Raw `git log -S"postgres123" --all --oneline` Output
+```text
+1336149 fix(config): remove embedded passwords, real project IDs, and service accounts from dev defaults (Gate G2)
+0739268 fix(auth): remove upward EE key traversal and add requires_gee auto-skip marker (Gate G1)
+cb7421d fix(config): provide development defaults for DATABASE_URL and EE_PROJECT_ID
+de3fcd5 test(backend): commit untracked backend test suites for soil, support, pest, history
+071767b new
+5108113 untracked files on cline checkpoint
+2b23f32 untracked files on cline checkpoint
+115d2a8 untracked files on cline checkpoint
+65b4abf untracked files on cline checkpoint
+f79b23d untracked files on cline checkpoint
+885ce88 untracked files on cline checkpoint
+cf40793 untracked files on cline checkpoint
+77ea051 untracked files on cline checkpoint
+d5e8dba untracked files on cline checkpoint
+831f994 untracked files on cline checkpoint
+18a286b untracked files on cline checkpoint
+074daf4 untracked files on cline checkpoint
+2ed670e untracked files on cline checkpoint
+ef0d5f8 untracked files on cline checkpoint
+9ebb94b untracked files on cline checkpoint
+ec233be untracked files on cline checkpoint
+30ec77e untracked files on cline checkpoint
+4d99fca untracked files on cline checkpoint
+b1511f3 untracked files on cline checkpoint
+7507462 untracked files on cline checkpoint
+8c9f00c untracked files on cline checkpoint
+aa5b907 untracked files on cline checkpoint
+9f3da4b new vwesion
+```
+
 
 
 
