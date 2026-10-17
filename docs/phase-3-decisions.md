@@ -297,6 +297,22 @@ All responses from the frost assessment endpoint (`POST /api/v1/agriculture/fros
 4. **Mathematical Negative Numbers:** Sub-zero temperatures are rendered with mathematical minus (`U+2212`) wrapped in LTR isolation tags (`<FormattedNumber>` / `<span dir="ltr">`), preventing inverted minus glyphs in Persian RTL context.
 5. **Color Hierarchy:** Red (`#dc2626`, `#ef4444`) is strictly reserved for critical 90% threshold lines and severe warning alerts. Standard advisory levels use informational blue (`#3b82f6`, `#0891b2`) and amber (`#f59e0b`).
 
+---
+
+## Item D11 Decisions: Deliverables & Headless Visual Verification
+
+### D11.1 Screenshot Artifacts (Saved Outside Repository)
+Visual proof captured via headless Chromium at `1440x2600` (device scale factor 1.5) saved in artifact directory:
+- `C:\Users\Jamali\.gemini\antigravity\brain\ab34bb1c-3358-4573-8926-0174ec94ce4f\screenshot_frost_overview.png` (695 KB) — Full page overview with unverified banner, parameters, timeline chart, nightly risk cards, and alert rules form.
+- `C:\Users\Jamali\.gemini\antigravity\brain\ab34bb1c-3358-4573-8926-0174ec94ce4f\screenshot_lead_time_uncertainty.png` (28 KB) — Timeline chart with explicit lead-time uncertainty bands ($T \pm \sigma$) widening monotonically with forecast horizon.
+- `C:\Users\Jamali\.gemini\antigravity\brain\ab34bb1c-3358-4573-8926-0174ec94ce4f\screenshot_pooling_legend.png` (13 KB) — Cold air pooling section with live raster layer and 5-class discrete color ramp legend (`0.0` ridge to `1.0` closed cold pool).
+- `C:\Users\Jamali\.gemini\antigravity\brain\ab34bb1c-3358-4573-8926-0174ec94ce4f\screenshot_resolution_no_smoothing.png` (8 KB) — Prominent coarse context badge honestly stating `"تفکیک مکانی ~۲۸ کیلومتر (GFS) - پیش‌بینی منطقه‌ای با تصحیح تراز ارتفاع DEM"`.
+
+### D11.2 Visual Confirmations
+1. **Lead-Time Uncertainty Note:** Confirmed visible tooltip, legend entries (`حد بالای عدم‌قطعیت (+σ)`, `حد پایین عدم‌قطعیت (−σ)`, `باند عدم‌قطعیت پیش‌بینی (دمای تصحیح‌شده ± عدم‌قطعیت)`), and local night shaded windows (`۱۸:۰۰ الی ۰۹:۰۰ روز بعد`).
+2. **Pooling Legend:** Confirmed 5-step discrete ramp with hex codes `['#f7fcf0', '#bae4bc', '#7bccc4', '#43a2ca', '#0868ac']` and Persian morphological classifications.
+3. **No Smoothing Beyond Native Resolution:** GFS synoptic cell footprints (~28 km) are directly disclosed without synthetic spatial smoothing or sub-grid spatial interpolation.
+
 
 
 
