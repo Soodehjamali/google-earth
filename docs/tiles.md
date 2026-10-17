@@ -54,6 +54,12 @@ Endpoint: GET /api/v1/agriculture/tiles/{layer_token}/{z}/{x}/{y}.png
    - Responses emit `Cache-Control: private, max-age=86400` headers.
    - Cryptographic tokens are **masked from Uvicorn access logs and server logs** via a dedicated `TileTokenMaskingFilter` (logging `/tiles/***MASKED***/{z}/{x}/{y}.png`).
    - Upstream responses are cached in Redis/memory with key `tile_img:{token_id}:{z}:{x}:{y}`.
+6. **Canonical Path Location & Real Security Protection**:
+   - Tile tokens must reside exclusively in the canonical URL path segment (`/tiles/{layer_token}/{z}/{x}/{y}.png`). Query-string tokens (`?token=...` or `?tile_token=...`) are strictly rejected with **HTTP 400 Bad Request** (`ERR_CANONICAL_PATH_TOKEN_REQUIRED`).
+   - Reverse proxies, Application Load Balancers (ALBs), and browser history record URLs in access logs. Application log masking protects server logs, but cannot prevent upstream infrastructure URL logging. The real protection against token leakage and reuse relies upon:
+     - Ephemeral token lifespan (TTL $\le 2$ hours).
+     - Strict spatial bounding box binding (`bbox`) preventing off-parcel tile requests.
+     - Per-IP sliding-window rate limiting (180 req/min).
 
 ---
 

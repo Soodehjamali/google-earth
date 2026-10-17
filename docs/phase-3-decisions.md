@@ -234,13 +234,13 @@ This document records architectural, agronomic, and operational decisions made d
 
 ## Item C7 Decisions: Log Masking and Tile Token Scrubbing
 
-### C7.1 Tile Token Transport Channels
-Tile tokens travel via two primary channels depending on client integration:
-1. **URL Path Segment:** Standard slippy map tile URLs follow `/api/v1/agriculture/tiles/{tile_token}/{z}/{x}/{y}.png`. Here the token is a path parameter.
-2. **Query String Parameter:** Proxied tile requests or ad-hoc imagery queries supply `?token={token}` or `?tile_token={token}`.
+### C7.1 Tile Token Canonical Location & Transport Channels
+The frontend MapLibre GL raster tile client strictly consumes the **URL Path Segment** as its canonical location:
+1. **Canonical Path Segment:** Standard slippy map tile URLs follow `/api/v1/agriculture/tiles/{layer_token}/{z}/{x}/{y}.png`.
+2. **Query String Rejection:** Query-string tokens (`?token=...` or `?tile_token=...`) are rejected by the backend with HTTP 400 (`ERR_CANONICAL_PATH_TOKEN_REQUIRED`). Enforcing a single canonical location eliminates token smuggling and ambiguity.
 
 ### C7.2 Sanitization Filter & Verification
-`TileTokenMaskingFilter` intercepts and scrubs both channels recursively across string messages, tuples, dicts, and list arguments in `logging.LogRecord`:
+`TileTokenMaskingFilter` intercepts and scrubs tile URLs across string messages, tuples, dicts, and list arguments in `logging.LogRecord`:
 - Regex `r'(/tiles/)[^/?\s]+'` sanitizes path segments to `/tiles/***MASKED***`.
 - Regex `r'([?&](?:token|tile_token|api_key|secret)=)[^&\s]+'` sanitizes query strings to `\1***MASKED***`.
 
@@ -252,6 +252,15 @@ And live server log line under Uvicorn:
 ```text
 INFO: 127.0.0.1:62209 - "GET /api/v1/agriculture/tiles/***MASKED***/10/681/412.png?token=***MASKED*** HTTP/1.1" 403 Forbidden
 ```
+
+### C7.3 URL Log Exposure & The True Security Protections
+Because HTTP request URLs (both path segments and query strings) are inherently recorded by intermediate reverse proxies, Application Load Balancers (ALB, Nginx, Envoy, Cloudflare), CDN edge access logs, and user browser navigation history, application-level log scrubbing (`TileTokenMaskingFilter`) protects internal server logs but cannot prevent upstream infrastructure or browser history recording of requested URLs.
+
+Consequently, URL secrecy is NOT a sufficient boundary. The **real cryptographic and architectural protections** against tile URL leakage and replay are:
+1. **Short Expiry TTL:** Tokens expire automatically within $\le 2$ hours (`exp` epoch timestamp verified via HMAC-SHA256).
+2. **Strict Bounding-Box (`bbox`) Binding:** Every token cryptographically binds the parcel's spatial boundary $[lon_{min}, lat_{min}, lon_{max}, lat_{max}]$; tiles outside this bounding box return HTTP 404 (`ERR_TILE_OUT_OF_BOUNDS`).
+3. **Zoom Level Clamping:** Coordinates are bounded to zoom levels $z \in [8, 20]$.
+4. **Per-IP Rate Limiting:** In-memory sliding window rate limits of 180 requests/min per IP mitigate rapid bulk harvesting even with a valid token.
 
 ---
 

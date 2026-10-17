@@ -428,4 +428,17 @@ def test_tile_proxy_endpoint_and_cache():
     assert resp_oob.status_code == 404
     assert resp_oob.json()["code"] == "ERR_TILE_OUT_OF_BOUNDS"
 
+    # Case 6: Enforce canonical token location in URL path; reject query-string tokens with 400
+    resp_query_token = client.get(
+        f"/api/v1/agriculture/tiles/{signed_token}/14/10635/6630.png?token=alternate_token"
+    )
+    assert resp_query_token.status_code == 400
+    assert resp_query_token.json()["code"] == "ERR_CANONICAL_PATH_TOKEN_REQUIRED"
+
+    resp_query_tile_token = client.get(
+        f"/api/v1/agriculture/tiles/{signed_token}/14/10635/6630.png?tile_token=alternate_token"
+    )
+    assert resp_query_tile_token.status_code == 400
+    assert resp_query_tile_token.json()["code"] == "ERR_CANONICAL_PATH_TOKEN_REQUIRED"
+
 

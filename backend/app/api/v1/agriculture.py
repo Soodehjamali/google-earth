@@ -1264,6 +1264,15 @@ async def get_proxied_tile(
     from app.services.agriculture.tile_auth import verify_layer_token
     from app.services.cache_service import cache_service
 
+    # 0. Canonical token location: reject query parameter tokens
+    if request.query_params.get("token") or request.query_params.get("tile_token"):
+        raise AppException(
+            message="Tile token must be provided canonically in the URL path segment, not as a query parameter.",
+            code="ERR_CANONICAL_PATH_TOKEN_REQUIRED",
+            reason="Security policy: query-string tile tokens are forbidden. Use canonical path /tiles/{layer_token}/{z}/{x}/{y}.png.",
+            status_code=400,
+        )
+
     # 1. Rate limiting per client IP (trusting X-Forwarded-For ONLY if socket peer is in TRUSTED_PROXIES)
     peer_ip = request.client.host if request.client and request.client.host else "unknown"
     trusted_proxies = getattr(settings, "TRUSTED_PROXIES", ["127.0.0.1", "::1"])
