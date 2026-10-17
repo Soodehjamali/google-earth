@@ -46,7 +46,14 @@ class Orchard(Base, TimestampMixin):
 
 
 class AlertRule(Base, TimestampMixin):
-    """Notification dispatch rule binding an orchard to a recipient channel."""
+    """Notification dispatch rule binding an orchard to a recipient channel.
+
+    NOTE ON PII:
+    The `recipient` field stores the raw destination address (E.164 phone number,
+    email address, or webhook URI) necessary to route and deliver outbound alerts
+    to growers. Direct access to this table is restricted to authorized orchard owners
+    and administrative operators.
+    """
 
     __tablename__ = "alert_rules"
 
@@ -61,7 +68,11 @@ class AlertRule(Base, TimestampMixin):
     orchard_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("orchards.id", ondelete="CASCADE"), nullable=False
     )
-    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    recipient: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Raw delivery destination (phone number/email). Kept for outbound routing; access restricted.",
+    )
     channel: Mapped[str] = mapped_column(String(50), nullable=False, default="sms")
     lead_time_h: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -74,7 +85,14 @@ class AlertRule(Base, TimestampMixin):
 
 
 class NotificationLog(Base, TimestampMixin):
-    """Audit log of dispatched, dry-run, or blocked frost alert notifications."""
+    """Audit log of dispatched, dry-run, or blocked frost alert notifications.
+
+    NOTE ON PII COMPLIANCE (D3):
+    To prevent PII leakage, `recipient` in this table is strictly stored in masked
+    format (e.g. `+989***89` or `fa***@domain.ir`). Raw phone numbers and personal
+    emails MUST NEVER be persisted in `notification_log`. Audit trails link to the
+    originating rule via `alert_rule_id`.
+    """
 
     __tablename__ = "notification_log"
 
@@ -102,7 +120,11 @@ class NotificationLog(Base, TimestampMixin):
     alert_rule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("alert_rules.id", ondelete="SET NULL"), nullable=True
     )
-    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    recipient: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        comment="Masked recipient identifier (PII-scrubbed, e.g. +989***89). Raw phone/email never stored in logs.",
+    )
     channel: Mapped[str] = mapped_column(String(50), nullable=False)
     payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)  # sent, dry_run, blocked_unverified, failed

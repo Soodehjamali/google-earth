@@ -352,12 +352,17 @@ async def test_phone_number_masked_in_all_responses_and_logs(caplog):
     )
     mock_orchard.alert_rules = [mock_rule]
 
+    db_alert_rules = [mock_rule]
+    db_notification_logs = []
+
     class MockDb:
         async def execute(self, stmt):
             m = MagicMock()
             stmt_s = str(stmt)
-            if "alert_rules" in stmt_s:
-                m.scalars.return_value.all.return_value = [mock_rule]
+            if "notification_log" in stmt_s:
+                m.scalars.return_value.all.return_value = list(db_notification_logs)
+            elif "alert_rules" in stmt_s:
+                m.scalars.return_value.all.return_value = list(db_alert_rules)
             elif "orchards" in stmt_s:
                 m.scalars.return_value.all.return_value = [mock_orchard]
                 m.scalar_one_or_none.return_value = mock_orchard
@@ -366,7 +371,10 @@ async def test_phone_number_masked_in_all_responses_and_logs(caplog):
             return m
 
         def add(self, obj):
-            pass
+            if isinstance(obj, AlertRule):
+                db_alert_rules.append(obj)
+            else:
+                db_notification_logs.append(obj)
 
         async def commit(self):
             pass
@@ -381,7 +389,7 @@ async def test_phone_number_masked_in_all_responses_and_logs(caplog):
     assert orchards_out[0]["alert_rules"][0]["recipient"] == "+989***89"
     assert raw_phone not in orchards_out[0]["alert_rules"][0]["recipient"]
 
-    # 2. create_alert_rule_endpoint masks recipient
+    # 2. create_alert_rule_endpoint masks recipient in output
     rule_out = await create_alert_rule_endpoint(
         orchard_id=orchard_id,
         rule_in={"recipient": raw_phone, "channel": "sms", "lead_time_h": 24},
@@ -390,13 +398,33 @@ async def test_phone_number_masked_in_all_responses_and_logs(caplog):
     assert rule_out["recipient"] == "+989***89"
     assert raw_phone not in rule_out["recipient"]
 
-    # 3. Captured logs during alert evaluation must NOT contain the raw phone number
-    with caplog.at_level(logging.INFO):
-        await evaluate_alerts_endpoint(
-            eval_in={"dry_run": True, "use_live_gee": False},
-            db=db,
-        )
+    # 3. Captured logs and API responses during alert evaluation must NOT contain raw phone number
+    import json
+    from app.services.agriculture.forecast import FakeForecastProvider
+    with patch(
+        "app.services.agriculture.forecast.FakeForecastProvider",
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-3.0, z_site_m=1200.0),
+    ):
+        with caplog.at_level(logging.INFO):
+            eval_resp = await evaluate_alerts_endpoint(
+                eval_in={"dry_run": True, "use_live_gee": False},
+                db=db,
+            )
+    # Grep captured logs: raw phone number must be strictly absent
     assert raw_phone not in caplog.text
+
+    # Grep API response: raw phone number must be strictly absent, masked number present
+    eval_resp_str = json.dumps(eval_resp)
+    assert raw_phone not in eval_resp_str
+    assert "+989***89" in eval_resp_str
+
+    # Database notification_log must store rule reference + masked recipient, never raw phone
+    assert len(db_notification_logs) == 1
+    log_record = db_notification_logs[0]
+    assert log_record.alert_rule_id == rule_id
+    assert log_record.recipient == "+989***89"
+    assert raw_phone not in log_record.recipient
+    assert raw_phone not in json.dumps(log_record.payload)
 
 
 def test_concurrent_duplicate_alert_insertion_db_constraint(tmp_path):
@@ -521,8 +549,10 @@ async def test_evaluate_alerts_multiple_rules_per_orchard_different_recipients()
         assert res1["dispatched_notifications"] == 2
         assert len(db_entries) == 2
         recipients = {entry.recipient for entry in db_entries}
-        assert "+989121111111" in recipients
-        assert "owner@example.com" in recipients
+        assert "+989***11" in recipients
+        assert "ow***@example.com" in recipients
+        assert "+989121111111" not in recipients
+        assert "owner@example.com" not in recipients
 
         # 2. Second evaluation with identical forecast: neither rule should re-dispatch (idempotent)!
         res2 = await evaluate_alerts_endpoint(

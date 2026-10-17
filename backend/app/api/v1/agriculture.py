@@ -2108,7 +2108,7 @@ async def evaluate_alerts_endpoint(
             orchard_id=orchard.id,
             alert_rule_id=rule.id,
             idempotency_key=idem_key,
-            recipient=rule.recipient,
+            recipient=mask_recipient(rule.recipient),
             channel=rule.channel,
             payload={
                 "message": msg,
