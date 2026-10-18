@@ -808,3 +808,142 @@ def test_partial_night_steps():
     assert start_loc is not None
     assert end_loc is not None
 
+
+@pytest.mark.asyncio
+async def test_factor_register_asymmetric_conservatism():
+    """Verify Factor Register v2 asymmetric conservatism (E9).
+
+    - Protective factor ignored (applied=False, effect=0) when input is coarse_context.
+    - Protective factor applied (applied=True, effect=1.0) when input is valid (user entered).
+    - Aggravating factor applied even on coarse/proxy data.
+    - Total protective credit is capped at 1.0°C.
+    """
+    provider = FakeForecastProvider(base_tmin_c=-3.0, base_tmax_c=10.0)
+    forecast = await provider.get_hourly_forecast(None, horizon_h=48)
+
+    # 1. Coarse context only (no user attributes): protective credit MUST be 0.0, tooltip present
+    assessment_coarse = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="bloom",
+        threshold_set="published_v1",
+        pooling_risk_proxy=0.70,
+        user_management_flags=None,
+    )
+    first_night_coarse = assessment_coarse.nightly_risks[0]
+    assert first_night_coarse.applied_protective_credit_c == 0.0
+
+    soil_factor_coarse = next(m for m in first_night_coarse.factor_modifiers if m.id == "soil_moisture_management")
+    assert soil_factor_coarse.applied is False
+    assert soil_factor_coarse.effect_c == 0.0
+    assert soil_factor_coarse.quality_state == "coarse_context"
+    assert "نیازمند تایید کاربر است" in (soil_factor_coarse.tooltip_fa or "")
+
+    # Aggravating factor is applied regardless
+    topo_factor = next(m for m in first_night_coarse.factor_modifiers if m.id == "topography_cold_air_pooling")
+    assert topo_factor.applied is True
+    assert topo_factor.effect_c < 0.0  # Cooling bump worsens temperature
+
+    # 2. Valid user management attributes: protective credit applied and capped at 1.0°C
+    assessment_valid = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="bloom",
+        threshold_set="published_v1",
+        pooling_risk_proxy=0.70,
+        user_management_flags={"firm_moist_weed_free_soil": True, "irrigated_before_frost": True},
+    )
+    first_night_valid = assessment_valid.nightly_risks[0]
+    assert first_night_valid.applied_protective_credit_c == 1.0
+
+    soil_factor_valid = next(m for m in first_night_valid.factor_modifiers if m.id == "soil_moisture_management")
+    assert soil_factor_valid.applied is True
+    assert soil_factor_valid.effect_c == 1.0
+    assert soil_factor_valid.quality_state == "valid"
+    assert soil_factor_valid.tooltip_fa is None
+
+    # Verify effective temperature difference matches exactly the 1.0°C protective credit
+    # t_adjusted_min with valid soil is 1.0°C warmer than coarse
+    diff = round(first_night_valid.tmin_adjusted_c - first_night_coarse.tmin_adjusted_c, 2)
+    assert diff == 1.0
+
+
+@pytest.mark.asyncio
+async def test_regime_classification():
+    """Verify frost regime classification per Hokmabadi (2011) [S2] (E9)."""
+    provider = FakeForecastProvider(base_tmin_c=-2.0, base_tmax_c=10.0)
+    forecast = await provider.get_hourly_forecast(None, horizon_h=48)
+
+    # 1. Radiative regime: calm wind (<= 2 m/s) and clear sky (<= 25% cloud)
+    for step in forecast.series:
+        step.wind_speed_10m_mps = 1.0
+        step.total_cloud_cover_percent = 10.0
+
+    assessment_rad = assess_frost_risk(forecast=forecast, threshold_set="published_v1")
+    regime_rad = assessment_rad.nightly_risks[0].regime
+    assert regime_rad is not None
+    assert regime_rad.regime == "radiative"
+    assert "تشعشعی" in regime_rad.regime_fa
+    assert "بخاری" in regime_rad.advice_fa
+
+    # 2. Advective regime: strong cold wind (>= 3.5 m/s)
+    for step in forecast.series:
+        step.wind_speed_10m_mps = 5.0
+        step.total_cloud_cover_percent = 70.0
+
+    assessment_adv = assess_frost_risk(forecast=forecast, threshold_set="published_v1")
+    regime_adv = assessment_adv.nightly_risks[0].regime
+    assert regime_adv is not None
+    assert regime_adv.regime == "advective"
+    assert "انتقالی" in regime_adv.regime_fa
+    # Must carry advective caveat warning against open heaters in strong wind
+    all_recs = " ".join(assessment_adv.nightly_risks[0].recommendations_fa)
+    assert "هشدار رژیم انتقالی" in all_recs
+
+
+def test_published_v1_threshold_set_loading():
+    """Verify published_v1 loads sourced thresholds with conflicting values and missing durations disclosed (E9)."""
+    from app.services.agriculture.frost_risk import load_frost_threshold_set
+
+    cfg = load_frost_threshold_set(set_name="published_v1", crop="pistachio")
+    assert cfg.status == "published"
+    assert cfg.verified is False  # Evidence level C pending microclimate network calibration
+
+    stages = cfg.stages
+    assert "unopened_bud" in stages
+    assert stages["unopened_bud"].t_critical_c == -4.0
+    assert stages["unopened_bud"].duration_rules is not None
+
+    assert "opening_bud" in stages
+    assert stages["opening_bud"].t_critical_c == -2.0
+
+    assert "bloom" in stages
+    assert stages["bloom"].t_critical_c == -1.7
+    assert stages["bloom"].conflicting_published_value == 2.0
+    assert stages["bloom"].duration_rules is None
+
+    assert "fruit" in stages
+    assert stages["fruit"].t_critical_c == -2.0
+
+    assert "swelling_bud" in stages
+    assert stages["swelling_bud"].t_critical_c is None  # S2 did not provide a number
+
+
+@pytest.mark.asyncio
+async def test_windbreak_drainage_caveat_advice():
+    """Verify that when topography pooling proxy is elevated, windbreak drainage advice is added (E9)."""
+    provider = FakeForecastProvider(base_tmin_c=-2.0, base_tmax_c=10.0)
+    forecast = await provider.get_hourly_forecast(None, horizon_h=48)
+
+    assessment = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="bloom",
+        pooling_risk_proxy=0.85,
+    )
+
+    first_night = assessment.nightly_risks[0]
+    all_recs = " ".join(first_night.recommendations_fa)
+    assert "بادشکن‌ها نباید مسیر خروج و زه‌کشی هوای سرد شیب‌رو به پایین را مسدود کنند" in all_recs
+
+

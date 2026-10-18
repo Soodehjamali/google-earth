@@ -56,6 +56,30 @@ export interface ColdAirPoolingResponse {
   color_ramp?: string[];
 }
 
+export interface FactorModifier {
+  id: string;
+  name_fa: string;
+  direction: 'aggravating' | 'protective';
+  data_source: string;
+  quality_state: string;
+  effect_c: number;
+  cap_c: number;
+  applied: boolean;
+  status: string;
+  source: string;
+  note_fa: string;
+  tooltip_fa?: string | null;
+}
+
+export interface FrostRegime {
+  regime: 'radiative' | 'advective' | 'mixed' | 'unknown';
+  regime_fa: string;
+  advice_fa: string;
+  review_flag?: string | null;
+  wind_speed_mps?: number | null;
+  cloud_cover_percent?: number | null;
+}
+
 export interface FrostNightAssessment {
   night_date: string;
   window_start_utc: string;
@@ -79,6 +103,11 @@ export interface FrostNightAssessment {
   duration_escalated?: boolean;
   conflicting_published_value?: number | null;
   conflicting_value_note_fa?: string | null;
+  regime?: FrostRegime;
+  factor_modifiers?: FactorModifier[];
+  effective_tmin_c?: number;
+  applied_protective_credit_c?: number;
+  active_threshold_set?: string;
 }
 
 export interface FrostAssessmentResponse {
@@ -98,6 +127,9 @@ export interface FrostAssessmentResponse {
   earliest_critical_night?: string | null;
   forecast?: FrostForecastResponse;
   cold_air_pooling?: ColdAirPoolingResponse;
+  active_threshold_set?: string;
+  active_threshold_set_name_fa?: string;
+  active_threshold_set_status?: string;
 }
 
 export interface FrostAssessRequest {
@@ -107,6 +139,8 @@ export interface FrostAssessRequest {
   horizon_h?: number;
   pooling_risk_proxy?: number | null;
   use_live_gee?: boolean;
+  threshold_set?: string;
+  user_management_flags?: Record<string, boolean>;
 }
 
 export interface FrostAlertRule {

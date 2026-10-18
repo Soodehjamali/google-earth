@@ -34,6 +34,27 @@ _CONFIG_PATHS = [
     Path(__file__).resolve().parents[4] / "config" / "frost_thresholds.yaml",
 ]
 
+_FACTOR_CONFIG_PATHS = [
+    Path(os.environ.get("FROST_FACTORS_FILE", "")),
+    Path("config/frost_factors.yaml"),
+    Path("../config/frost_factors.yaml"),
+    Path(__file__).resolve().parents[4] / "config" / "frost_factors.yaml",
+]
+
+# Aliases between legacy stage keys and published_v1 stages
+STAGE_ALIASES = {
+    "dormant": "unopened_bud",
+    "unopened_bud": "unopened_bud",
+    "bud_burst": "opening_bud",
+    "opening_bud": "opening_bud",
+    "early_bloom": "bloom",
+    "full_bloom": "bloom",
+    "bloom": "bloom",
+    "fruit_set": "fruit",
+    "fruit": "fruit",
+    "swelling_bud": "swelling_bud",
+}
+
 DEFAULT_LOCAL_UTC_OFFSET_HOURS = 3.5  # Iran Standard Time (IRST = UTC+3:30)
 
 #: Configurable forecast horizon parameters
@@ -106,6 +127,42 @@ class DurationExposureResult:
     active_rule_source: Optional[str] = None
     active_rule_category: Optional[str] = None
     rule_note_fa: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class FactorModifierResult:
+    """Evaluated modifier adjusting effective minimum temperature (E9)."""
+
+    id: str
+    name_fa: str
+    direction: str  # 'aggravating' | 'protective'
+    data_source: str
+    quality_state: str  # 'valid' | 'coarse_context' | 'field_scale'
+    effect_c: float
+    cap_c: float
+    applied: bool
+    status: str
+    source: str
+    note_fa: str
+    tooltip_fa: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class FrostRegimeResult:
+    """Meteorological frost regime classification (E9)."""
+
+    regime: str  # 'radiative' | 'advective' | 'mixed' | 'unknown'
+    regime_fa: str
+    advice_fa: str
+    review_flag: Optional[str] = None
+    wind_speed_mps: Optional[float] = None
+    cloud_cover_percent: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -268,6 +325,112 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
     return crops
 
 
+def load_frost_factors_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Load factor register and regime thresholds from config/frost_factors.yaml (E9)."""
+    resolved_path: Optional[Path] = None
+    if config_path and config_path.exists():
+        resolved_path = config_path
+    else:
+        for p in _FACTOR_CONFIG_PATHS:
+            if p and p.exists() and p.is_file():
+                resolved_path = p
+                break
+
+    if not resolved_path:
+        return {}
+
+    try:
+        with open(resolved_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as exc:
+        logger.warning("Could not parse %s: %s", resolved_path, exc)
+        return {}
+
+
+def load_frost_threshold_set(
+    set_name: str = "published_v1",
+    crop: str = "pistachio",
+    config_path: Optional[Path] = None,
+) -> CropThresholdConfig:
+    """Load specific threshold set (published_v1 or engine_default_v0) from YAML (E9)."""
+    resolved_path: Optional[Path] = None
+    if config_path and config_path.exists():
+        resolved_path = config_path
+    else:
+        for p in _CONFIG_PATHS:
+            if p and p.exists() and p.is_file():
+                resolved_path = p
+                break
+
+    if not resolved_path:
+        raise FileNotFoundError("Could not locate 'config/frost_thresholds.yaml'.")
+
+    with open(resolved_path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f)
+
+    if set_name == "engine_default_v0" or "threshold_sets" not in raw or set_name not in raw.get("threshold_sets", {}):
+        # Fall back to base crop config
+        base_configs = load_frost_thresholds_config(resolved_path)
+        return base_configs.get(crop, next(iter(base_configs.values())))
+
+    t_set = raw["threshold_sets"][set_name]
+    stages_data = t_set.get("stages", {})
+    crop_stages: Dict[str, StageThreshold] = {}
+
+    for st_id, st_val in stages_data.items():
+        st_status = st_val.get("status", t_set.get("status", "published"))
+        st_source = st_val.get("source")
+        tc_crit = float(st_val["t_critical_c"]) if st_val.get("t_critical_c") is not None else None
+        tc10 = float(st_val.get("t_critical_10_c", tc_crit if tc_crit is not None else -2.0))
+        tc90 = float(st_val.get("t_critical_90_c", tc10 - 2.0))
+
+        duration_rules = None
+        if "duration_rules" in st_val and st_val["duration_rules"] is not None:
+            duration_rules = []
+            for dr in st_val["duration_rules"]:
+                duration_rules.append(
+                    DurationRule(
+                        reference_temperature_c=float(dr["reference_temperature_c"]),
+                        min_hours=float(dr["min_hours"]),
+                        category=str(dr["category"]),
+                        source=str(dr["source"]),
+                        description_fa=dr.get("description_fa"),
+                    )
+                )
+
+        crop_stages[st_id] = StageThreshold(
+            stage_key=st_id,
+            name_fa=st_val.get("name_fa", st_id),
+            t_critical_10_c=tc10,
+            t_critical_90_c=tc90,
+            status=st_status,
+            source=st_source,
+            t_critical_c=tc_crit,
+            conflicting_published_value=float(st_val["conflicting_published_value"]) if st_val.get("conflicting_published_value") is not None else None,
+            conflicting_source=st_val.get("conflicting_source"),
+            conflicting_notes_fa=st_val.get("conflicting_notes_fa"),
+            duration_rules=duration_rules,
+            notes_fa=st_val.get("notes_fa"),
+        )
+
+    warning_fa = (
+        "آستانه‌های خسارت سرمازدگی بر مبنای مقادیر منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰) تنظیم شده است؛ با این وجود، به دلیل عدم کالیبراسیون با شبکه ایستگاه‌های خرد‌اقلیم مزرعه‌ای، ارقام جنبه مشورتی دارند."
+        if set_name == "published_v1"
+        else "آستانه‌های این مجموعه به صورت فرضی (Placeholder) تعیین شده و فاقد تاییدیه علمی هستند."
+    )
+
+    return CropThresholdConfig(
+        crop_key=crop,
+        common_name_fa="پسته",
+        scientific_name="Pistacia vera",
+        status=t_set.get("status", "published"),
+        source="Hokmabadi H. (2010, 2011) [S1, S2]" if set_name == "published_v1" else None,
+        verified=t_set.get("verified", False),
+        verification_warning_fa=warning_fa,
+        stages=crop_stages,
+    )
+
+
 @dataclass
 class ColdAirPoolingAdjustmentConfig:
     """Configurable thresholds for topographically-driven cold-air pooling temperature bump.
@@ -355,6 +518,13 @@ class NightlyFrostRisk:
     conflicting_published_value: Optional[float] = None
     conflicting_value_note_fa: Optional[str] = None
 
+    # Factor Model v2 fields (E9)
+    regime: Optional[FrostRegimeResult] = None
+    factor_modifiers: List[FactorModifierResult] = field(default_factory=list)
+    effective_tmin_c: float = 0.0
+    applied_protective_credit_c: float = 0.0
+    active_threshold_set: str = "published_v1"
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -382,6 +552,9 @@ class FrostRiskAssessment:
     evidence_level: str = "C"
     geometry_type: str = "Polygon"
     location_sampling_method: str = "Polygon: forecast at centroid cell; elevation = polygon mean DEM"
+    active_threshold_set: str = "published_v1"
+    active_threshold_set_name_fa: str = "آستانه‌های منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰)"
+    active_threshold_set_status: str = "published"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -654,37 +827,56 @@ def assess_frost_risk(
     pooling_result: Optional[ColdAirPoolingResult] = None,
     pooling_risk_proxy: Optional[float] = None,
     thresholds_config_path: Optional[Path] = None,
+    factors_config_path: Optional[Path] = None,
+    threshold_set: Optional[str] = None,
+    user_management_flags: Optional[Dict[str, bool]] = None,
     local_utc_offset_hours: float = DEFAULT_LOCAL_UTC_OFFSET_HOURS,
     hard_cap_horizon_h: Optional[int] = None,
 ) -> FrostRiskAssessment:
-    """Execute complete frost risk evaluation combining forecast, thresholds, and topography.
+    """Execute complete frost risk evaluation combining forecast, thresholds, and topography (E9).
 
     Returns:
         FrostRiskAssessment dataclass carrying nightly risks, disclaimers,
         and threshold verification status.
     """
-    # 1. Load phenological thresholds
-    configs = load_frost_thresholds_config(thresholds_config_path)
-    if crop not in configs:
-        raise ValueError(f"Crop '{crop}' not found in frost thresholds configuration.")
+    active_set = threshold_set or "engine_default_v0"
 
-    crop_cfg = configs[crop]
+    # 1. Load phenological thresholds
+    if active_set == "published_v1":
+        crop_cfg = load_frost_threshold_set(
+            set_name="published_v1",
+            crop=crop,
+            config_path=thresholds_config_path,
+        )
+    else:
+        configs = load_frost_thresholds_config(thresholds_config_path)
+        if crop not in configs:
+            raise ValueError(f"Crop '{crop}' not found in frost thresholds configuration.")
+        crop_cfg = configs[crop]
+
     unknown_stage_note_fa = ""
-    if not phenological_stage or phenological_stage == "unknown" or phenological_stage not in crop_cfg.stages:
-        # Conservative safety fallback: select the most sensitive phenological stage (highest critical temperature)
+    resolved_stage_key = phenological_stage
+    if resolved_stage_key not in crop_cfg.stages:
+        resolved_stage_key = STAGE_ALIASES.get(phenological_stage, phenological_stage)
+
+    if not resolved_stage_key or resolved_stage_key == "unknown" or resolved_stage_key not in crop_cfg.stages:
         most_sensitive = max(crop_cfg.stages.values(), key=lambda s: s.t_critical_10_c)
         stage_cfg = most_sensitive
         unknown_stage_note_fa = (
             f"مرحله فنولوژیکی نامشخص است؛ بر مبنای اصل احتیاط کشاورزی، حساس‌ترین مرحله رشد "
-            f"({stage_cfg.name_fa} با آستانه ۱۰٪ خسارت {stage_cfg.t_critical_10_c}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
+            f"({stage_cfg.name_fa} با آستانه {stage_cfg.t_critical_10_c}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
         )
     else:
-        stage_cfg = crop_cfg.stages[phenological_stage]
+        stage_cfg = crop_cfg.stages[resolved_stage_key]
 
     tc10 = stage_cfg.t_critical_10_c
     tc90 = stage_cfg.t_critical_90_c
 
-    # 2. Topography pooling proxy & configuration
+    # 2. Factor Register & Topography pooling configuration (E9)
+    factors_cfg = load_frost_factors_config(factors_config_path)
+    protective_cap_c = float(factors_cfg.get("protective_credit_cap_c", 1.0))
+    regime_cfg = factors_cfg.get("regime_thresholds", {})
+
     pooling_cfg = load_cold_air_pooling_config(thresholds_config_path)
     if pooling_risk_proxy is not None:
         p_proxy = pooling_risk_proxy
@@ -714,46 +906,168 @@ def assess_frost_risk(
 
     for night_key in sorted(nights_map.keys()):
         raw_steps = nights_map[night_key]
-        # Beyond the hard cap: return no nightly risk
         steps = [s for s in raw_steps if s.lead_hours <= hard_cap]
         if not steps:
             continue
 
-        # Sort chronologically
         steps.sort(key=lambda s: s.timestamp_utc)
         start_utc = steps[0].timestamp_utc
         end_utc = steps[-1].timestamp_utc
 
-        # Find minimum temperature step
         min_step = min(steps, key=lambda s: s.temperature_2m_c)
         t_raw_min = min_step.temperature_2m_c
         t_min_time = min_step.timestamp_utc
         wind_at_min = min_step.wind_speed_10m_mps
+        cloud_at_min = min_step.total_cloud_cover_percent
         unc_at_min = min_step.total_uncertainty_c
 
         # Calculate cold air pooling bump
         cooling_bump = calculate_pooling_cooling_bump(p_proxy, wind_at_min, config=pooling_cfg)
-        t_adjusted_min = round(t_raw_min - cooling_bump, 2)
+
+        # Factor Register evaluation with Asymmetric Conservatism (E9)
+        soil_mgmt_valid = False
+        applied_soil_protect = 0.0
+        if user_management_flags and (
+            user_management_flags.get("firm_moist_weed_free_soil") or
+            user_management_flags.get("irrigated_before_frost")
+        ):
+            soil_mgmt_valid = True
+            applied_soil_protect = min(1.0, protective_cap_c)
+
+        modifiers: List[FactorModifierResult] = [
+            # Factor 1: Topography cooling bump (Aggravating)
+            FactorModifierResult(
+                id="topography_cold_air_pooling",
+                name_fa="شاخص تجمیع هوای سرد توپوگرافی",
+                direction="aggravating",
+                data_source="NASADEM 30m",
+                quality_state="field_scale",
+                effect_c=-cooling_bump,
+                cap_c=-2.5,
+                applied=cooling_bump > 0,
+                status="calibrated_proxy",
+                source="Topographic Confinement Modeling",
+                note_fa=(
+                    f"افت تجمع سردی به میزان {cooling_bump:.2f}°C در اثر موقعیت فرودست و فرورفتگی توپوگرافی."
+                    if cooling_bump > 0
+                    else "عدم تجمع هوای سرد موضعی در این سلول."
+                ),
+            ),
+            # Factor 2: Soil moisture & compaction (Protective)
+            FactorModifierResult(
+                id="soil_moisture_management",
+                name_fa="مدیریت رطوبت و ساختار خاک",
+                direction="protective",
+                data_source="user_management_attributes" if soil_mgmt_valid else "NASA/SMAP or ERA5-Land",
+                quality_state="valid" if soil_mgmt_valid else "coarse_context",
+                effect_c=applied_soil_protect if soil_mgmt_valid else 0.0,
+                cap_c=protective_cap_c,
+                applied=soil_mgmt_valid,
+                status="published" if soil_mgmt_valid else "coarse_context",
+                source="Hokmabadi H. (2010), p. 72 (citing Snyder & Connell 1993) [S1]",
+                note_fa=(
+                    f"خاک سفت، مرطوب و بدون علف هرز حرارت روز را بهتر ذخیره و بازتابش می‌کند (اعمال {applied_soil_protect:.1f}°C تخفیف حفاظتی)."
+                    if soil_mgmt_valid
+                    else "اطلاعات ماهواره‌ای کلان برای اعمال تخفیف حفاظتی کافی نیست؛ نیازمند تایید کاربر است."
+                ),
+                tooltip_fa=None if soil_mgmt_valid else "اطلاعات ماهواره‌ای کلان برای اعمال تخفیف حفاظتی کافی نیست؛ نیازمند تایید کاربر است",
+            ),
+        ]
+
+        # Factor 3: Light sandy soil (Aggravating flag per S2)
+        has_light_soil = bool(user_management_flags and user_management_flags.get("light_sandy_soil"))
+        modifiers.append(
+            FactorModifierResult(
+                id="light_sandy_soil",
+                name_fa="بافت خاک سبک و شنی",
+                direction="aggravating",
+                data_source="SoilGrids 250m or User Entry",
+                quality_state="valid" if has_light_soil else "coarse_context",
+                effect_c=0.0,
+                cap_c=0.0,
+                applied=has_light_soil,
+                status="published",
+                source="Hokmabadi H. (2011), Iran Pistachio Association [S2]",
+                note_fa=(
+                    "خاک‌های سبک و شنی حرارت را سریع‌تر از دست داده و در سرمازدگی حساس‌ترند؛ از شخم زدن در آستانه سرما خودداری شود."
+                    if has_light_soil
+                    else "عدم ثبت بافت خاک سبک و شنی در این قطعه."
+                ),
+            )
+        )
+
+        # Factor 4: 10m Wind mixing (Protective via turbulent mixing)
+        wind_mixing_active = wind_at_min is not None and wind_at_min > 1.5
+        modifiers.append(
+            FactorModifierResult(
+                id="wind_drainage_and_mixing",
+                name_fa="باد سطحی و اختلاط آشفتگی",
+                direction="protective",
+                data_source="NOAA/GFS0P25 10m wind",
+                quality_state="coarse_context",
+                effect_c=0.0,
+                cap_c=0.0,
+                applied=wind_mixing_active,
+                status="dynamic",
+                source="Atmospheric Boundary Layer Physics",
+                note_fa=(
+                    f"سرعت باد {wind_at_min:.1f} m/s با ایجاد اختلاط آشفتگی از شدت استخر هوای سرد می‌کاهد."
+                    if wind_mixing_active
+                    else "باد آرام (کمتر از ۱.۵ متر بر ثانیه) شرایط را برای تجمع تشعشعی هوای سرد تشدید می‌کند."
+                ),
+            )
+        )
+
+        # Asymmetric effective temperature computation:
+        # Aggravating always worsens (subtracts cooling_bump)
+        # Protective applied ONLY when quality_state is valid (user attributes), capped at protective_cap_c
+        applied_protective_credit = min(applied_soil_protect, protective_cap_c)
+        t_adjusted_min = round(t_raw_min - cooling_bump + applied_protective_credit, 2)
         t_lower = round(t_adjusted_min - unc_at_min, 2)
         t_upper = round(t_adjusted_min + unc_at_min, 2)
+
+        # Regime classification (E9)
+        regime_key = "unknown"
+        if wind_at_min is not None and cloud_at_min is not None:
+            if wind_at_min <= 2.0 and cloud_at_min <= 25.0:
+                regime_key = "radiative"
+            elif wind_at_min >= 3.5:
+                regime_key = "advective"
+            else:
+                regime_key = "mixed"
+        elif wind_at_min is not None and wind_at_min >= 3.5:
+            regime_key = "advective"
+        elif wind_at_min is not None and wind_at_min <= 2.0:
+            regime_key = "mixed"
+
+        regime_meta = regime_cfg.get(regime_key, {})
+        regime_res = FrostRegimeResult(
+            regime=regime_key,
+            regime_fa=regime_meta.get("name_fa", regime_key),
+            advice_fa=regime_meta.get("advice_fa", ""),
+            review_flag=regime_meta.get("review_flag"),
+            wind_speed_mps=wind_at_min,
+            cloud_cover_percent=cloud_at_min,
+        )
 
         # Local time formatting for minimum temperature
         tz_local = timezone(timedelta(hours=local_utc_offset_hours))
         dt_min = datetime.fromisoformat(t_min_time.replace("Z", "+00:00")).astimezone(tz_local)
         min_temp_timestamp_local = dt_min.strftime("%H:%M")
 
-        # Reference temperature for duration checks
         ref_temp = (
             stage_cfg.duration_rules[0].reference_temperature_c
             if stage_cfg.duration_rules
             else (stage_cfg.t_critical_c if stage_cfg.t_critical_c is not None else tc10)
         )
 
-        # Interval-based duration calculations (E8)
+        # Net effective step adjustment
+        effective_step_adjustment = cooling_bump - applied_protective_credit
+
         nom_total, nom_longest, nom_start_loc, nom_end_loc, is_resolvable = calculate_interval_duration_run(
             steps,
             reference_temp_c=ref_temp,
-            cooling_bump_c=cooling_bump,
+            cooling_bump_c=effective_step_adjustment,
             use_pessimistic=False,
             local_utc_offset_hours=local_utc_offset_hours,
         )
@@ -761,7 +1075,7 @@ def assess_frost_risk(
         pess_total, pess_longest, pess_start_loc, pess_end_loc, _ = calculate_interval_duration_run(
             steps,
             reference_temp_c=ref_temp,
-            cooling_bump_c=cooling_bump,
+            cooling_bump_c=effective_step_adjustment,
             use_pessimistic=True,
             local_utc_offset_hours=local_utc_offset_hours,
         )
@@ -786,14 +1100,18 @@ def assess_frost_risk(
         else:
             duration_display_text = f"0.0 h below {ref_temp:.1f}°C"
 
-        hrs_tc10 = sum(1.0 for s in steps if (s.temperature_2m_c - cooling_bump) <= tc10)
-        hrs_tc90 = sum(1.0 for s in steps if (s.temperature_2m_c - cooling_bump) <= tc90)
+        hrs_tc10 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc10)
+        hrs_tc90 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc90)
 
         if risk_hierarchy.get(level, 0) > risk_hierarchy.get(overall_level, 0):
             overall_level = level
 
-        # Recommendations if risk is elevated
-        recs = GENERIC_RECOMMENDATIONS_FA if level != RISK_LEVEL_NONE else []
+        # Recommendations with windbreak and regime caveats (E9)
+        recs = list(GENERIC_RECOMMENDATIONS_FA) if level != RISK_LEVEL_NONE else []
+        if cooling_bump > 0.0 or p_proxy > 0.40:
+            recs.append("هشدار مهم بادشکن‌ها: بادشکن‌ها نباید مسیر خروج و زه‌کشی هوای سرد شیب‌رو به پایین را مسدود کنند.")
+        if regime_key == "advective":
+            recs.append("هشدار رژیم انتقالی: در باد سرد شدید و ابرناک، روش‌های گرمایشی روباز و ماشین‌های باد کارایی نداشته و توصیه نمی‌شوند (منبع: حکم‌آبادی ۱۳۹۰ [S2]).")
 
         active_rule_src = stage_cfg.duration_rules[0].source if stage_cfg.duration_rules else None
         nominal_exposure = DurationExposureResult(
@@ -850,13 +1168,18 @@ def assess_frost_risk(
                 pessimistic_exposure=pessimistic_exposure,
                 conflicting_published_value=stage_cfg.conflicting_published_value,
                 conflicting_value_note_fa=stage_cfg.conflicting_notes_fa,
+                regime=regime_res,
+                factor_modifiers=modifiers,
+                effective_tmin_c=t_adjusted_min,
+                applied_protective_credit_c=applied_protective_credit,
+                active_threshold_set=active_set,
             )
         )
 
     disclaimer = (
         "هشدار: این مدل بر مبنای پیش‌بینی عددی GFS و شاخص تجمیع توپوگرافی تولید شده است. "
-        "با توجه به عدم تایید نهایی آستانه‌های فیزیولوژیک (وضعیت: placeholder)، "
-        "ارقام دمایی و سطوح خطر صرفاً برای آماده‌باش مشورتی بوده و اتخاذ تدابیر عملیاتی "
+        "با توجه به عدم کالیبراسیون میدانی نهایی آستانه‌های فیزیولوژیک با حسگرهای محلی، "
+        "ارقام دمایی و سطوح خطر صرفاً جنبه آماده‌باش مشورتی داشته و اتخاذ تدابیر عملیاتی "
         "باید با نظر مستقیم مروجین کشاورزی صورت گیرد."
     )
 
@@ -869,6 +1192,12 @@ def assess_frost_risk(
         forecast,
         "location_sampling_method",
         "Polygon: forecast at centroid cell; elevation = polygon mean DEM",
+    )
+
+    set_name_fa = (
+        "آستانه‌های منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰)"
+        if active_set == "published_v1"
+        else "آستانه‌های پیش‌فرض اولیه سامانه (فرضی/Placeholder)"
     )
 
     return FrostRiskAssessment(
@@ -891,4 +1220,7 @@ def assess_frost_risk(
         evidence_level="B" if crop_cfg.verified else "C",
         geometry_type=geom_type,
         location_sampling_method=loc_method,
+        active_threshold_set=active_set,
+        active_threshold_set_name_fa=set_name_fa,
+        active_threshold_set_status=crop_cfg.status,
     )

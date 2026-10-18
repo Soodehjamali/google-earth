@@ -423,6 +423,35 @@ aa5b907 untracked files on cline checkpoint
    - **Pessimistic Run Escalation:** When nominal temperature remains above threshold, a pessimistic run ($T - \sigma \le T_{\text{crit}}$) may **only** raise severity to `watch`, never to `warning` or `critical`.
    - Minimum temperature and run timestamps are reported in local `Asia/Tehran` time (`HH:MM`).
 
+---
+
+### Item E9 Decisions: Factor Model v2, Asymmetric Conservatism, and Published Thresholds
+1. **Rejection of Uncalibrated Weighted Scores (0-100):**
+   - The platform strictly rejects synthetic 0-100 weighted index scores (e.g. 40/25/15/10/5/5). Such arbitrary weights double-count developmental phenology, conflate physical hazard with biological vulnerability, and lack empirical or agronomic grounding.
+   - Phenological stage strictly selects the physical critical damage thresholds. Hazard is defined physically by $T_{\text{effective, min}} + \text{duration exposure}$.
+2. **Real Earth Engine Band List of `NOAA/GFS0P25` & Dewpoint Derivation:**
+   - Real GEE band inspection confirms `NOAA/GFS0P25` contains:
+     `['downward_shortwave_radiation_flux', 'precipitable_water_entire_atmosphere', 'relative_humidity_2m_above_ground', 'specific_humidity_2m_above_ground', 'temperature_2m_above_ground', 'total_cloud_cover_entire_atmosphere', 'total_precipitation_surface', 'u_component_of_wind_10m_above_ground', 'v_component_of_wind_10m_above_ground']`.
+   - `dewpoint_2m` is absent from GFS0P25. Dewpoint temperature ($T_{\text{dew}}$) is computed rigorously using the Magnus-Tetens formula from 2m air temperature and relative humidity:
+     $$\alpha(T, RH) = \frac{17.625 \cdot T}{243.04 + T} + \ln\left(\frac{RH}{100.0}\right)$$
+     $$T_{\text{dew}} = \frac{243.04 \cdot \alpha}{17.625 - \alpha}$$
+3. **Factor Register & Asymmetric Conservatism:**
+   - Modifiers adjust effective temperature in degrees Celsius ($^\circ\text{C}$) via the centralized `config/frost_factors.yaml` register.
+   - **Asymmetric Conservatism Rule:** Aggravating factors (e.g. cold-air pooling bump, light sandy soil exposure per S2) apply unconditionally even from `coarse_context` regional data. Conversely, protective factors (e.g. firm, moist, weed-free soil, pre-freeze wetting) apply **ONLY** when their quality state is `valid` (verified via user-entered orchard management attributes).
+   - When protective factors are derived from coarse satellite data (e.g. SMAP / ERA5-Land coarse soil moisture), they are surfaced in the UI as *"حفاظت احتمالی (اعمال‌نشده)"* with tooltip *"اطلاعات ماهواره‌ای کلان برای اعمال تخفیف حفاظتی کافی نیست؛ نیازمند تایید کاربر است"* and an effect of $0.0^\circ\text{C}$.
+   - Total protective credit is strictly capped at $1.0^\circ\text{C}$ (the conservative lower bound of the $1.0\dots 1.7^\circ\text{C}$ range cited in S1 p. 72 from Snyder & Connell 1993).
+   - Missing data never lowers risk. Evidence level remains `"C"` while thresholds remain unverified.
+4. **Frost Regime Classification & Protection Advisory:**
+   - **Radiative:** Clear skies ($\text{cloud cover} \le 30\%$) and calm winds ($\text{wind speed} \le 2.0\,\text{m/s}$). Strong nocturnal surface inversion allows active thermal methods (heaters, wind machines, selective inverted sinks / SIS) to be effective.
+   - **Advective:** Windy ($\text{wind speed} \ge 4.5\,\text{m/s}$) with cold air advection, often accompanied by clouds. Active methods are ineffective due to turbulent mixing and absence of an inversion layer; advice focuses on passive soil management and pre-freeze soil moisture.
+   - **Mixed / Unknown:** Intermediate or unresolvable atmospheric conditions.
+   - Active methods vs advective conditions are accompanied by an agronomic review flag.
+5. **Threshold Sets (`published_v1` vs `engine_default_v0`):**
+   - Added `published_v1` in `config/frost_thresholds.yaml` with values from S1 and S2: unopened bud $-4^\circ\text{C}$, opening bud $-2^\circ\text{C}$, fruit $-2^\circ\text{C}$, swelling bud `null`; bloom $-1.7^\circ\text{C}$ (S1) with S2's $+2.0^\circ\text{C}$ stored as `conflicting_published_value`.
+   - `engine_default_v0` is retained and explicitly labelled legacy / uncalibrated.
+6. **Topographic Advice:**
+   - Added explicit advice: *"بادشکن‌ها نباید مسیر تخلیه هوای سرد رو به پایین‌دست (Cold-Air Drainage) را مسدود کنند."*
+
 
 
 

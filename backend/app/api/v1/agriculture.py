@@ -1954,6 +1954,8 @@ async def assess_frost_risk_endpoint(
         phenological_stage=req.phenological_stage,
         pooling_result=pooling_res,
         pooling_risk_proxy=req.pooling_risk_proxy,
+        threshold_set=req.threshold_set or "published_v1",
+        user_management_flags=req.user_management_flags,
     )
 
     resp = assessment.to_dict()

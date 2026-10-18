@@ -1,0 +1,97 @@
+# Agricultural Frost Risk Factor Register v2 (E9)
+version: "1.0"
+description: "Physical & Environmental Modifiers for Frost Risk Effective Temperature Adjustment"
+
+# Asymmetric Conservatism Rules:
+# 1. Aggravating factors may raise risk (worsen effective temperature) even with coarse_context data.
+# 2. Protective factors are applied ONLY when their input quality_state is 'valid' (user-entered or field-scale).
+# 3. With coarse_context data, protective factors are surfaced as 'possible protection (not applied)'.
+# 4. Total protective credit is capped at protective_credit_cap_c (1.0°C).
+# 5. Missing data never lowers risk.
+
+protective_credit_cap_c: 1.0
+
+# Sourced regimes per Hokmabadi (2011) [S2]
+regime_thresholds:
+  radiative:
+    max_wind_speed_mps: 2.0
+    max_cloud_cover_percent: 25.0
+    name_fa: "تشعشعی (Radiative Frost)"
+    advice_fa: "یخبندان تشعشعی ناشی از آسمان صاف و باد آرام همراه با وارونگی دمایی است؛ روش‌های فعال حفاظتی مانند بخاری‌های باغی، ماشین‌های باد و چاهک‌های معکوس در این رژیم حداکثر کارایی را دارند."
+    review_flag: "نیازمند پایش وارونگی تراز ۱۰ تا ۱۵ متر با دماسنج برجی."
+  advective:
+    min_wind_speed_mps: 3.5
+    name_fa: "انتقالی / جبهه‌ای (Advective Frost)"
+    advice_fa: "یخبندان انتقالی حاصل نفوذ توده هوای سرد قطبی همراه با باد شدید و اغلب ابرناک است؛ سامانه‌های فعال روباز (بخاری و مولد باد) کارایی نداشته و ممکن است چند شب پیاپی تداوم یابد."
+    review_flag: "روش‌های گرمایشی موضعی در باد شدید بی‌اثر یا خطرناک است."
+  mixed:
+    name_fa: "مختلط (Mixed Regime)"
+    advice_fa: "شرایط بینابینی یا گذار از توده هوای بادی به آرامش تشعشعی در انتهای شب."
+    review_flag: "پایش تغییرات جهت و سرعت باد در ساعات پایانی شب توصیه می‌شود."
+  unknown:
+    name_fa: "نامشخص (داده‌های باد یا ابر ناکافی)"
+    advice_fa: "جهت تشخیص دقیق رژیم یخبندان، اتصال داده‌های برخط سرعت باد و پوشش ابر الزامی است."
+    review_flag: null
+
+factors:
+  - id: "soil_moisture_management"
+    name_fa: "مدیریت رطوبت و تراکم خاک"
+    direction: "protective"
+    data_source: "user_management_attributes"
+    quality_state: "valid"
+    effect_c: 1.0
+    cap_c: 1.0
+    status: "published"
+    source: "Hokmabadi H. (2010), p. 72 (citing Snyder & Connell 1993) [S1]"
+    description_fa: "خاک سفت، مرطوب و بدون علف هرز در یخبندان تشعشعی بین ۱ تا ۱.۷ درجه سانتی‌گراد حفاظت حرارتی ایجاد می‌کند. سقف محافظه‌کارانه ۱.۰ درجه تخفیف اعمال می‌شود."
+    requires_user_confirmation: true
+
+  - id: "soil_moisture_coarse_satellite"
+    name_fa: "رطوبت خاک بر مبنای ماهواره (SMAP / ERA5-Land)"
+    direction: "protective"
+    data_source: "NASA/SMAP/SPL4SMGP/007 or ECMWF/ERA5_LAND"
+    quality_state: "coarse_context"
+    spatial_resolution_m: 9000.0
+    max_staleness_hours: 168
+    effect_c: 0.0
+    nominal_potential_effect_c: 1.0
+    cap_c: 0.0
+    applied: false
+    status: "coarse_context"
+    source: "Earth Engine Coarse Soil Moisture Proxy"
+    description_fa: "اطلاعات ماهواره‌ای کلان برای اعمال تخفیف حفاظتی کافی نیست؛ نیازمند تایید کاربر است."
+    tooltip_fa: "اطلاعات ماهواره‌ای کلان برای اعمال تخفیف حفاظتی کافی نیست؛ نیازمند تایید کاربر است"
+
+  - id: "light_sandy_soil"
+    name_fa: "بافت خاک سبک و شنی"
+    direction: "aggravating"
+    data_source: "SoilGrids (ISRIC 250m) or User Entry"
+    quality_state: "coarse_context"
+    effect_c: 0.0
+    flag_only: true
+    status: "published"
+    source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
+    description_fa: "خاک‌های سبک به سرعت گرم می‌شوند ولی در سرمازدگی خسارت بیشتری می‌بینند؛ از شخم زدن در آستانه سرما خودداری شود."
+
+  - id: "wind_drainage_and_mixing"
+    name_fa: "باد سطحی و برهم زدن وارونگی"
+    direction: "protective"
+    data_source: "NOAA/GFS0P25 10m wind"
+    quality_state: "coarse_context"
+    effect_c: 0.0
+    cap_c: 0.0
+    status: "dynamic"
+    source: "Atmospheric Boundary Layer Mixing"
+    description_fa: "باد ملایم با ایجاد اختلاط آشفتگی تجمع هوای سرد در گودی‌ها را می‌شکند."
+
+  - id: "topography_cold_air_pooling"
+    name_fa: "شاخص تجمیع هوای سرد توپوگرافی"
+    direction: "aggravating"
+    data_source: "NASADEM 30m"
+    quality_state: "field_scale"
+    effect_c: -2.5
+    cap_c: -2.5
+    status: "calibrated_proxy"
+    source: "Topographic Confinement Modeling"
+    description_fa: "هوای سرد شبانه در فرورفتگی‌ها و اراضی فرودست تجمع یافته و افت دمای موضعی ایجاد می‌کند."
+    windbreak_advice_fa: "بادشکن‌ها نباید مسیر خروج و زه‌کشی هوای سرد شیب‌رو به پایین را مسدود کنند."

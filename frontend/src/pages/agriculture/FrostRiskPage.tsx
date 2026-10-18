@@ -42,6 +42,9 @@ export default function FrostRiskPage() {
   const [crop, setCrop] = useState<string>('pistachio');
   const [stage, setStage] = useState<string>('early_bloom');
   const [horizonH, setHorizonH] = useState<number>(72);
+  const [thresholdSet, setThresholdSet] = useState<string>('published_v1');
+  const [managementSoilFirmMoist, setManagementSoilFirmMoist] = useState<boolean>(false);
+  const [managementIrrigated, setManagementIrrigated] = useState<boolean>(false);
 
   // Assessment results
   const [loading, setLoading] = useState<boolean>(false);
@@ -68,6 +71,11 @@ export default function FrostRiskPage() {
         crop,
         phenological_stage: stage,
         horizon_h: horizonH,
+        threshold_set: thresholdSet,
+        user_management_flags: {
+          soil_firm_moist_weedfree: managementSoilFirmMoist,
+          irrigated_pre_frost: managementIrrigated,
+        },
       };
       const res: any = await agricultureApi.assessFrost(req);
       const normalized: FrostAssessmentResponse = {
@@ -84,6 +92,9 @@ export default function FrostRiskPage() {
         location_sampling_method: res.location_sampling_method || '',
         overall_max_severity: (res.overall_risk_level || res.overall_max_severity || 'none') as any,
         earliest_critical_night: res.nightly_risks?.find((n: any) => n.risk_level === 'warning' || n.risk_level === 'critical')?.night_date || null,
+        active_threshold_set: res.threshold_set || res.active_threshold_set || thresholdSet,
+        active_threshold_set_name_fa: res.threshold_set_name_fa || (thresholdSet === 'published_v1' ? 'آستانه‌های منتشرشده در متون علمی' : 'تنظیمات اولیه موتور (کالیبره‌نشده)'),
+        active_threshold_set_status: res.threshold_set_status,
         nights: (res.nightly_risks || res.nights || []).map((n: any) => ({
           night_date: n.night_date,
           window_start_utc: n.start_time_utc || n.window_start_utc,
@@ -92,6 +103,8 @@ export default function FrostRiskPage() {
           window_end_local: n.end_time_utc || '',
           min_temp_c: n.tmin_forecast_c ?? n.min_temp_c,
           adjusted_min_temp_c: n.tmin_adjusted_c ?? n.adjusted_min_temp_c,
+          effective_tmin_c: n.effective_tmin_c ?? n.tmin_adjusted_c,
+          applied_protective_credit_c: n.applied_protective_credit_c ?? 0,
           pooling_cooling_bump_c: n.pooling_cooling_bump_c ?? 0,
           duration_below_t10_h: n.hours_below_tc10 ?? n.duration_below_t10_h ?? 0,
           duration_below_t90_h: n.hours_below_tc90 ?? n.duration_below_t90_h ?? 0,
@@ -107,6 +120,9 @@ export default function FrostRiskPage() {
           duration_escalated: n.duration_escalated,
           conflicting_published_value: n.conflicting_published_value,
           conflicting_value_note_fa: n.conflicting_value_note_fa,
+          regime: n.regime,
+          factor_modifiers: n.factor_modifiers || [],
+          active_threshold_set: n.active_threshold_set || res.threshold_set || thresholdSet,
         })),
         forecast: res.forecast ? {
           grid_elevation_m: res.forecast.cell_elevation_m ?? res.forecast.grid_elevation_m ?? 0,
@@ -147,7 +163,7 @@ export default function FrostRiskPage() {
     } finally {
       setLoading(false);
     }
-  }, [crop, stage, horizonH, sharedGeometry]);
+  }, [crop, stage, horizonH, thresholdSet, managementSoilFirmMoist, managementIrrigated, sharedGeometry]);
 
   // Automatically trigger assessment on mount if shared location is present
   useEffect(() => {
@@ -280,6 +296,28 @@ export default function FrostRiskPage() {
                   </span>
                 </div>
               )}
+              <div
+                data-testid="threshold-set-badge"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: thresholdSet === 'published_v1' ? '#f0fdf4' : '#fffbeb',
+                  color: thresholdSet === 'published_v1' ? '#166534' : '#92400e',
+                  border: `1px solid ${thresholdSet === 'published_v1' ? '#86efac' : '#fcd34d'}`,
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                }}
+              >
+                <span>📚</span>
+                <span>
+                  {thresholdSet === 'published_v1'
+                    ? 'مجموعه آستانه: published_v1 (مستند به پژوهش‌های منتشرشده پسته)'
+                    : 'مجموعه آستانه: engine_default_v0 (قدیمی / کالیبره‌نشده)'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -428,6 +466,58 @@ export default function FrostRiskPage() {
                     <option value={120}>۱۲۰ ساعت (۵ روز)</option>
                     <option value={240}>۲۴۰ ساعت (۱۰ روز)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>
+                    مجموعه آستانه سرمازدگی:
+                  </label>
+                  <select
+                    className="form-control"
+                    value={thresholdSet}
+                    onChange={(e) => setThresholdSet(e.target.value)}
+                    data-testid="threshold-set-select"
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                  >
+                    <option value="published_v1">published_v1 (آستانه‌های مستند علمی - حکم‌آبادی ۱۳۸۹/۱۳۹۰)</option>
+                    <option value="engine_default_v0">engine_default_v0 (قدیمی / فرضی و کالیبره‌نشده)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* User-entered Field-Scale Management Attributes (E9) */}
+              <div
+                style={{
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  padding: '10px 14px',
+                  marginBottom: '14px',
+                }}
+                data-testid="user-management-flags-section"
+              >
+                <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px', color: '#334155' }}>
+                  ویژگی‌های مدیریتی سطح باغ (جهت اعمال تخفیف حفاظتی معتبر خاک - سقف ۱.۰°C):
+                </div>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={managementSoilFirmMoist}
+                      onChange={(e) => setManagementSoilFirmMoist(e.target.checked)}
+                      data-testid="management-soil-checkbox"
+                    />
+                    <span>خاک فشرده، مرطوب و عاری از علف هرز (پوشش گیاهی کف باغ زدوده شده)</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={managementIrrigated}
+                      onChange={(e) => setManagementIrrigated(e.target.checked)}
+                      data-testid="management-irrigation-checkbox"
+                    />
+                    <span>آبیاری متصل به رویداد سرما انجام شده است</span>
+                  </label>
                 </div>
               </div>
 

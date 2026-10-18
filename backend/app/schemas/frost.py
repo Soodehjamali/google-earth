@@ -21,6 +21,14 @@ class FrostAssessRequest(BaseModel):
         False,
         description="Deprecated. Forecast provider is controlled exclusively by server configuration.",
     )
+    threshold_set: Optional[str] = Field(
+        "published_v1",
+        description="Active threshold set: published_v1 (default) or engine_default_v0.",
+    )
+    user_management_flags: Optional[Dict[str, bool]] = Field(
+        None,
+        description="Field management attributes: firm_moist_weed_free_soil, irrigated_before_frost.",
+    )
 
 
 class OrchardCreate(BaseModel):

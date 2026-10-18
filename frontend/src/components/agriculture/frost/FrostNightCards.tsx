@@ -229,6 +229,123 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
                     )}
                   </div>
 
+                  {/* Frost Regime Badge & Advice (E9) */}
+                  {night.regime && (
+                    <div
+                      data-testid="regime-badge"
+                      style={{
+                        marginBottom: '14px',
+                        padding: '10px 14px',
+                        borderRadius: '6px',
+                        backgroundColor: night.regime.regime === 'radiative' ? '#eff6ff' : night.regime.regime === 'advective' ? '#fef2f2' : '#f8fafc',
+                        border: `1px solid ${night.regime.regime === 'radiative' ? '#93c5fd' : night.regime.regime === 'advective' ? '#fca5a5' : '#cbd5e1'}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.85rem', color: night.regime.regime === 'radiative' ? '#1d4ed8' : '#b91c1c' }}>
+                          رژیم یخبندان: {night.regime.regime_fa}
+                        </span>
+                        {night.regime.review_flag && (
+                          <span style={{ fontSize: '0.72rem', color: '#b45309', backgroundColor: '#fef3c7', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                            {night.regime.review_flag}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#334155', lineHeight: '1.4' }}>
+                        {night.regime.advice_fa}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Factor Modifiers Additive Celsius Bars (E9) */}
+                  {night.factor_modifiers && night.factor_modifiers.length > 0 && (
+                    <div
+                      style={{
+                        marginBottom: '14px',
+                        padding: '10px 14px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '6px',
+                      }}
+                      data-testid="factor-modifiers-container"
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
+                          📊 تعدیل‌کننده‌های دمای مؤثر (Factor Register):
+                        </span>
+                        {night.applied_protective_credit_c !== undefined && (
+                          <span style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: 600 }}>
+                            تخفیف حفاظتی اعمال‌شده: {night.applied_protective_credit_c.toFixed(1)}°C (سقف مجاز ۱.۰°C)
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {night.factor_modifiers.map((mod) => {
+                          const isAggravating = mod.direction === 'aggravating';
+                          const isApplied = mod.applied;
+                          const barColor = !isApplied ? '#94a3b8' : isAggravating ? '#ef4444' : '#10b981';
+                          const borderStyle = !isApplied ? '1px dashed #94a3b8' : `1px solid ${isAggravating ? '#fca5a5' : '#86efac'}`;
+                          const bgColor = !isApplied ? '#f8fafc' : isAggravating ? '#fef2f2' : '#f0fdf4';
+
+                          return (
+                            <div
+                              key={mod.id}
+                              data-testid={`factor-mod-${mod.id}`}
+                              title={mod.tooltip_fa || undefined}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '6px 10px',
+                                borderRadius: '4px',
+                                border: borderStyle,
+                                backgroundColor: bgColor,
+                                fontSize: '0.8rem',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: 600 }}>{mod.name_fa}</span>
+                                <span style={{ fontSize: '0.72rem', color: '#64748b' }}>({mod.data_source})</span>
+                                {!isApplied && (
+                                  <span
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      backgroundColor: '#e2e8f0',
+                                      color: '#475569',
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                    }}
+                                  >
+                                    حفاظت احتمالی (اعمال‌نشده)
+                                  </span>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 700, color: barColor, direction: 'ltr' }}>
+                                  {isAggravating ? '+' : '-'}{mod.effect_c.toFixed(1)}°C
+                                </span>
+                                {mod.tooltip_fa && (
+                                  <span
+                                    title={mod.tooltip_fa}
+                                    style={{ cursor: 'help', fontSize: '0.85rem' }}
+                                  >
+                                    ℹ️
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>
+                        💡 بادشکن‌ها نباید مسیر تخلیه هوای سرد رو به پایین‌دست (Cold-Air Drainage) را مسدود کنند.
+                      </div>
+                    </div>
+                  )}
+
                   {/* Reasons */}
                   {night.reasons && night.reasons.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>

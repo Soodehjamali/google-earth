@@ -46,7 +46,32 @@ def get_lead_time_uncertainty(lead_hours: float, table: Optional[Tuple[Tuple[flo
     return 4.5
 
 
-@dataclass(frozen=True)
+def calculate_dew_point_magnus(temp_c: float, rh_pct: Optional[float]) -> Optional[float]:
+    """Calculate dew point in °C using standard Magnus-Tetens approximation.
+
+    Formula:
+        alpha = (a * T) / (b + T) + ln(RH / 100.0)
+        T_dew = (b * alpha) / (a - alpha)
+        where a = 17.625, b = 243.04 °C (Sonntag 1990 / Alduchov & Eskridge 1996).
+    """
+    if rh_pct is None or math.isnan(rh_pct):
+        return None
+    # Physical clamp of relative humidity (1% to 100%)
+    rh_clamped = max(1.0, min(100.0, float(rh_pct)))
+    a = 17.625
+    b = 243.04
+    try:
+        alpha = (a * temp_c) / (b + temp_c) + math.log(rh_clamped / 100.0)
+        denom = a - alpha
+        if abs(denom) < 1e-6:
+            return None
+        t_dew = (b * alpha) / denom
+        return round(float(t_dew), 2)
+    except Exception:
+        return None
+
+
+@dataclass
 class ForecastTimestep:
     """One timestep in the meteorological forecast series."""
 
@@ -64,6 +89,8 @@ class ForecastTimestep:
     is_interpolated: bool
     relative_humidity_percent: Optional[float] = None
     wind_speed_10m_mps: Optional[float] = None
+    total_cloud_cover_percent: Optional[float] = None
+    dewpoint_2m_c: Optional[float] = None
     # Deprecated backwards-compatibility aliases
     temperature_min_c: Optional[float] = None
     temperature_max_c: Optional[float] = None
@@ -227,6 +254,7 @@ class NoaaGfsForecastProvider(ForecastProvider):
             run_collection.select([
                 "temperature_2m_above_ground",
                 "relative_humidity_2m_above_ground",
+                "total_cloud_cover_entire_atmosphere",
                 "u_component_of_wind_10m_above_ground",
                 "v_component_of_wind_10m_above_ground",
             ])
@@ -267,6 +295,9 @@ class NoaaGfsForecastProvider(ForecastProvider):
             rh = props.get("relative_humidity_2m_above_ground")
             rh_pct = float(rh) if rh is not None else None
 
+            cloud = props.get("total_cloud_cover_entire_atmosphere")
+            cloud_pct = float(cloud) if cloud is not None else None
+
             u = props.get("u_component_of_wind_10m_above_ground")
             v = props.get("v_component_of_wind_10m_above_ground")
             wind_speed = math.sqrt(float(u)**2 + float(v)**2) if (u is not None and v is not None) else None
@@ -283,6 +314,9 @@ class NoaaGfsForecastProvider(ForecastProvider):
                 is_night_minimum=is_night,
                 config=self.quality_config,
             )
+
+            # Compute dew point via standard Magnus formula from corrected T and RH (E9)
+            dew_point_c = calculate_dew_point_magnus(corr.corrected_value, rh_pct)
 
             # Lead-time uncertainty
             lead_unc = get_lead_time_uncertainty(lead_h, self.uncertainty_table)
@@ -307,6 +341,8 @@ class NoaaGfsForecastProvider(ForecastProvider):
                     is_interpolated=False,
                     relative_humidity_percent=round(rh_pct, 1) if rh_pct is not None else None,
                     wind_speed_10m_mps=round(wind_speed, 1) if wind_speed is not None else None,
+                    total_cloud_cover_percent=round(cloud_pct, 1) if cloud_pct is not None else None,
+                    dewpoint_2m_c=dew_point_c,
                 )
             )
 
@@ -433,7 +469,9 @@ class FakeForecastProvider(ForecastProvider):
                     temperature_max_c=round(corr.corrected_value + total_unc, 2),
                     is_interpolated=is_interpolated,
                     relative_humidity_percent=45.0,
-                    wind_speed_10m_mps=2.5,
+                    wind_speed_10m_mps=1.5,
+                    total_cloud_cover_percent=15.0,
+                    dewpoint_2m_c=calculate_dew_point_magnus(corr.corrected_value, 45.0),
                 )
             )
 
