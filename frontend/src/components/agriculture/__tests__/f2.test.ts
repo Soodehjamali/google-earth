@@ -229,6 +229,10 @@ describe('4. child pages never trigger analysis requests directly', () => {
         assert.ok(!text.includes('agricultureApi.analyze'), file);
         assert.ok(!text.includes('runAnalysis('), file);
       }
+      if (file.endsWith('FrostRiskPage.tsx')) {
+        assert.ok(!text.includes('agricultureApi.synthesisOnly'), 'FrostRiskPage must not call synthesisOnly');
+        assert.ok(!text.includes('apiPost('), 'FrostRiskPage must not make unmanaged apiPost calls');
+      }
       if (!file.endsWith('PestDiseasePage.tsx') && !file.endsWith('FrostRiskPage.tsx')) {
         assert.ok(text.includes('useAgricultureContext'), file);
       }
