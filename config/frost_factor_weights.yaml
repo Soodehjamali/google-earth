@@ -1,0 +1,151 @@
+# Weighted Frost Factor Model Configuration (R3)
+# Group weights: temperature+duration 40, stage 25, soil 15, wind 10, cloud+humidity 5, topography 5 = 100.0
+# Source note: user research, unreferenced, no published basis in S1/S2.
+illustrative_only: true
+evidence_level: "C"
+index_is_probability: false
+thresholds_verified: false
+
+category_bands:
+  none_max: 25.0       # < 25.0: none
+  watch_max: 45.0      # 25.0 - 45.0: watch
+  warning_max: 70.0    # 45.0 - 70.0: warning
+  # >= 70.0: critical
+
+cold_advection_sectors: []  # Empty by default (no published basis). Sectors in degrees, e.g. [[0, 45], [315, 360]]
+
+factors:
+  - id: "temperature_duration"
+    label_fa: "دما و دیرش سرما"
+    weight: 40.0
+    input_source: "پیش‌بینی دمای مؤثر و قاعده دیرش ساعتی GFS + DEM"
+    source_module: "app.services.agriculture.forecast"
+    protective_capable: false
+    quality_rule: "asymmetric_standard"
+    margin_safe_c: 3.0
+    status_placeholder: "dynamic"
+    source_note: "S1 (Hokmabadi 2010) & S2 (Hokmabadi 2011)"
+
+  - id: "phenological_stage"
+    label_fa: "مرحله فنولوژیکی باغ"
+    weight: 25.0
+    input_source: "مرحله جاری باغداری (ورود باغدار / راهنمای پلتفرم)"
+    source_module: "app.db.models.frost.Orchard"
+    protective_capable: false
+    quality_rule: "user_entered"
+    status_placeholder: "orchard_stage"
+    source_note: "S2 vulnerability ordering (flower most sensitive, unopened bud most resistant)"
+    stage_subscores:
+      full_bloom: 1.0
+      early_bloom: 0.85
+      fruit_set: 0.70
+      bud_burst: 0.50
+      unopened_bud: 0.30
+      dormant: 0.10
+
+  - id: "soil_rootzone_moisture"
+    label_fa: "رطوبت نسبی ریشه در خاک"
+    weight: 7.5
+    input_source: "رطوبت نسبی نرمالایزشده بر مبنای ظرفیت مزرعه و پژمردگی اختصاصی باغ"
+    source_module: "app.services.agriculture.soil"
+    protective_capable: true
+    quality_rule: "asymmetry_floor_0_5_for_coarse"
+    status_placeholder: "dynamic_soil"
+    source_note: "Hokmabadi 2010 p. 72 (citing Snyder & Connell 1993); user research weights"
+    breakpoints:
+      dry_threshold: 0.30     # < 0.30 -> adverse (0.85)
+      moist_threshold: 0.70   # > 0.70 -> favorable (0.20 if valid, 0.50 if coarse)
+
+  - id: "soil_texture_depth"
+    label_fa: "بافت و عمق خاک"
+    weight: 7.5
+    input_source: "طبقه‌بندی بافت خاک SoilGrids 250m پلتفرم / ویژگی‌های خاک باغ"
+    source_module: "app.services.agriculture.soil_intelligence"
+    protective_capable: true
+    quality_rule: "asymmetry_floor_0_5_for_coarse"
+    status_placeholder: "static_soil"
+    source_note: "S2 (Hokmabadi 2011: light sandy soil adverse); user research weights"
+    texture_subscores:
+      light_sandy: 0.80       # شن و لوم شنی
+      medium_loam: 0.50       # لوم و سیلت
+      heavy_clay: 0.20        # رسی و سنگین
+
+  - id: "wind_speed"
+    label_fa: "سرعت باد سطحی"
+    weight: 5.0
+    input_source: "سرعت باد سطحی ۱۰ متری GFS در لحظه کمینه دما"
+    source_module: "NOAA/GFS0P25"
+    protective_capable: false
+    quality_rule: "gfs_coarse"
+    status_placeholder: "dynamic_wind"
+    source_note: "Atmospheric Boundary Layer Physics (calm radiative adverse; mild mixing favorable; strong advective adverse)"
+    breakpoints:
+      calm_max_mps: 1.0       # < 1.0 m/s: calm -> adverse (0.85)
+      mild_min_mps: 1.5       # 1.5 - 4.0 m/s: mixing -> favorable (0.20)
+      mild_max_mps: 4.0
+      strong_min_mps: 6.0     # > 6.0 m/s: advective -> adverse (0.85)
+
+  - id: "wind_direction"
+    label_fa: "جهت باد و تخلیه شیب"
+    weight: 5.0
+    input_source: "انطباق بردار وزش باد GFS با جهت شیب توپوگرافی باغ"
+    source_module: "NOAA/GFS0P25 & app.services.agriculture.terrain"
+    protective_capable: false
+    quality_rule: "gfs_coarse"
+    status_placeholder: "dynamic_wind_dir"
+    source_note: "Drainage alignment: along downslope favorable, against downslope adverse, flat neutral"
+    breakpoints:
+      alignment_angle_deg: 45.0  # within 45 deg of aspect -> favorable (0.30); opposite (>135 deg) -> adverse (0.80)
+      flat_slope_deg: 1.0        # slope < 1.0 deg is flat terrain -> neutral (0.50)
+
+  - id: "cloud_cover"
+    label_fa: "پوشش ابر آسمان"
+    weight: 2.5
+    input_source: "درصد کل پوشش ابر آسمان GFS در ساعت کمینه دما"
+    source_module: "NOAA/GFS0P25"
+    protective_capable: false
+    quality_rule: "gfs_coarse"
+    status_placeholder: "dynamic_cloud"
+    source_note: "Radiative transfer: clear sky adverse (0.90), overcast favorable (0.10)"
+    breakpoints:
+      clear_max_pct: 20.0     # < 20%: clear -> adverse (0.90)
+      overcast_min_pct: 70.0  # > 70%: overcast -> favorable (0.10)
+
+  - id: "humidity_dewpoint"
+    label_fa: "رطوبت نسبی و نقطه شبنم"
+    weight: 2.5
+    input_source: "رطوبت نسبی ۲ متری و دمای نقطه شبنم مگنوس GFS"
+    source_module: "NOAA/GFS0P25 & Magnus Formula"
+    protective_capable: false
+    quality_rule: "gfs_coarse"
+    status_placeholder: "dynamic_humidity"
+    source_note: "Psychrometric physics: dry air/low dewpoint adverse (0.85), humid/latent heat favorable (0.20)"
+    breakpoints:
+      dry_rh_max_pct: 30.0    # < 30% RH: dry -> adverse (0.85)
+      humid_rh_min_pct: 70.0  # > 70% RH: humid -> favorable (0.20)
+
+  - id: "topography_pooling"
+    label_fa: "شاخص تجمیع هوای سرد"
+    weight: 3.0
+    input_source: "شاخص فرورفتگی و بهامدی تراز ارتفاعی NASADEM 30m"
+    source_module: "app.services.agriculture.cold_air_pooling"
+    protective_capable: false
+    quality_rule: "dem_30m_valid"
+    status_placeholder: "static_pooling"
+    source_note: "Topographic Confinement Modeling (p >= 0.6 adverse, p < 0.3 favorable)"
+    breakpoints:
+      adverse_min_proxy: 0.60 # >= 0.60 -> adverse (0.90)
+      favorable_max_proxy: 0.30 # < 0.30 -> favorable (0.10)
+
+  - id: "topography_slope_aspect"
+    label_fa: "شیب و جهت دامنه"
+    weight: 2.0
+    input_source: "شیب و جهت جغرافیایی دامنه NASADEM 30m"
+    source_module: "app.services.agriculture.terrain"
+    protective_capable: false
+    quality_rule: "dem_30m_valid"
+    status_placeholder: "static_terrain"
+    source_note: "Terrain drainage: steep slope favorable (0.20), flat valley bottom adverse (0.80)"
+    breakpoints:
+      steep_slope_deg: 5.0    # > 5.0 deg -> favorable (0.20)
+      flat_slope_deg: 1.5     # < 1.5 deg -> adverse (0.80)

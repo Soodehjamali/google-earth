@@ -498,6 +498,104 @@ aa5b907 untracked files on cline checkpoint
      - Phenological stage: 336 hours (14 days, per R4)
      - Static topography and soil maps: 8760 hours (1 year)
 
+---
+
+### Item R3: Weighted Factor Model Engine per Orchard, Breakpoints, and Safety Gate (GATE)
+1. **Factor Group Weights (Exact Sum = 100.0%):**
+   - The factor weights originate from the user's research summary (NOT from S1/S2, marked *"user research, unreferenced, no published basis"*):
+     - `temperature_duration`: $40.0\%$ (margin of effective Tmin above stage critical temperature + duration rule)
+     - `phenological_stage`: $25.0\%$ (S2 vulnerability ordering)
+     - `soil_rootzone_moisture`: $7.5\%$ (normalized relative moisture)
+     - `soil_texture_depth`: $7.5\%$ (ISRIC SoilGrids 250m texture classification & sand %)
+     - `wind_speed`: $5.0\%$ (10m GFS wind speed at minimum temperature)
+     - `wind_direction`: $5.0\%$ (downslope drainage alignment vs slope aspect)
+     - `cloud_cover`: $2.5\%$ (total cloud cover entire atmosphere)
+     - `humidity_dewpoint`: $2.5\%$ (2m relative humidity & Magnus dewpoint)
+     - `topography_pooling`: $3.0\%$ (NASADEM 30m cold-air pooling proxy)
+     - `topography_slope_aspect`: $2.0\%$ (NASADEM 30m slope steepness)
+   - Loader validation strictly enforces $\sum w_i = 100.0\%$; any divergence raises an immediate `ValueError`.
+
+2. **Complete Register of Placeholder Breakpoints ($s_i \in [0, 1]$):**
+   All breakpoints are round, illustrative placeholders documented here for full transparency:
+   - **Temperature + Duration ($w = 40.0\%$):**
+     - $\Delta T = T_{\text{eff}} - T_{\text{crit}}$.
+     - $\Delta T \le 0.0^\circ\text{C} \implies s = 1.00$ (adverse / lethal).
+     - $\Delta T \ge 3.0^\circ\text{C} \implies s = 0.00$ (favorable / safe).
+     - $0.0 < \Delta T < 3.0^\circ\text{C} \implies s = 1.0 - \frac{\Delta T}{3.0}$.
+     - Duration rule met (e.g. continuous exposure) $\implies s = 1.00$.
+   - **Phenological Stage ($w = 25.0\%$ per S2):**
+     - `full_bloom` / `bloom`: $s = 1.00$ (most sensitive).
+     - `early_bloom`: $s = 0.85$.
+     - `fruit_set` / `fruit`: $s = 0.70$.
+     - `bud_burst` / `opening_bud`: $s = 0.50$.
+     - `unopened_bud`: $s = 0.30$ (most resistant).
+     - `dormant`: $s = 0.10$.
+     - Stale stage (>14 days) or unknown: $s = 1.00$ (most sensitive stage, flagged *"مرحله قدیمی/نامشخص"*).
+   - **Relative Root-Zone Soil Moisture ($w = 7.5\%$):**
+     - Relative moisture $m = \text{clamp}((\theta - WP)/(FC - WP), 0, 1)$.
+     - $m \le 0.30 \implies s = 0.85$ (dry, adverse).
+     - $m \ge 0.70 \implies s = 0.20$ (moist, favorable).
+     - $0.30 < m < 0.70 \implies s = 0.85 - \frac{m - 0.30}{0.40} \times 0.65$.
+     - Missing data ($FC$, $WP$, or $\theta$ missing) $\implies s = 0.50$ (neutral, status *"نامشخص"*).
+   - **Soil Texture & Depth ($w = 7.5\%$):**
+     - Light sandy soil ($\text{sand} > 70\%$) $\implies s = 0.80$ (adverse per S2).
+     - Medium loam ($\text{sand } 35-70\%$) $\implies s = 0.50$ (neutral).
+     - Heavy clay ($\text{clay} > 35\%$ or $\text{sand} < 35\%$) $\implies s = 0.20$ (favorable).
+   - **Wind Speed at Tmin ($w = 5.0\%$):**
+     - Calm: $v \le 1.0\,\text{m/s} \implies s = 0.85$ (radiative inversion risk, adverse).
+     - Mild turbulent mixing: $1.5 \le v \le 4.0\,\text{m/s} \implies s = 0.20$ (inversion breakup, favorable).
+     - Strong advective: $v \ge 6.0\,\text{m/s} \implies s = 0.85$ (advective freeze, adverse).
+     - Linear transitions between $1.0\dots 1.5$ and $4.0\dots 6.0\,\text{m/s}$.
+   - **Wind Direction vs Aspect ($w = 5.0\%$):**
+     - Flat terrain ($\text{slope} < 1.0^\circ$) $\implies s = 0.50$ (neutral).
+     - Cold advection sectors: empty list by default (flagged *"no published basis"*). If populated and wind inside sector $\implies s = 0.85$.
+     - Downslope alignment $\delta = \min(|\theta_{\text{wind}} - \theta_{\text{aspect}}|, 360 - |\theta_{\text{wind}} - \theta_{\text{aspect}}|)$:
+       - Along downslope ($\delta \le 45^\circ$) $\implies s = 0.30$ (ventilating, favorable).
+       - Against downslope ($\delta \ge 135^\circ$) $\implies s = 0.80$ (drainage blockage, adverse).
+       - Intermediate ($45^\circ < \delta < 135^\circ$): linear interpolation between $0.30$ and $0.80$.
+   - **Cloud Cover ($w = 2.5\%$):**
+     - Clear skies ($C \le 20\%$) $\implies s = 0.90$ (intense radiative cooling, adverse).
+     - Overcast ($C \ge 70\%$) $\implies s = 0.10$ (greenhouse radiation trapping, favorable).
+     - $20\% < C < 70\% \implies s = 0.90 - \frac{C - 20}{50} \times 0.80$.
+   - **Relative Humidity & Dew Point ($w = 2.5\%$):**
+     - Dry air ($RH \le 30\%$) $\implies s = 0.85$ (low dewpoint, rapid cooling, adverse).
+     - Humid air ($RH \ge 70\%$) $\implies s = 0.20$ (latent heat of condensation, favorable).
+     - $30\% < RH < 70\% \implies s = 0.85 - \frac{RH - 30}{40} \times 0.65$.
+   - **Cold-Air Pooling Proxy ($w = 3.0\%$):**
+     - Severe pooling ($p \ge 0.60$) $\implies s = 0.90$ (basin stagnation, adverse).
+     - Minimal pooling ($p \le 0.30$) $\implies s = 0.10$ (convex terrain, favorable).
+     - $0.30 < p < 0.60 \implies s = 0.10 + \frac{p - 0.30}{0.30} \times 0.80$.
+   - **Slope Steepness ($w = 2.0\%$):**
+     - Flat valley bottom ($\text{slope} \le 1.5^\circ$) $\implies s = 0.80$ (adverse).
+     - Well-drained slope ($\text{slope} \ge 5.0^\circ$) $\implies s = 0.20$ (favorable).
+     - $1.5^\circ < \text{slope} < 5.0^\circ \implies s = 0.80 - \frac{\text{slope} - 1.5}{3.5} \times 0.60$.
+
+3. **Asymmetric Conservatism Floor:**
+   - Factors designated `protective_capable: true` (`soil_rootzone_moisture`, `soil_texture_depth`) are strictly floored at $s_i \ge 0.50$ when based on `coarse_context` satellite/regional data.
+   - Favorable subscores ($s_i < 0.50$) are unlocked **only** when data has `quality_state == "valid"` (e.g. verified user management input or calibrated field sensors).
+   - This floor **never** applies to `temperature_duration`.
+
+4. **Category Bands and Absolute Safety Gate (GATE):**
+   - **Index Category Bands (Placeholders):**
+     - $\text{Index} < 25.0 \implies$ `none` (عادی)
+     - $25.0 \le \text{Index} < 45.0 \implies$ `watch` (دیده‌بانی)
+     - $45.0 \le \text{Index} < 70.0 \implies$ `warning` (هشدار)
+     - $\text{Index} \ge 70.0 \implies$ `critical` (بحرانی)
+   - **GATE Category:**
+     - If $T_{\text{effective, min}} \le T_{\text{crit}} \implies$ at least `warning`.
+     - If duration rule met (E8 rules) $\implies$ `critical`.
+   - **Final Category:**
+     $$\text{Final Category} = \max(\text{Index Category}, \text{GATE Category})$$
+   - The GATE guarantees that physical lethal conditions are **never** masked or diluted by favorable modifiers.
+
+5. **Disclosure Metadata:**
+   - `illustrative_only: true`
+   - `index_is_probability: false`
+   - `thresholds_verified: false`
+   - `evidence_level: "C"`
+   - Persian UI label: *"ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)"*
+
+
 
 
 
