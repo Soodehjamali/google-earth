@@ -16,14 +16,14 @@ const SEVERITY_META: Record<
   { labelFa: string; bg: string; text: string; border: string; icon: string }
 > = {
   critical: {
-    labelFa: 'بحرانی (Critical Freeze)',
+    labelFa: 'سرمازدگی بحرانی (خطر بالای خسارت (برآورد مشورتی))',
     bg: '#fef2f2',
     text: '#7f1d1d',
     border: '#b91c1c',
     icon: '☠️',
   },
   warning: {
-    labelFa: 'اخطار سرمازدگی (Warning)',
+    labelFa: 'هشدار سرمازدگی (احتمال بالای خسارت (برآورد مشورتی))',
     bg: '#fef2f2',
     text: '#991b1b',
     border: '#f87171',
@@ -115,19 +115,53 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
                     </span>
                   </div>
 
-                  <span
-                    style={{
-                      padding: '3px 10px',
-                      borderRadius: '12px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      backgroundColor: '#ffffff',
-                      color: meta.text,
-                      border: `1px solid ${meta.border}`,
-                    }}
-                  >
-                    {meta.labelFa}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {night.illustrative_only ? (
+                      <span
+                        className="badge-illustrative"
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          backgroundColor: '#fef3c7',
+                          color: '#92400e',
+                          border: '1px solid #f59e0b',
+                        }}
+                      >
+                        مقادیر نمایشی
+                      </span>
+                    ) : (
+                      <span
+                        className="badge-source"
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 500,
+                          backgroundColor: '#e0f2fe',
+                          color: '#0369a1',
+                          border: '1px solid #7dd3fc',
+                        }}
+                      >
+                        {night.active_rule_source || '[S1/S2] Hokmabadi'}
+                      </span>
+                    )}
+
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '12px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        backgroundColor: '#ffffff',
+                        color: meta.text,
+                        border: `1px solid ${meta.border}`,
+                      }}
+                    >
+                      {meta.labelFa}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Night Body */}
@@ -161,11 +195,18 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
 
                     <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px' }}>
                       <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>
-                        دمای کمینه نهایی مزرعه
+                        {night.is_partial_night || (night.window_coverage !== undefined && night.window_coverage < 1.0)
+                          ? 'دمای کمینه مزرعه (شب ناقص)'
+                          : 'دمای کمینه نهایی مزرعه'}
                       </div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 700, color: meta.text }}>
                         <FormattedNumber value={night.adjusted_min_temp_c} unit="°C" />
                       </div>
+                      {(night.is_partial_night || (night.window_coverage !== undefined && night.window_coverage < 1.0)) && (
+                        <div style={{ fontSize: '0.7rem', color: '#b45309', marginTop: '2px', fontWeight: 600 }}>
+                          ⚠️ شب ناقص (پوشش {Math.round((night.window_coverage || 0) * 100)}٪)
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px' }}>

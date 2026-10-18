@@ -1,5 +1,7 @@
 # Frost Risk Phenological Thresholds Configuration
 #
+# NOTE: Numbers under engine_default_v0 are illustrative placeholders (مقادیر نمایشی) and are NOT from pistachio literature.
+#
 # SOURCED RESEARCH PROVENANCE (Phase 3 Close-out 3):
 # [S1] Hokmabadi H. (2010). Pistachio frost damage in Iran and new methods of frost protection. Options Méditerranéennes A94, pp. 71-78.
 # [S2] Hokmabadi H. (2011). Spring frost (سرمازدگی بهاره), Iran Pistachio Association.
@@ -170,4 +172,5 @@ threshold_sets:
     status: "placeholder"
     verified: false
     evidence_level: "C"
-    review_flag: "آستانه‌های T10 و T90 در این مجموعه فرضی بوده و در هیچ مقاله علمی منتشر نشده‌اند."
+    illustrative_only: true
+    review_flag: "آستانه‌های T10 و T90 در این مجموعه فرضی بوده و در هیچ مقاله علمی منتشر نشده‌اند (مقادیر نمایشی)."

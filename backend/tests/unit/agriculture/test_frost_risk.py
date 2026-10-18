@@ -947,3 +947,107 @@ async def test_windbreak_drainage_caveat_advice():
     assert "بادشکن‌ها نباید مسیر خروج و زه‌کشی هوای سرد شیب‌رو به پایین را مسدود کنند" in all_recs
 
 
+def test_wording_no_certainty_words_in_persian_labels():
+    """Verify that certainty words like 'قطعی' are completely eliminated from risk labels (E6)."""
+    from app.services.agriculture.frost_risk import (
+        RISK_LEVEL_FA,
+        RISK_LEVEL_CRITICAL,
+        RISK_LEVEL_WARNING,
+        RISK_LEVEL_WATCH,
+        RISK_LEVEL_ADVISORY,
+    )
+
+    for level, label_fa in RISK_LEVEL_FA.items():
+        assert "قطعی" not in label_fa, f"Certainty word 'قطعی' found in label for {level}: {label_fa}"
+
+    # Advisory wording check
+    assert "برآورد مشورتی" in RISK_LEVEL_FA[RISK_LEVEL_CRITICAL]
+    assert "برآورد مشورتی" in RISK_LEVEL_FA[RISK_LEVEL_WARNING]
+
+
+def test_illustrative_only_flag_on_unsourced_sets():
+    """Verify illustrative_only=True on unsourced thresholds (engine_default_v0) and citations on published_v1 (E6)."""
+    from app.services.agriculture.frost_risk import (
+        load_frost_threshold_set,
+        assess_frost_risk,
+    )
+    from app.services.agriculture.forecast import FakeForecastProvider
+    import asyncio
+
+    # published_v1
+    pub_cfg = load_frost_threshold_set(set_name="published_v1", crop="pistachio")
+    assert pub_cfg.status == "published"
+    assert pub_cfg.stages["bloom"].source is not None
+    assert "[S1]" in pub_cfg.stages["bloom"].source
+
+    # Run assessment with published_v1
+    provider = FakeForecastProvider(base_tmin_c=-2.0, base_tmax_c=10.0)
+    forecast = asyncio.run(provider.get_hourly_forecast(None, horizon_h=48))
+    assessment_pub = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="bloom",
+        threshold_set="published_v1",
+    )
+    assert assessment_pub.illustrative_only is False
+    assert assessment_pub.nightly_risks[0].illustrative_only is False
+
+    # Run assessment with engine_default_v0 (illustrative placeholder)
+    assessment_def = assess_frost_risk(
+        forecast=forecast,
+        crop="pistachio",
+        phenological_stage="bloom",
+        threshold_set="engine_default_v0",
+    )
+    assert assessment_def.illustrative_only is True
+    assert assessment_def.nightly_risks[0].illustrative_only is True
+
+
+@pytest.mark.asyncio
+async def test_night_window_coverage_and_partial_night_label():
+    """Verify window_coverage and partial night labeling when series does not cover full 18:00-09:00 window (E6)."""
+    from app.services.agriculture.frost_risk import assess_frost_risk
+    from app.services.agriculture.forecast import FakeForecastProvider
+
+    # 1. Full 48h forecast:
+    # Night 0 starts mid-night (e.g. 03:30 local) -> partial night (coverage ~0.4)
+    # Night 1 spans full 18:00 to 09:00 -> full night (coverage 1.0)
+    provider = FakeForecastProvider(base_tmin_c=-1.0, base_tmax_c=12.0)
+    forecast_full = await provider.get_hourly_forecast(None, horizon_h=48)
+    assessment_full = assess_frost_risk(
+        forecast=forecast_full,
+        crop="pistachio",
+        phenological_stage="bloom",
+    )
+    assert len(assessment_full.nightly_risks) >= 2
+
+    partial_first_night = assessment_full.nightly_risks[0]
+    assert partial_first_night.window_coverage < 1.0
+    assert partial_first_night.is_partial_night is True
+    assert partial_first_night.tmin_label == "partial night"
+    assert "شب ناقص" in partial_first_night.tmin_display_label_fa
+
+    full_second_night = assessment_full.nightly_risks[1]
+    assert full_second_night.window_coverage == 1.0
+    assert full_second_night.is_partial_night is False
+    assert full_second_night.tmin_label == "full night"
+    assert full_second_night.tmin_display_label_fa == "کمینه کل شب"
+
+    # 2. Truncated forecast ending early in the night (e.g. only 6 hours covering 18:00 to 00:00)
+    forecast_truncated = await provider.get_hourly_forecast(None, horizon_h=48)
+    # Filter series to only 6 timesteps in the first night
+    forecast_truncated.series = forecast_truncated.series[:6]
+
+    assessment_partial = assess_frost_risk(
+        forecast=forecast_truncated,
+        crop="pistachio",
+        phenological_stage="bloom",
+    )
+    partial_night = assessment_partial.nightly_risks[0]
+    assert partial_night.window_coverage < 1.0
+    assert partial_night.is_partial_night is True
+    assert partial_night.tmin_label == "partial night"
+    assert "شب ناقص" in partial_night.tmin_display_label_fa
+
+
+

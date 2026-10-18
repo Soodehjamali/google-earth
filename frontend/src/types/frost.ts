@@ -108,6 +108,11 @@ export interface FrostNightAssessment {
   effective_tmin_c?: number;
   applied_protective_credit_c?: number;
   active_threshold_set?: string;
+  window_coverage?: number;
+  is_partial_night?: boolean;
+  tmin_label?: string;
+  tmin_display_label_fa?: string;
+  illustrative_only?: boolean;
 }
 
 export interface FrostAssessmentResponse {

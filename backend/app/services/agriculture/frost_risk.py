@@ -71,8 +71,8 @@ RISK_LEVEL_FA = {
     RISK_LEVEL_NONE: "عادی (بدون خطر)",
     RISK_LEVEL_ADVISORY: "اطلاعیه پایش (احتمال سرما)",
     RISK_LEVEL_WATCH: "دیده‌بانی سرما (خطر متوسط / افت کوتاه‌مدت)",
-    RISK_LEVEL_WARNING: "هشدار سرمازدگی (خطر جدی خسارت)",
-    RISK_LEVEL_CRITICAL: "سرمازدگی بحرانی (خطر نکروز بافت و خسارت شدید)",
+    RISK_LEVEL_WARNING: "هشدار سرمازدگی (احتمال بالای خسارت (برآورد مشورتی))",
+    RISK_LEVEL_CRITICAL: "سرمازدگی بحرانی (خطر بالای خسارت (برآورد مشورتی))",
 }
 
 # Generic, verified cultural/physical recommendations (NO chemicals, NO hormones)
@@ -525,6 +525,13 @@ class NightlyFrostRisk:
     applied_protective_credit_c: float = 0.0
     active_threshold_set: str = "published_v1"
 
+    # Wording & Night Window Coverage flags (E6)
+    window_coverage: float = 1.0
+    is_partial_night: bool = False
+    tmin_label: str = "full night"
+    tmin_display_label_fa: str = "کمینه کل شب"
+    illustrative_only: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -555,6 +562,7 @@ class FrostRiskAssessment:
     active_threshold_set: str = "published_v1"
     active_threshold_set_name_fa: str = "آستانه‌های منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰)"
     active_threshold_set_status: str = "published"
+    illustrative_only: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -1136,6 +1144,25 @@ def assess_frost_risk(
             rule_note_fa="سناریوی بدبینانه (T_eff - sigma)",
         )
 
+        # Night window coverage calculation (E6)
+        # 18:00 to 09:00 local comprises 15 hourly bins: {18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8}
+        covered_local_hours = set()
+        for s in steps:
+            dt_s = datetime.fromisoformat(s.timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
+            covered_local_hours.add(dt_s.hour)
+
+        night_window_hours = {18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8}
+        intersection = covered_local_hours.intersection(night_window_hours)
+        window_coverage = round(min(1.0, len(intersection) / 15.0), 2)
+        is_partial_night = window_coverage < 1.0
+        tmin_label = "partial night" if is_partial_night else "full night"
+        tmin_display_label_fa = (
+            f"کمینه شب ناقص (پوشش {int(window_coverage * 100)}٪)"
+            if is_partial_night
+            else "کمینه کل شب"
+        )
+        illustrative_only = bool(active_set == "engine_default_v0" or stage_cfg.status == "placeholder")
+
         nightly_risks.append(
             NightlyFrostRisk(
                 night_date=night_key,
@@ -1173,6 +1200,11 @@ def assess_frost_risk(
                 effective_tmin_c=t_adjusted_min,
                 applied_protective_credit_c=applied_protective_credit,
                 active_threshold_set=active_set,
+                window_coverage=window_coverage,
+                is_partial_night=is_partial_night,
+                tmin_label=tmin_label,
+                tmin_display_label_fa=tmin_display_label_fa,
+                illustrative_only=illustrative_only,
             )
         )
 
@@ -1223,4 +1255,5 @@ def assess_frost_risk(
         active_threshold_set=active_set,
         active_threshold_set_name_fa=set_name_fa,
         active_threshold_set_status=crop_cfg.status,
+        illustrative_only=bool(active_set == "engine_default_v0"),
     )
