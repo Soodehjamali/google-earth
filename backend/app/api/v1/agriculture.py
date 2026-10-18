@@ -24,7 +24,7 @@ import math
 import time
 import uuid
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Security
@@ -1972,21 +1972,37 @@ async def assess_frost_risk_endpoint(
     summary="List registered orchards",
 )
 async def list_orchards_endpoint(
+    q: Optional[str] = Query(None, description="Search filter by orchard name"),
+    limit: int = Query(50, ge=1, le=500, description="Page size limit"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(require_frost_auth),
 ):
-    """List all registered orchards and their active alert rules."""
+    """List all registered orchards with search, pagination, and current stage staleness."""
     from app.db.models.frost import Orchard
+    from app.services.agriculture.frost_inputs import is_timestamp_stale
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    stmt = select(Orchard).options(selectinload(Orchard.alert_rules)).order_by(Orchard.name)
+    q_str = q if isinstance(q, str) else None
+    limit_int = limit if isinstance(limit, int) else 50
+    offset_int = offset if isinstance(offset, int) else 0
+
+    stmt = select(Orchard).options(selectinload(Orchard.alert_rules))
+    if q_str and q_str.strip():
+        stmt = stmt.where(Orchard.name.ilike(f"%{q_str.strip()}%"))
+    stmt = stmt.order_by(Orchard.name).limit(limit_int).offset(offset_int)
+
     result = await db.execute(stmt)
     orchards = result.scalars().all()
 
     out = []
     from app.services.agriculture.notification import mask_recipient
     for o in orchards:
+        stage_val = o.current_stage or o.default_phenology_stage
+        up_at_iso = o.stage_updated_at.isoformat() if o.stage_updated_at else (o.created_at.isoformat() if o.created_at else None)
+        is_stale = is_timestamp_stale(up_at_iso, max_age_hours=14.0 * 24.0)
+
         out.append({
             "id": str(o.id),
             "name": o.name,
@@ -1996,6 +2012,9 @@ async def list_orchards_endpoint(
             "elevation": o.elevation,
             "crop": o.crop,
             "default_phenology_stage": o.default_phenology_stage,
+            "current_stage": stage_val,
+            "stage_updated_at": o.stage_updated_at.isoformat() if o.stage_updated_at else None,
+            "stage_is_stale": is_stale,
             "created_at": o.created_at.isoformat() if o.created_at else None,
             "alert_rules": [
                 {
@@ -2011,6 +2030,101 @@ async def list_orchards_endpoint(
             ],
         })
     return out
+
+
+@router.get(
+    "/frost/orchards/risk-summary",
+    tags=["Agriculture", "Frost"],
+    summary="Batch frost risk summary for all registered orchards sorted by risk",
+)
+async def get_orchards_risk_summary_endpoint(
+    horizon_h: int = Query(240, ge=24, le=384),
+    threshold_set: str = Query("published_v1"),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Compute and sort multi-night risk summaries for all saved orchards."""
+    from app.db.models.frost import Orchard
+    from app.services.agriculture.frost_orchard_service import assess_orchards_summary
+    from sqlalchemy import select
+
+    stmt = select(Orchard).order_by(Orchard.name)
+    result = await db.execute(stmt)
+    orchards = result.scalars().all()
+
+    use_live = (
+        getattr(settings, "is_production", False)
+        or getattr(settings, "APP_ENV", "") == "production"
+        or getattr(settings, "FROST_USE_LIVE_GEE", False)
+    )
+    if use_live:
+        from app.services.agriculture.forecast import NoaaGfsForecastProvider
+        provider = NoaaGfsForecastProvider()
+    else:
+        from app.services.agriculture.forecast import FakeForecastProvider
+        provider = FakeForecastProvider()
+
+    horizon_int = horizon_h if isinstance(horizon_h, int) else 240
+    set_str = threshold_set if isinstance(threshold_set, str) else "published_v1"
+
+    summaries = await assess_orchards_summary(
+        orchards=list(orchards),
+        horizon_h=horizon_int,
+        threshold_set=set_str,
+        forecast_provider=provider,
+    )
+    return [s.to_dict() for s in summaries]
+
+
+@router.get(
+    "/frost/orchards/{orchard_id}/risk",
+    tags=["Agriculture", "Frost"],
+    summary="Assess multi-night frost risk for an orchard using platform factor data",
+)
+async def get_orchard_risk_endpoint(
+    orchard_id: uuid.UUID,
+    horizon_h: int = Query(240, ge=24, le=384, description="Forecast horizon in hours"),
+    threshold_set: str = Query("published_v1", description="Active threshold set"),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Detailed per-night weighted factor risk assessment for an individual orchard."""
+    from app.db.models.frost import Orchard
+    from app.services.agriculture.frost_orchard_service import assess_single_orchard_risk
+    from sqlalchemy import select
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    use_live = (
+        getattr(settings, "is_production", False)
+        or getattr(settings, "APP_ENV", "") == "production"
+        or getattr(settings, "FROST_USE_LIVE_GEE", False)
+    )
+    if use_live:
+        from app.services.agriculture.forecast import NoaaGfsForecastProvider
+        provider = NoaaGfsForecastProvider()
+    else:
+        from app.services.agriculture.forecast import FakeForecastProvider
+        provider = FakeForecastProvider(z_site_m=orchard.elevation or 1200.0)
+
+    horizon_int = horizon_h if isinstance(horizon_h, int) else 240
+    set_str = threshold_set if isinstance(threshold_set, str) else "published_v1"
+
+    report = await assess_single_orchard_risk(
+        orchard=orchard,
+        horizon_h=horizon_int,
+        threshold_set=set_str,
+        forecast_provider=provider,
+    )
+    return report.to_dict()
 
 
 @router.post(
@@ -2044,6 +2158,10 @@ async def create_orchard_endpoint(
             lng = float(sum(pt[0] for pt in flat) / len(flat))
             lat = float(sum(pt[1] for pt in flat) / len(flat))
 
+    now_utc = datetime.now(timezone.utc)
+    stage_val = data.current_stage or data.default_phenology_stage
+    stage_updated_at = now_utc if data.current_stage else None
+
     orchard = Orchard(
         name=data.name,
         geometry=data.geometry,
@@ -2052,6 +2170,8 @@ async def create_orchard_endpoint(
         elevation=data.elevation,
         crop=data.crop,
         default_phenology_stage=data.default_phenology_stage,
+        current_stage=stage_val,
+        stage_updated_at=stage_updated_at,
     )
     db.add(orchard)
     await db.commit()
@@ -2066,9 +2186,101 @@ async def create_orchard_endpoint(
         "elevation": orchard.elevation,
         "crop": orchard.crop,
         "default_phenology_stage": orchard.default_phenology_stage,
+        "current_stage": orchard.current_stage,
+        "stage_updated_at": orchard.stage_updated_at.isoformat() if orchard.stage_updated_at else None,
+        "stage_is_stale": False,
         "created_at": orchard.created_at.isoformat() if orchard.created_at else None,
         "alert_rules": [],
     }
+
+
+@router.put(
+    "/frost/orchards/{orchard_id}",
+    tags=["Agriculture", "Frost"],
+    summary="Update orchard details including current phenological stage",
+)
+async def update_orchard_endpoint(
+    orchard_id: uuid.UUID,
+    orchard_in: Any = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Update orchard details; setting current_stage updates stage_updated_at to current UTC time."""
+    from app.db.models.frost import Orchard
+    from app.schemas.frost import OrchardUpdate
+    from sqlalchemy import select
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    data = OrchardUpdate(**orchard_in) if isinstance(orchard_in, dict) else orchard_in
+
+    if data.name is not None:
+        orchard.name = data.name
+    if data.crop is not None:
+        orchard.crop = data.crop
+    if data.default_phenology_stage is not None:
+        orchard.default_phenology_stage = data.default_phenology_stage
+    if data.elevation is not None:
+        orchard.elevation = data.elevation
+    if data.current_stage is not None:
+        orchard.current_stage = data.current_stage
+        orchard.stage_updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(orchard)
+
+    return {
+        "id": str(orchard.id),
+        "name": orchard.name,
+        "geometry": orchard.geometry,
+        "latitude": orchard.latitude,
+        "longitude": orchard.longitude,
+        "elevation": orchard.elevation,
+        "crop": orchard.crop,
+        "default_phenology_stage": orchard.default_phenology_stage,
+        "current_stage": orchard.current_stage,
+        "stage_updated_at": orchard.stage_updated_at.isoformat() if orchard.stage_updated_at else None,
+        "stage_is_stale": False,
+        "created_at": orchard.created_at.isoformat() if orchard.created_at else None,
+    }
+
+
+@router.delete(
+    "/frost/orchards/{orchard_id}",
+    tags=["Agriculture", "Frost"],
+    status_code=204,
+    summary="Delete an orchard parcel",
+)
+async def delete_orchard_endpoint(
+    orchard_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Delete an orchard parcel and cascaded rules."""
+    from app.db.models.frost import Orchard
+    from sqlalchemy import select
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    await db.delete(orchard)
+    await db.commit()
+    return None
 
 
 @router.post(
@@ -2446,23 +2658,23 @@ async def evaluate_alerts_endpoint(
             if use_live
             else FakeForecastProvider(z_site_m=orchard.elevation or 1200.0)
         )
-        forecast_res = await provider.get_hourly_forecast(orchard.geometry, horizon_h=rule.lead_time_h + 24)
-
-        assessment = assess_frost_risk(
-            forecast=forecast_res,
-            crop=crop,
-            phenological_stage=stage,
+        from app.services.agriculture.frost_orchard_service import assess_single_orchard_risk
+        orchard_report = await assess_single_orchard_risk(
+            orchard=orchard,
+            horizon_h=rule.lead_time_h + 24,
+            threshold_set="published_v1",
+            forecast_provider=provider,
         )
 
-        # Identify the earliest upcoming night with elevated frost risk
+        # Identify the earliest upcoming night with elevated frost risk (final category)
         target_night = next(
-            (n for n in assessment.nightly_risks if n.risk_level != RISK_LEVEL_NONE),
+            (n for n in orchard_report.nights if n.final_category not in ("none", "watch")),
             None,
         )
         if not target_night:
             continue
 
-        current_weight = risk_hierarchy.get(target_night.risk_level, 0)
+        current_weight = risk_hierarchy.get(target_night.final_category, 0)
 
         # Idempotency check: find maximum category previously dispatched for this rule (alert_rule_id, night_date)
         prev_stmt = (
@@ -2495,9 +2707,9 @@ async def evaluate_alerts_endpoint(
             continue
 
         msg = (
-            f"هشدار یخبندان باغ {orchard.name}: سطح خطر {target_night.risk_level_fa} "
-            f"برای مرحله {assessment.stage_fa} پسته ({target_night.night_display_fa}). "
-            f"حداقل دمای پیش‌بینی: {target_night.tmin_adjusted_c}°C."
+            f"هشدار یخبندان باغ {orchard.name}: سطح خطر {target_night.final_category_fa} "
+            f"برای مرحله {orchard_report.stage_fa} پسته ({target_night.night_display_fa}). "
+            f"حداقل دمای پیش‌بینی: {target_night.effective_tmin_c}°C."
         )
         meta = {
             "orchard_id": str(orchard.id),
@@ -2505,9 +2717,9 @@ async def evaluate_alerts_endpoint(
             "crop": crop,
             "stage": stage,
             "night_date": target_night.night_date,
-            "risk_level": target_night.risk_level,
-            "tmin_c": target_night.tmin_adjusted_c,
-            "thresholds_verified": assessment.thresholds_verified,
+            "risk_level": target_night.final_category,
+            "tmin_c": target_night.effective_tmin_c,
+            "thresholds_verified": orchard_report.thresholds_verified,
         }
 
         status = "dry_run"
@@ -2518,7 +2730,7 @@ async def evaluate_alerts_endpoint(
                 recipient=rule.recipient,
                 message=msg,
                 metadata=meta,
-                thresholds_verified=assessment.thresholds_verified,
+                thresholds_verified=orchard_report.thresholds_verified,
                 admin_override=admin_override,
                 force_dry_run=req.dry_run,
             )
@@ -2530,7 +2742,7 @@ async def evaluate_alerts_endpoint(
             status = "failed"
             err_msg = str(exc)
 
-        idem_key = f"{rule.id}:{target_night.night_date}:{target_night.risk_level}"
+        idem_key = f"{rule.id}:{target_night.night_date}:{target_night.final_category}"
         log_entry = NotificationLog(
             orchard_id=orchard.id,
             alert_rule_id=rule.id,

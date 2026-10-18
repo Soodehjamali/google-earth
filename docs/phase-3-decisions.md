@@ -641,3 +641,23 @@ aa5b907 untracked files on cline checkpoint
 
 
 
+
+
+---
+
+### Item R5: Per-Orchard Risk Evaluation Endpoints and Alert Dispatch
+1. **Single Orchard Risk Assessment (`GET /api/v1/agriculture/frost/orchards/{id}/risk`):**
+   - Coordinates input assembly (`assemble_orchard_inputs`), night aggregation across local midnight (18:00 to 09:00 IRST), duration interval calculations, and weighted factor scoring (`evaluate_weighted_frost_model`).
+   - Returns multi-night evaluations with exact 10-factor breakdowns, raw values, quality states, staleness flags, subscores, contributions, GATE trigger state, and Persian category labels.
+   - Preserves guidance label: `"ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)"` and flags `index_is_probability: false`, `thresholds_verified: false`.
+2. **Orchards Risk Summary (`GET /api/v1/agriculture/frost/orchards/risk-summary`):**
+   - Evaluates all registered orchards for the user with shared GFS 0.25° forecast caching (`shared_gfs_cell_cache`), eliminating duplicate network/GEE forecast calls for orchards located in the same GFS cell.
+   - Elevation adjustments and lapse rate calculations remain strictly parcel-specific based on each orchard's own NASADEM elevation.
+   - Results are sorted descending by worst-night risk severity (hierarchy: critical > warning > watch > none, then risk index descending).
+3. **Alert Dispatch Gating (`POST /api/v1/agriculture/frost/evaluate-alerts`):**
+   - Alerts are evaluated per orchard using `assess_single_orchard_risk` against `current_stage`.
+   - Dispatch is strictly gated: notifications are dispatched ONLY for orchards where any forecast night reaches `warning` or `critical`.
+   - Nights classified as `none` or `watch` do NOT trigger alerts.
+   - Idempotency is preserved per rule and night: re-evaluating the same night at the same or lower severity does not send duplicate notifications; upward escalation (e.g. warning -> critical) dispatches the escalated alert.
+4. **Recommendation Filtering:**
+   - Agronomic recommendations (`GENERIC_RECOMMENDATIONS_FA`) are surfaced ONLY when the parcel's overall risk reaches `warning` or `critical`. For non-hazardous periods (`none`, `watch`), recommendations list is empty or informational only.

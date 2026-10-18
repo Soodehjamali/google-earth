@@ -12,6 +12,7 @@ Verifies:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -611,7 +612,9 @@ async def test_evaluate_alerts_multiple_rules_per_orchard_different_recipients()
         name="باغ پسته دوقلو",
         geometry=SAMPLE_POLYGON,
         crop="pistachio",
-        default_phenology_stage="early_bloom",
+        default_phenology_stage="unopened_bud",
+        current_stage="unopened_bud",
+        stage_updated_at=datetime.now(timezone.utc),
         elevation=1200.0,
     )
     rule1 = AlertRule(
@@ -667,7 +670,7 @@ async def test_evaluate_alerts_multiple_rules_per_orchard_different_recipients()
 
     with patch(
         "app.services.agriculture.forecast.FakeForecastProvider",
-        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-1.0, z_site_m=1200.0),
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-3.0, z_site_m=1200.0),
     ):
         # 1. First evaluation: BOTH rules should dispatch (e.g. at moderate risk)!
         res1 = await evaluate_alerts_endpoint(
@@ -898,8 +901,8 @@ def test_alembic_migration_005_upgrade_downgrade_cycle(tmp_path):
     assert "notes_fa" in cols
     assert "created_at" in cols
 
-    # Downgrade 1 revision back (reverts 005_orchard_observations to 004_pii_masking)
-    command.downgrade(cfg, "-1")
+    # Downgrade to 004_pii_masking (reverts 005_orchard_observations and 006_orchard_current_stage)
+    command.downgrade(cfg, "004_pii_masking")
     inspector_down = inspect(sync_engine)
     assert "orchard_observations" not in inspector_down.get_table_names()
 
