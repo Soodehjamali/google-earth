@@ -406,6 +406,24 @@ aa5b907 untracked files on cline checkpoint
    - Orchard registration ("Save as orchard") directly reuses the shared analysis geometry (`sharedGeometry`) rather than requiring manual coordinate re-entry.
    - Centroid coordinates (`latitude`, `longitude`) for registered orchards are computed automatically from Point or Polygon coordinates without manual entry.
 
+---
+
+### Item E8 Decisions: Published Duration Rules, Sourced Thresholds, and Interval Exposure
+1. **Same-Author Sourced Literature Integrity:**
+   - Literature sources [S1] (Hokmabadi H., 2010, *Options Méditerranéennes* A94, pp. 71-78) and [S2] (Hokmabadi H., 10 Apr 2011 / 21 Farvardin 1390, Iran Pistachio Association) are by the **same author** (Dr. Hossein Hokmabadi). Therefore, they are explicitly recorded as non-independent observations rather than mutually corroborating scientific citations.
+2. **Published Duration Threshold Rules:**
+   - Per S1 (p. 72): For flower and bud stages, temperature $\le -4^\circ\text{C}$ for $\ge 2.0\text{ h}$ causes light injury / bloom delay and necrosis of flowers (`critical`); $\le -4^\circ\text{C}$ (specifically $-4$ to $-6^\circ\text{C}$) for $\approx 6.0\text{ h}$ causes complete necrosis of very young pistils (`critical`).
+   - Bloom stage: Critical temperature is $-1.7^\circ\text{C}$ per S1 (p. 77). The conflicting value $+2.0^\circ\text{C}$ published in S2 is recorded as `conflicting_published_value: 2.0` and `conflicting_notes_fa` and is **not** used as a lethal damage threshold.
+   - Stages without published duration data (such as `dormant`, `bloom`, and `fruit`) strictly receive `duration_rules: null`. In the UI, they display: `"برای این مرحله داده منتشرشده‌ای برای مدت ماندن زیر آستانه وجود ندارد؛ دسته‌بندی فقط بر اساس دما است"`.
+3. **Interval Arithmetic & Cadence Rules:**
+   - Exposure duration is computed strictly from native hourly timesteps ($\Delta t \le 1.5\text{h}$). Each step below threshold represents an interval duration of $1.0\text{ hour}$.
+   - Discontinuous runs do not sum to satisfy continuous rule thresholds; only the longest continuous run triggers duration escalation.
+   - A brief dip ($< 1.0\text{h}$) below critical threshold is classified as `watch` (short dip flag).
+   - Runs beyond 120h (GFS 3-hourly cadence) are flagged `duration_resolvable: false`; severity is evaluated strictly on temperature.
+   - **Pessimistic Run Escalation:** When nominal temperature remains above threshold, a pessimistic run ($T - \sigma \le T_{\text{crit}}$) may **only** raise severity to `watch`, never to `warning` or `critical`.
+   - Minimum temperature and run timestamps are reported in local `Asia/Tehran` time (`HH:MM`).
+
+
 
 
 

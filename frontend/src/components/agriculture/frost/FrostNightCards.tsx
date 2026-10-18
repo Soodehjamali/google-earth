@@ -187,6 +187,48 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
                     </div>
                   </div>
 
+                  {/* Sourced Duration Exposure & Rule Explanation (E8) */}
+                  <div
+                    style={{
+                      backgroundColor: '#f1f5f9',
+                      borderRight: '4px solid #0284c7',
+                      padding: '10px 14px',
+                      borderRadius: '6px',
+                      marginBottom: '14px',
+                      fontSize: '0.85rem',
+                    }}
+                    data-testid="duration-rule-display"
+                  >
+                    <div style={{ fontWeight: 600, color: '#0369a1', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>⏱️ تحلیل تداوم سرما زیر آستانه خسارت:</span>
+                      {night.min_temp_timestamp_local && (
+                        <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'normal' }}>
+                          لحظه وقوع کمینه: {night.min_temp_timestamp_local} (به وقت محلی)
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontFamily: 'monospace', fontWeight: 600, direction: 'ltr', textAlign: 'left', color: '#0f172a', marginBottom: '4px' }}>
+                      {night.duration_display_text || '0.0 h below critical threshold'}
+                    </div>
+
+                    <div style={{ fontSize: '0.82rem', color: '#334155', lineHeight: '1.4' }}>
+                      {night.duration_rule_explanation_fa || 'برای این مرحله داده منتشرشده‌ای برای مدت ماندن زیر آستانه وجود ندارد؛ دسته‌بندی فقط بر اساس دما است'}
+                    </div>
+
+                    {night.active_rule_source && (
+                      <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#64748b' }}>
+                        📚 استناد علمی: {night.active_rule_source}
+                      </div>
+                    )}
+
+                    {night.conflicting_published_value !== undefined && night.conflicting_published_value !== null && (
+                      <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#b45309', backgroundColor: '#fef3c7', padding: '4px 8px', borderRadius: '4px' }}>
+                        ⚠️ {night.conflicting_value_note_fa || `مقدار متعارض منتشرشده در سایر منابع: ${night.conflicting_published_value}°C`}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Reasons */}
                   {night.reasons && night.reasons.length > 0 && (
                     <div style={{ marginBottom: '14px' }}>

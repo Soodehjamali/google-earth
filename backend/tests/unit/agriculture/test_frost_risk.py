@@ -511,3 +511,300 @@ def test_hard_cap_horizon_returns_no_nightly_risk_beyond_cap():
     # Night of 2026-03-31 (hour ~264) must NOT be present
     assert "2026-03-31" not in night_dates
     assert "2026-04-01" not in night_dates
+
+
+def _make_synthetic_steps(
+    temps: list[float],
+    start_iso: str = "2026-03-20T18:00:00+00:00",
+    step_hours: float = 1.0,
+    uncertainty: float = 1.0,
+) -> list[ForecastTimestep]:
+    """Helper to build synthetic ForecastTimestep series."""
+    from app.services.agriculture.forecast import ForecastTimestep
+    base_dt = datetime.fromisoformat(start_iso)
+    steps = []
+    for i, t in enumerate(temps):
+        dt = base_dt + timedelta(hours=i * step_hours)
+        steps.append(
+            ForecastTimestep(
+                timestamp_utc=dt.isoformat(),
+                lead_hours=float(i * step_hours),
+                temperature_2m_c=t,
+                temperature_2m_c_raw=t,
+                elevation_delta_m=0.0,
+                elevation_correction_c=0.0,
+                elevation_uncertainty_c=0.0,
+                lead_time_uncertainty_c=uncertainty,
+                total_uncertainty_c=uncertainty,
+                lower_bound_c=t - uncertainty,
+                upper_bound_c=t + uncertainty,
+                temperature_min_c=t - uncertainty,
+                temperature_max_c=t + uncertainty,
+                is_interpolated=False,
+                wind_speed_10m_mps=1.0,
+            )
+        )
+    return steps
+
+
+def test_duration_rule_boundaries_and_escalation():
+    """Verify exact duration boundaries at 0.9, 1.0, 1.9, 2.0, 2.1, 5.9, 6.0 hours (E8)."""
+    from app.services.agriculture.frost_risk import (
+        DurationRule,
+        calculate_interval_duration_run,
+        evaluate_duration_rule_category,
+        RISK_LEVEL_WATCH,
+        RISK_LEVEL_WARNING,
+        RISK_LEVEL_CRITICAL,
+    )
+
+    rules = [
+        DurationRule(
+            reference_temperature_c=-4.0,
+            min_hours=2.0,
+            category="critical",
+            source="Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]",
+        ),
+        DurationRule(
+            reference_temperature_c=-4.0,
+            min_hours=6.0,
+            category="critical",
+            source="Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]",
+        ),
+    ]
+
+    # Boundary 0.9h: less than 1.0h -> short dip stays 'watch'
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.2,
+        min_temp_pessimistic_c=-5.2,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=0.9,
+        continuous_hours_pessimistic=0.9,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_WATCH
+    assert short_dip is True
+    assert escalated is False
+
+    # Boundary 1.0h: 1 step at 1h -> 'warning' (not yet 2h critical)
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.2,
+        min_temp_pessimistic_c=-5.2,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=1.0,
+        continuous_hours_pessimistic=1.0,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_WARNING
+    assert short_dip is False
+    assert escalated is False
+
+    # Boundary 1.9h: below 2.0h -> 'warning'
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.2,
+        min_temp_pessimistic_c=-5.2,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=1.9,
+        continuous_hours_pessimistic=1.9,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_WARNING
+    assert escalated is False
+
+    # Boundary 2.0h: exactly 2.0h -> escalates to 'critical' (S1 p. 72)
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.2,
+        min_temp_pessimistic_c=-5.2,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=2.0,
+        continuous_hours_pessimistic=2.0,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_CRITICAL
+    assert escalated is True
+
+    # Boundary 2.1h: above 2.0h -> 'critical'
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.2,
+        min_temp_pessimistic_c=-5.2,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=2.1,
+        continuous_hours_pessimistic=2.1,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_CRITICAL
+    assert escalated is True
+
+    # Boundary 5.9h: still in 2-6h critical tier
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.5,
+        min_temp_pessimistic_c=-5.5,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=5.9,
+        continuous_hours_pessimistic=5.9,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_CRITICAL
+    assert escalated is True
+
+    # Boundary 6.0h: severe necrosis tier (S1 p. 72)
+    cat, _, short_dip, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-5.0,
+        min_temp_pessimistic_c=-6.0,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=6.0,
+        continuous_hours_pessimistic=6.0,
+        duration_rules=rules,
+    )
+    assert cat == RISK_LEVEL_CRITICAL
+    assert escalated is True
+
+
+def test_discontinuous_runs_do_not_escalate_to_critical():
+    """Verify that multiple separated dips below threshold sum in total but do not satisfy continuous duration."""
+    from app.services.agriculture.frost_risk import (
+        DurationRule,
+        calculate_interval_duration_run,
+        evaluate_duration_rule_category,
+        RISK_LEVEL_WARNING,
+        RISK_LEVEL_CRITICAL,
+    )
+
+    rules = [
+        DurationRule(
+            reference_temperature_c=-4.0,
+            min_hours=2.0,
+            category="critical",
+            source="Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]",
+        ),
+    ]
+
+    # Pattern: 1h below, 1h above, 1h below (total = 2h below, but longest continuous = 1.0h)
+    temps = [0.0, -4.5, 0.0, -4.5, 0.0]
+    steps = _make_synthetic_steps(temps, step_hours=1.0)
+
+    total_h, longest_h, start_loc, end_loc, resolvable = calculate_interval_duration_run(
+        steps=steps,
+        reference_temp_c=-4.0,
+        cooling_bump_c=0.0,
+        use_pessimistic=False,
+    )
+
+    assert total_h == 2.0
+    assert longest_h == 1.0
+    assert resolvable is True
+
+    cat, _, _, escalated, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.5,
+        min_temp_pessimistic_c=-5.5,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=longest_h,
+        continuous_hours_pessimistic=longest_h,
+        duration_rules=rules,
+    )
+    # Longest continuous is only 1.0h (< 2.0h), so it remains WARNING, NOT CRITICAL!
+    assert cat == RISK_LEVEL_WARNING
+    assert escalated is False
+
+
+def test_pessimistic_only_escalation_limited_to_watch():
+    """Verify asymmetric rule: pessimistic run (T_eff - sigma) may ONLY raise risk to 'watch'."""
+    from app.services.agriculture.frost_risk import (
+        DurationRule,
+        evaluate_duration_rule_category,
+        RISK_LEVEL_WATCH,
+        RISK_LEVEL_NONE,
+    )
+
+    rules = [
+        DurationRule(
+            reference_temperature_c=-4.0,
+            min_hours=2.0,
+            category="critical",
+            source="Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]",
+        ),
+    ]
+
+    # Nominal minimum is -3.5°C (ABOVE reference -4.0°C)
+    # Pessimistic minimum is -4.5°C (BELOW reference -4.0°C) with 5.0h continuous pessimistic run
+    cat, _, short_dip, escalated, expl = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-3.5,
+        min_temp_pessimistic_c=-4.5,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=0.0,
+        continuous_hours_pessimistic=5.0,
+        duration_rules=rules,
+    )
+    # MUST be WATCH only, never escalated to WARNING or CRITICAL despite 5h pessimistic exposure
+    assert cat == RISK_LEVEL_WATCH
+    assert escalated is False
+    assert "دیده‌بانی" in expl
+
+    # If both nominal and pessimistic are above reference -> NONE
+    cat_none, _, _, _, _ = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-2.0,
+        min_temp_pessimistic_c=-3.0,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=0.0,
+        continuous_hours_pessimistic=0.0,
+        duration_rules=rules,
+    )
+    assert cat_none == RISK_LEVEL_NONE
+
+
+def test_three_hourly_cadence_duration_not_resolvable():
+    """Verify that beyond 120h (3-hourly data), duration is flagged not resolvable and category is from temp only."""
+    from app.services.agriculture.frost_risk import (
+        calculate_interval_duration_run,
+        evaluate_duration_rule_category,
+        RISK_LEVEL_WARNING,
+        RISK_LEVEL_CRITICAL,
+    )
+
+    # 3-hourly steps (step_hours = 3.0 > 1.5)
+    temps = [-4.5, -4.5, -4.5]
+    steps_3h = _make_synthetic_steps(temps, step_hours=3.0)
+
+    total_h, longest_h, _, _, resolvable = calculate_interval_duration_run(
+        steps=steps_3h,
+        reference_temp_c=-4.0,
+        cooling_bump_c=0.0,
+    )
+    assert resolvable is False
+    assert total_h == 0.0
+    assert longest_h == 0.0
+
+    # Decision table handling of unresolvable duration
+    cat, _, _, _, expl = evaluate_duration_rule_category(
+        min_temp_adjusted_c=-4.5,
+        min_temp_pessimistic_c=-5.5,
+        reference_temp_c=-4.0,
+        continuous_hours_nominal=0.0,
+        continuous_hours_pessimistic=0.0,
+        duration_rules=[],
+        duration_resolvable=False,
+    )
+    assert cat == RISK_LEVEL_WARNING
+    assert "۱۲۰ ساعت" in expl
+    assert "۳-ساعته" in expl
+
+
+def test_partial_night_steps():
+    """Verify partial night window with only 3 steps calculates interval duration correctly."""
+    from app.services.agriculture.frost_risk import calculate_interval_duration_run
+
+    # 3 steps: 2h below, 1h above
+    temps = [-4.2, -4.5, -1.0]
+    steps = _make_synthetic_steps(temps, step_hours=1.0)
+
+    total_h, longest_h, start_loc, end_loc, resolvable = calculate_interval_duration_run(
+        steps=steps,
+        reference_temp_c=-4.0,
+        cooling_bump_c=0.0,
+    )
+    assert resolvable is True
+    assert total_h == 2.0
+    assert longest_h == 2.0
+    assert start_loc is not None
+    assert end_loc is not None
+

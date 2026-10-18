@@ -70,6 +70,15 @@ export interface FrostNightAssessment {
   severity: FrostSeverity;
   reasons: string[];
   recommendations_fa: string[];
+  duration_display_text?: string;
+  duration_rule_explanation_fa?: string;
+  min_temp_timestamp_local?: string;
+  active_rule_source?: string | null;
+  duration_resolvable?: boolean;
+  short_dip?: boolean;
+  duration_escalated?: boolean;
+  conflicting_published_value?: number | null;
+  conflicting_value_note_fa?: string | null;
 }
 
 export interface FrostAssessmentResponse {

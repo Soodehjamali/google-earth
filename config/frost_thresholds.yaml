@@ -1,12 +1,13 @@
 # Frost Risk Phenological Thresholds Configuration
 #
-# IMPORTANT NOTICE:
-# All temperature values in this file are STRICTLY UNVERIFIED PLACEHOLDERS (status: placeholder, source: null).
-# Commercial or operational frost defense MUST NOT rely on these values without prior verification
-# and sign-off by a qualified local agricultural extension officer, horticultural researcher,
-# or regional pomologist.
+# SOURCED RESEARCH PROVENANCE (Phase 3 Close-out 3):
+# [S1] Hokmabadi H. (2010). Pistachio frost damage in Iran and new methods of frost protection. Options Méditerranéennes A94, pp. 71-78.
+# [S2] Hokmabadi H. (2011). Spring frost (سرمازدگی بهاره), Iran Pistachio Association.
+# Note: S1 and S2 share the SAME author and are NOT independent confirmations.
 #
 version: "1.0"
+default_threshold_set: "published_v1"
+
 crops:
   pistachio:
     common_name_fa: "پسته"
@@ -20,13 +21,25 @@ crops:
         name_fa: "خواب زمستانه"
         t_critical_10_c: -15.0
         t_critical_90_c: -22.0
+        duration_rules: null
         status: "placeholder"
         source: null
-        notes_fa: "جوانه‌های خفته تحمل سرمای شدید زمستانه را دارند."
+        notes_fa: "جوانه‌های خفته تحمل سرمای شدید زمستانه را دارند. داده مدت ماندن در منابع منتشر نشده است."
       bud_burst:
         name_fa: "تورم و باز شدن جوانه"
         t_critical_10_c: -4.0
         t_critical_90_c: -7.0
+        duration_rules:
+          - reference_temperature_c: -4.0
+            min_hours: 2.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای ۴- درجه یا کمتر به مدت حداقل ۲ ساعت منجر به آسیب یا نکروز گل‌ها می‌شود."
+          - reference_temperature_c: -4.0
+            min_hours: 6.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای بین ۴- تا ۶- درجه به مدت حدود ۶ ساعت منجر به نکروز کامل مادگی جوانه‌های بسیار جوان می‌شود."
         status: "placeholder"
         source: null
         notes_fa: "جوانه‌های در حال باز شدن نسبت به سرمای دیررس بهاره آسیب‌پذیرند."
@@ -34,23 +47,32 @@ crops:
         name_fa: "اوایل گلدهی"
         t_critical_10_c: -2.2
         t_critical_90_c: -4.5
+        conflicting_published_value: 2.0
+        conflicting_source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
+        conflicting_notes_fa: "مقدار ۲+ درجه در S2 با مقدار ۱.۷- درجه در S1 متعارض است و به عنوان آستانه خسارت استفاده نمی‌شود."
+        duration_rules: null
         status: "placeholder"
         source: null
-        notes_fa: "گل‌های تازه باز شده آسیب‌پذیری بالایی نسبت به یخبندان دارند."
+        notes_fa: "گل‌های تازه باز شده آسیب‌پذیری بالایی نسبت به یخبندان دارند. داده مدت ماندن منتشر نشده است."
       full_bloom:
         name_fa: "گلدهی کامل"
         t_critical_10_c: -1.5
         t_critical_90_c: -3.0
+        conflicting_published_value: 2.0
+        conflicting_source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
+        conflicting_notes_fa: "مقدار ۲+ درجه در S2 با مقدار ۱.۷- درجه در S1 متعارض است و به عنوان آستانه خسارت استفاده نمی‌شود."
+        duration_rules: null
         status: "placeholder"
         source: null
-        notes_fa: "حساس‌ترین مرحله فنولوژیکی نسبت به سرمازدگی تشعشعی بهاره."
+        notes_fa: "حساس‌ترین مرحله فنولوژیکی نسبت به سرمازدگی تشعشعی بهاره. داده مدت ماندن منتشر نشده است."
       fruit_set:
         name_fa: "تشکیل میوه (ارزنک)"
         t_critical_10_c: -1.0
         t_critical_90_c: -2.5
+        duration_rules: null
         status: "placeholder"
         source: null
-        notes_fa: "میوه‌های تازه تشکیل شده بسیار حساس به یخ‌زدگی بافت آبدار هستند."
+        notes_fa: "میوه‌های تازه تشکیل شده بسیار حساس به یخ‌زدگی بافت آبدار هستند. داده مدت ماندن منتشر نشده است."
 
 # Cold-air-pooling temperature adjustment configuration
 # All physical parameters are placeholders marked "needs calibration" with local microclimate station network.
@@ -71,3 +93,81 @@ elevation_uncertainty:
   temp_day_uncertainty_c: 1.0
   temp_night_uncertainty_c: 2.0
 
+# Sourced and legacy threshold sets (E8 & E9)
+threshold_sets:
+  published_v1:
+    name: "آستانه‌های منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰)"
+    status: "published"
+    verified: false
+    evidence_level: "C"
+    stages:
+      unopened_bud:
+        name_fa: "جوانه بازنشده"
+        t_critical_c: -4.0
+        t_critical_10_c: -4.0
+        t_critical_90_c: -6.0
+        duration_rules:
+          - reference_temperature_c: -4.0
+            min_hours: 2.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای ۴- درجه یا کمتر به مدت حداقل ۲ ساعت منجر به آسیب یا نکروز گل‌ها می‌شود."
+          - reference_temperature_c: -4.0
+            min_hours: 6.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای بین ۴- تا ۶- درجه به مدت حدود ۶ ساعت منجر به نکروز کامل مادگی جوانه‌های بسیار جوان می‌شود."
+        source: "Hokmabadi H. (2011) [S2]; Hokmabadi H. (2010) p. 72 [S1]"
+        status: "published"
+      opening_bud:
+        name_fa: "جوانه در حال باز شدن"
+        t_critical_c: -2.0
+        t_critical_10_c: -2.0
+        t_critical_90_c: -4.0
+        duration_rules:
+          - reference_temperature_c: -4.0
+            min_hours: 2.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای ۴- درجه یا کمتر به مدت حداقل ۲ ساعت منجر به آسیب یا نکروز گل‌ها می‌شود."
+          - reference_temperature_c: -4.0
+            min_hours: 6.0
+            category: "critical"
+            source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 72 [S1]"
+            description_fa: "دمای بین ۴- تا ۶- درجه به مدت حدود ۶ ساعت منجر به نکروز کامل مادگی جوانه‌های بسیار جوان می‌شود."
+        source: "Hokmabadi H. (2011) [S2]"
+        status: "published"
+      bloom:
+        name_fa: "گلدهی"
+        t_critical_c: -1.7
+        t_critical_10_c: -1.7
+        t_critical_90_c: -3.5
+        conflicting_published_value: 2.0
+        conflicting_source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
+        conflicting_notes_fa: "مقدار ۲+ درجه در S2 با مقدار ۱.۷- درجه در S1 متعارض است و به عنوان آستانه خسارت استفاده نمی‌شود."
+        duration_rules: null
+        source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 77 [S1]"
+        status: "published"
+      fruit:
+        name_fa: "میوه (ارزنک)"
+        t_critical_c: -2.0
+        t_critical_10_c: -2.0
+        t_critical_90_c: -4.0
+        duration_rules: null
+        source: "Hokmabadi H. (2011) [S2]"
+        status: "published"
+      swelling_bud:
+        name_fa: "تورم جوانه"
+        t_critical_c: null
+        t_critical_10_c: -4.0
+        t_critical_90_c: -7.0
+        duration_rules: null
+        source: null
+        status: "placeholder"
+        notes_fa: "در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است."
+  engine_default_v0:
+    name: "آستانه‌های پیش‌فرض اولیه سامانه (فرضی/Placeholder)"
+    status: "placeholder"
+    verified: false
+    evidence_level: "C"
+    review_flag: "آستانه‌های T10 و T90 در این مجموعه فرضی بوده و در هیچ مقاله علمی منتشر نشده‌اند."

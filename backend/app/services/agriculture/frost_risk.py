@@ -44,12 +44,14 @@ RISK_LEVEL_NONE = "none"
 RISK_LEVEL_ADVISORY = "advisory"
 RISK_LEVEL_WATCH = "watch"
 RISK_LEVEL_WARNING = "warning"
+RISK_LEVEL_CRITICAL = "critical"
 
 RISK_LEVEL_FA = {
     RISK_LEVEL_NONE: "عادی (بدون خطر)",
     RISK_LEVEL_ADVISORY: "اطلاعیه پایش (احتمال سرما)",
-    RISK_LEVEL_WATCH: "آماده‌باش سرمازدگی (خطر متوسط)",
-    RISK_LEVEL_WARNING: "هشدار سرمازدگی شدید (خطر قطعی خسارت)",
+    RISK_LEVEL_WATCH: "دیده‌بانی سرما (خطر متوسط / افت کوتاه‌مدت)",
+    RISK_LEVEL_WARNING: "هشدار سرمازدگی (خطر جدی خسارت)",
+    RISK_LEVEL_CRITICAL: "سرمازدگی بحرانی (خطر نکروز بافت و خسارت شدید)",
 }
 
 # Generic, verified cultural/physical recommendations (NO chemicals, NO hormones)
@@ -79,8 +81,39 @@ RECOMMENDATION_WARNING_FA = (
 
 
 @dataclass
+class DurationRule:
+    """Published duration threshold rule for a phenological stage (E8)."""
+
+    reference_temperature_c: float
+    min_hours: float
+    category: str
+    source: str
+    description_fa: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DurationExposureResult:
+    """Interval-based exposure below reference temperature (E8)."""
+
+    reference_temperature_c: float
+    total_hours: float
+    longest_continuous_hours: float
+    longest_run_start_local: Optional[str] = None
+    longest_run_end_local: Optional[str] = None
+    active_rule_source: Optional[str] = None
+    active_rule_category: Optional[str] = None
+    rule_note_fa: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class StageThreshold:
-    """Critical temperatures for a single phenological stage."""
+    """Critical temperatures and duration rules for a single phenological stage."""
 
     stage_key: str
     name_fa: str
@@ -88,7 +121,16 @@ class StageThreshold:
     t_critical_90_c: float
     status: str
     source: Optional[str]
+    t_critical_c: Optional[float] = None
+    conflicting_published_value: Optional[float] = None
+    conflicting_source: Optional[str] = None
+    conflicting_notes_fa: Optional[str] = None
+    duration_rules: Optional[List[DurationRule]] = None
     notes_fa: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
 
 
 @dataclass
@@ -144,9 +186,9 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
         source = c_data.get("source")
         verified = c_data.get("verified", False)
 
-        if not status or status not in ("placeholder", "verified"):
+        if not status or status not in ("placeholder", "verified", "published"):
             raise ValueError(
-                f"Crop '{crop_id}' must disclose 'status' as 'placeholder' or 'verified', got: {status}"
+                f"Crop '{crop_id}' must disclose 'status' as 'placeholder', 'published', or 'verified', got: {status}"
             )
 
         if status == "placeholder":
@@ -168,9 +210,9 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
         for st_id, st_val in stages_data.items():
             st_status = st_val.get("status")
             st_source = st_val.get("source")
-            if not st_status or st_status not in ("placeholder", "verified"):
+            if not st_status or st_status not in ("placeholder", "verified", "published"):
                 raise ValueError(
-                    f"Stage '{crop_id}.{st_id}' must disclose 'status' as 'placeholder' or 'verified'."
+                    f"Stage '{crop_id}.{st_id}' must disclose 'status' as 'placeholder', 'published', or 'verified'."
                 )
 
             tc10 = float(st_val["t_critical_10_c"])
@@ -183,6 +225,20 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
                     f"t_critical_90_c ({tc90}) must be colder than t_critical_10_c ({tc10})."
                 )
 
+            duration_rules = None
+            if "duration_rules" in st_val and st_val["duration_rules"] is not None:
+                duration_rules = []
+                for dr in st_val["duration_rules"]:
+                    duration_rules.append(
+                        DurationRule(
+                            reference_temperature_c=float(dr["reference_temperature_c"]),
+                            min_hours=float(dr["min_hours"]),
+                            category=str(dr["category"]),
+                            source=str(dr["source"]),
+                            description_fa=dr.get("description_fa"),
+                        )
+                    )
+
             crop_stages[st_id] = StageThreshold(
                 stage_key=st_id,
                 name_fa=st_val.get("name_fa", st_id),
@@ -190,6 +246,11 @@ def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str
                 t_critical_90_c=tc90,
                 status=st_status,
                 source=st_source,
+                t_critical_c=float(st_val["t_critical_c"]) if "t_critical_c" in st_val and st_val["t_critical_c"] is not None else None,
+                conflicting_published_value=float(st_val["conflicting_published_value"]) if "conflicting_published_value" in st_val and st_val["conflicting_published_value"] is not None else None,
+                conflicting_source=st_val.get("conflicting_source"),
+                conflicting_notes_fa=st_val.get("conflicting_notes_fa"),
+                duration_rules=duration_rules,
                 notes_fa=st_val.get("notes_fa"),
             )
 
@@ -280,6 +341,19 @@ class NightlyFrostRisk:
     thresholds_verified: bool
     recommendations_fa: List[str]
     recommendations_review_required: bool = True
+
+    # Sourced duration rules & interval-based exposure metrics (E8)
+    min_temp_timestamp_local: str = ""
+    duration_resolvable: bool = True
+    cadence_coarse: bool = False
+    short_dip: bool = False
+    duration_escalated: bool = False
+    duration_display_text: str = ""
+    duration_rule_explanation_fa: str = ""
+    nominal_exposure: Optional[DurationExposureResult] = None
+    pessimistic_exposure: Optional[DurationExposureResult] = None
+    conflicting_published_value: Optional[float] = None
+    conflicting_value_note_fa: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -403,7 +477,7 @@ def classify_nightly_risk(
     tc10_c: float,
     tc90_c: float,
 ) -> Tuple[str, str]:
-    """Classify frost risk level into none, advisory, watch, or warning."""
+    """Classify frost risk level into none, advisory, watch, or warning (legacy helper)."""
     # Definite lethal frost: adjusted minimum drops below 90% kill or long exposure below 10%
     if t_min_adjusted_c <= tc90_c or (t_min_adjusted_c <= tc10_c and hours_below_tc10 >= 2.0):
         return RISK_LEVEL_WARNING, RISK_LEVEL_FA[RISK_LEVEL_WARNING]
@@ -417,6 +491,160 @@ def classify_nightly_risk(
         return RISK_LEVEL_ADVISORY, RISK_LEVEL_FA[RISK_LEVEL_ADVISORY]
 
     return RISK_LEVEL_NONE, RISK_LEVEL_FA[RISK_LEVEL_NONE]
+
+
+def calculate_interval_duration_run(
+    steps: List[ForecastTimestep],
+    reference_temp_c: float,
+    cooling_bump_c: float,
+    use_pessimistic: bool = False,
+    local_utc_offset_hours: float = DEFAULT_LOCAL_UTC_OFFSET_HOURS,
+) -> Tuple[float, float, Optional[str], Optional[str], bool]:
+    """Calculate interval-based total and longest continuous hours below reference temperature (E8).
+
+    Interval Arithmetic Definition:
+    1. Timesteps in hourly series have spacing dt <= 1.5h (nominal dt = 1.0h).
+    2. Each step below threshold contributes exactly 1.0 hour of exposure duration.
+    3. If any step spacing in the series exceeds 1.5h (e.g. 3-hourly data beyond 120h),
+       is_resolvable is set to False ('not resolvable').
+    4. Continuous runs are sequences of consecutive steps below threshold with dt <= 1.5h.
+    5. Run start and end timestamps are formatted in local Asia/Tehran time (HH:MM).
+
+    Returns:
+        (total_hours, longest_continuous_hours, start_local_hhmm, end_local_hhmm, is_resolvable)
+    """
+    if not steps:
+        return 0.0, 0.0, None, None, True
+
+    tz_local = timezone(timedelta(hours=local_utc_offset_hours))
+
+    # Check for coarse cadence (> 1.5h step spacing)
+    is_resolvable = True
+    for i in range(len(steps) - 1):
+        dt_i = datetime.fromisoformat(steps[i].timestamp_utc.replace("Z", "+00:00"))
+        dt_next = datetime.fromisoformat(steps[i + 1].timestamp_utc.replace("Z", "+00:00"))
+        spacing_h = (dt_next - dt_i).total_seconds() / 3600.0
+        if spacing_h > 1.5:
+            is_resolvable = False
+            break
+
+    # If not resolvable (3-hourly data beyond 120h), duration is not resolvable
+    if not is_resolvable:
+        return 0.0, 0.0, None, None, False
+
+    below_mask: List[bool] = []
+    for s in steps:
+        t_eff = s.temperature_2m_c - cooling_bump_c
+        if use_pessimistic:
+            t_eff -= s.total_uncertainty_c
+        below_mask.append(t_eff <= reference_temp_c)
+
+    # Extract contiguous runs
+    runs: List[Tuple[int, int]] = []
+    in_run = False
+    run_start = 0
+
+    for idx, is_below in enumerate(below_mask):
+        if is_below and not in_run:
+            in_run = True
+            run_start = idx
+        elif not is_below and in_run:
+            in_run = False
+            runs.append((run_start, idx - 1))
+    if in_run:
+        runs.append((run_start, len(below_mask) - 1))
+
+    total_steps = sum((b - a + 1) for a, b in runs)
+    total_hours = float(total_steps) * 1.0
+
+    if not runs:
+        return 0.0, 0.0, None, None, True
+
+    # Find longest continuous run
+    longest_run = max(runs, key=lambda r: (r[1] - r[0] + 1))
+    longest_hours = float(longest_run[1] - longest_run[0] + 1) * 1.0
+
+    dt_start = datetime.fromisoformat(steps[longest_run[0]].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
+    dt_end = datetime.fromisoformat(steps[longest_run[1]].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
+
+    start_local = dt_start.strftime("%H:%M")
+    end_local = dt_end.strftime("%H:%M")
+
+    return total_hours, longest_hours, start_local, end_local, True
+
+
+def evaluate_duration_rule_category(
+    min_temp_adjusted_c: float,
+    min_temp_pessimistic_c: float,
+    reference_temp_c: float,
+    continuous_hours_nominal: float,
+    continuous_hours_pessimistic: float,
+    duration_rules: Optional[List[DurationRule]],
+    duration_resolvable: bool = True,
+) -> Tuple[str, str, bool, bool, str]:
+    """Evaluate severity category according to the official Decision Table (docs/frost-decision-table.md).
+
+    Returns:
+        (category, category_fa, short_dip, duration_escalated, explanation_fa)
+    """
+    # 1. 3-Hourly data beyond 120h (duration is not resolvable)
+    if not duration_resolvable:
+        if min_temp_adjusted_c <= reference_temp_c - 2.0:
+            cat = RISK_LEVEL_CRITICAL
+        elif min_temp_adjusted_c <= reference_temp_c:
+            cat = RISK_LEVEL_WARNING
+        elif min_temp_pessimistic_c <= reference_temp_c:
+            cat = RISK_LEVEL_WATCH
+        else:
+            cat = RISK_LEVEL_NONE
+        expl = "فراتر از ۱۲۰ ساعت: داده‌ها ۳-ساعته بوده و مدت تداوم قابل تفکیک نیست؛ دسته‌بندی صرفاً بر اساس دما صورت گرفت."
+        return cat, RISK_LEVEL_FA[cat], False, False, expl
+
+    # 2. Nominal temperature stays above reference threshold
+    if min_temp_adjusted_c > reference_temp_c:
+        # Check pessimistic temperature (pessimistic-only escalation rule: ONLY raises to watch)
+        if min_temp_pessimistic_c <= reference_temp_c:
+            cat = RISK_LEVEL_WATCH
+            expl = "دمای اسمی بالاتر از آستانه است، اما با احتساب عدم‌قطعیت پیش‌بینی (T - σ) احتمال ورود به محدوده سرمازدگی وجود دارد (دیده‌بانی)."
+            return cat, RISK_LEVEL_FA[cat], False, False, expl
+        cat = RISK_LEVEL_NONE
+        expl = "دمای کمینه پیش‌بینی‌شده در محدوده امن قرار دارد."
+        return cat, RISK_LEVEL_FA[cat], False, False, expl
+
+    # 3. Nominal temperature drops below reference threshold (min_temp_adjusted_c <= reference_temp_c)
+    # 3A. No published duration rules (duration_rules is None or empty)
+    if not duration_rules:
+        if min_temp_adjusted_c <= reference_temp_c - 1.5:
+            cat = RISK_LEVEL_CRITICAL
+        else:
+            cat = RISK_LEVEL_WARNING
+        expl = "برای این مرحله داده منتشرشده‌ای برای مدت ماندن زیر آستانه وجود ندارد؛ دسته‌بندی فقط بر اساس دما است."
+        return cat, RISK_LEVEL_FA[cat], False, False, expl
+
+    # 3B. Active published duration rules present (e.g. S1 p. 72 rules for bud stages at <= -4°C)
+    # Check continuous hours nominal:
+    if continuous_hours_nominal < 1.0:
+        cat = RISK_LEVEL_WATCH
+        short_dip = True
+        duration_escalated = False
+        expl = f"افت کوتاه‌مدت ({continuous_hours_nominal:.1f} ساعت) زیر آستانه {reference_temp_c:.1f}°C؛ ریسک در سطح دیده‌بانی باقی می‌ماند."
+    elif continuous_hours_nominal < 2.0:
+        cat = RISK_LEVEL_WARNING
+        short_dip = False
+        duration_escalated = False
+        expl = f"تداوم {continuous_hours_nominal:.1f} ساعت زیر آستانه {reference_temp_c:.1f}°C (هشدار سرمازدگی)."
+    elif continuous_hours_nominal < 6.0:
+        cat = RISK_LEVEL_CRITICAL
+        short_dip = False
+        duration_escalated = True
+        expl = f"تداوم حداقل ۲ ساعت ({continuous_hours_nominal:.1f} ساعت) زیر آستانه {reference_temp_c:.1f}°C منجر به سطح بحرانی خسارت جوانه می‌شود (منبع: حکم‌آبادی ۱۳۸۹، ص ۷۲ [S1])."
+    else:
+        cat = RISK_LEVEL_CRITICAL
+        short_dip = False
+        duration_escalated = True
+        expl = f"تداوم طولانی ({continuous_hours_nominal:.1f} ساعت) زیر آستانه {reference_temp_c:.1f}°C منجر به نکروز کامل بافت گل و جوانه می‌شود (منبع: حکم‌آبادی ۱۳۸۹، ص ۷۲ [S1])."
+
+    return cat, RISK_LEVEL_FA[cat], short_dip, duration_escalated, expl
 
 
 def assess_frost_risk(
@@ -479,6 +707,7 @@ def assess_frost_risk(
         RISK_LEVEL_ADVISORY: 1,
         RISK_LEVEL_WATCH: 2,
         RISK_LEVEL_WARNING: 3,
+        RISK_LEVEL_CRITICAL: 4,
     }
 
     hard_cap = hard_cap_horizon_h if hard_cap_horizon_h is not None else FROST_HARD_CAP_HORIZON_H
@@ -508,25 +737,86 @@ def assess_frost_risk(
         t_lower = round(t_adjusted_min - unc_at_min, 2)
         t_upper = round(t_adjusted_min + unc_at_min, 2)
 
-        # Count hours below thresholds (approximate 1 hour per step; flag interpolated)
-        # We calculate exposure duration based on adjusted temperatures
+        # Local time formatting for minimum temperature
+        tz_local = timezone(timedelta(hours=local_utc_offset_hours))
+        dt_min = datetime.fromisoformat(t_min_time.replace("Z", "+00:00")).astimezone(tz_local)
+        min_temp_timestamp_local = dt_min.strftime("%H:%M")
+
+        # Reference temperature for duration checks
+        ref_temp = (
+            stage_cfg.duration_rules[0].reference_temperature_c
+            if stage_cfg.duration_rules
+            else (stage_cfg.t_critical_c if stage_cfg.t_critical_c is not None else tc10)
+        )
+
+        # Interval-based duration calculations (E8)
+        nom_total, nom_longest, nom_start_loc, nom_end_loc, is_resolvable = calculate_interval_duration_run(
+            steps,
+            reference_temp_c=ref_temp,
+            cooling_bump_c=cooling_bump,
+            use_pessimistic=False,
+            local_utc_offset_hours=local_utc_offset_hours,
+        )
+
+        pess_total, pess_longest, pess_start_loc, pess_end_loc, _ = calculate_interval_duration_run(
+            steps,
+            reference_temp_c=ref_temp,
+            cooling_bump_c=cooling_bump,
+            use_pessimistic=True,
+            local_utc_offset_hours=local_utc_offset_hours,
+        )
+
+        level, level_fa, short_dip, duration_escalated, expl_fa = evaluate_duration_rule_category(
+            min_temp_adjusted_c=t_adjusted_min,
+            min_temp_pessimistic_c=t_lower,
+            reference_temp_c=ref_temp,
+            continuous_hours_nominal=nom_longest,
+            continuous_hours_pessimistic=pess_longest,
+            duration_rules=stage_cfg.duration_rules,
+            duration_resolvable=is_resolvable,
+        )
+
+        if not is_resolvable:
+            duration_display_text = "مدت تداوم نامشخص (داده‌های فراتر از ۱۲۰ ساعت با گام ۳-ساعته)"
+        elif nom_total > 0 and nom_start_loc and nom_end_loc:
+            duration_display_text = (
+                f"{nom_total:.1f} h below {ref_temp:.1f}°C "
+                f"(longest continuous {nom_longest:.1f} h, from {nom_start_loc} to {nom_end_loc})"
+            )
+        else:
+            duration_display_text = f"0.0 h below {ref_temp:.1f}°C"
+
         hrs_tc10 = sum(1.0 for s in steps if (s.temperature_2m_c - cooling_bump) <= tc10)
         hrs_tc90 = sum(1.0 for s in steps if (s.temperature_2m_c - cooling_bump) <= tc90)
 
-        # Risk level classification
-        level, level_fa = classify_nightly_risk(
-            t_min_adjusted_c=t_adjusted_min,
-            t_min_lower_c=t_lower,
-            hours_below_tc10=hrs_tc10,
-            tc10_c=tc10,
-            tc90_c=tc90,
-        )
-
-        if risk_hierarchy[level] > risk_hierarchy[overall_level]:
+        if risk_hierarchy.get(level, 0) > risk_hierarchy.get(overall_level, 0):
             overall_level = level
 
         # Recommendations if risk is elevated
         recs = GENERIC_RECOMMENDATIONS_FA if level != RISK_LEVEL_NONE else []
+
+        active_rule_src = stage_cfg.duration_rules[0].source if stage_cfg.duration_rules else None
+        nominal_exposure = DurationExposureResult(
+            reference_temperature_c=ref_temp,
+            total_hours=nom_total,
+            longest_continuous_hours=nom_longest,
+            longest_run_start_local=nom_start_loc,
+            longest_run_end_local=nom_end_loc,
+            active_rule_source=active_rule_src,
+            active_rule_category=level if duration_escalated else None,
+            rule_note_fa=expl_fa,
+        )
+
+        pessimistic_exposure = DurationExposureResult(
+            reference_temperature_c=ref_temp,
+            total_hours=pess_total,
+            longest_continuous_hours=pess_longest,
+            longest_run_start_local=pess_start_loc,
+            longest_run_end_local=pess_end_loc,
+            active_rule_source=active_rule_src,
+            active_rule_category=None,
+            rule_note_fa="سناریوی بدبینانه (T_eff - sigma)",
+        )
 
         nightly_risks.append(
             NightlyFrostRisk(
@@ -549,6 +839,17 @@ def assess_frost_risk(
                 thresholds_verified=crop_cfg.verified,
                 recommendations_fa=recs,
                 recommendations_review_required=True,
+                min_temp_timestamp_local=min_temp_timestamp_local,
+                duration_resolvable=is_resolvable,
+                cadence_coarse=not is_resolvable,
+                short_dip=short_dip,
+                duration_escalated=duration_escalated,
+                duration_display_text=duration_display_text,
+                duration_rule_explanation_fa=expl_fa,
+                nominal_exposure=nominal_exposure,
+                pessimistic_exposure=pessimistic_exposure,
+                conflicting_published_value=stage_cfg.conflicting_published_value,
+                conflicting_value_note_fa=stage_cfg.conflicting_notes_fa,
             )
         )
 
