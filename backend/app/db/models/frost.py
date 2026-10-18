@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,9 @@ class Orchard(Base, TimestampMixin):
     # Relationships
     alert_rules = relationship(
         "AlertRule", back_populates="orchard", cascade="all, delete-orphan", lazy="selectin"
+    )
+    observations = relationship(
+        "OrchardObservation", back_populates="orchard", cascade="all, delete-orphan", lazy="selectin"
     )
 
     def __repr__(self) -> str:
@@ -132,3 +135,44 @@ class NotificationLog(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<NotificationLog {self.id} ({self.channel} -> {self.recipient}, status={self.status})>"
+
+
+class OrchardObservation(Base, TimestampMixin):
+    """Ground-truth observation recorded for orchard model calibration.
+
+    Records observed on-farm minimum temperature, phenological stage,
+    and frost damage severity to calibrate empirical critical thresholds.
+    """
+
+    __tablename__ = "orchard_observations"
+
+    __table_args__ = (
+        Index("ix_orchard_observations_orchard_id", "orchard_id"),
+        Index("ix_orchard_observations_date", "observation_date"),
+        Index("ix_orchard_observations_severity", "damage_severity"),
+        Index("ix_orchard_observations_orchard_date", "orchard_id", "observation_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    orchard_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("orchards.id", ondelete="CASCADE"), nullable=False
+    )
+    observation_date: Mapped[date] = mapped_column(Date, nullable=False)
+    phenological_stage: Mapped[str] = mapped_column(String(64), nullable=False)
+    min_temp_observed_c: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    damage_observed_fa: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    damage_severity: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="none"
+    )  # none, light, moderate, severe, total
+    notes_fa: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    orchard = relationship("Orchard", back_populates="observations", lazy="selectin")
+
+    def __repr__(self) -> str:
+        return (
+            f"<OrchardObservation {self.id} (orchard={self.orchard_id}, "
+            f"date={self.observation_date}, severity={self.damage_severity})>"
+        )

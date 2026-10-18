@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from datetime import date
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -112,3 +113,42 @@ class EvaluateAlertsResponse(BaseModel):
     thresholds_verified: bool
     safety_lock_active: bool
     notifications: List[NotificationLogResponse]
+
+
+class OrchardObservationCreate(BaseModel):
+    """Schema for creating a ground-truth observation for an orchard."""
+
+    observation_date: date = Field(..., description="Date of observation (YYYY-MM-DD)")
+    phenological_stage: str = Field(..., description="Phenological stage observed on date")
+    min_temp_observed_c: Optional[float] = Field(None, description="Observed minimum temperature at the orchard in °C")
+    damage_observed_fa: Optional[str] = Field(None, description="Descriptive Persian text of observed frost damage")
+    damage_severity: Literal["none", "light", "moderate", "severe", "total"] = Field(
+        "none", description="Frost damage severity rating"
+    )
+    notes_fa: Optional[str] = Field(None, description="Additional agronomic notes in Persian")
+
+
+class OrchardObservationUpdate(BaseModel):
+    """Schema for updating an existing observation."""
+
+    observation_date: Optional[date] = None
+    phenological_stage: Optional[str] = None
+    min_temp_observed_c: Optional[float] = None
+    damage_observed_fa: Optional[str] = None
+    damage_severity: Optional[Literal["none", "light", "moderate", "severe", "total"]] = None
+    notes_fa: Optional[str] = None
+
+
+class OrchardObservationResponse(BaseModel):
+    """Schema for returning an observation."""
+
+    id: str
+    orchard_id: str
+    observation_date: str
+    phenological_stage: str
+    min_temp_observed_c: Optional[float] = None
+    damage_observed_fa: Optional[str] = None
+    damage_severity: str
+    notes_fa: Optional[str] = None
+    created_at: Optional[str] = None
+

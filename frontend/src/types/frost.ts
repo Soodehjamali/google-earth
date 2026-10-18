@@ -211,3 +211,25 @@ export interface EvaluateAlertsResponse {
   safety_lock_active: boolean;
   notifications: NotificationLogEntry[];
 }
+
+export interface OrchardObservation {
+  id: string;
+  orchard_id: string;
+  observation_date: string;
+  phenological_stage: string;
+  min_temp_observed_c?: number | null;
+  damage_observed_fa?: string | null;
+  damage_severity: 'none' | 'light' | 'moderate' | 'severe' | 'total';
+  notes_fa?: string | null;
+  created_at?: string;
+}
+
+export interface OrchardObservationCreate {
+  observation_date: string;
+  phenological_stage: string;
+  min_temp_observed_c?: number | null;
+  damage_observed_fa?: string | null;
+  damage_severity?: 'none' | 'light' | 'moderate' | 'severe' | 'total';
+  notes_fa?: string | null;
+}
+

@@ -2123,6 +2123,255 @@ async def create_alert_rule_endpoint(
     }
 
 
+# =========================================================================
+# Orchard Ground-Truth Observations (E10)
+# =========================================================================
+
+@router.post(
+    "/frost/orchards/{orchard_id}/observations",
+    tags=["Agriculture", "Frost"],
+    status_code=201,
+    summary="Record a ground-truth observation for an orchard",
+)
+async def create_observation_endpoint(
+    orchard_id: uuid.UUID,
+    obs_in: Any = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Record ground-truth observation (min temp, phenology, damage severity) for calibration."""
+    from app.schemas.frost import OrchardObservationCreate
+    from app.db.models.frost import Orchard, OrchardObservation
+    from sqlalchemy import select
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    data = OrchardObservationCreate(**obs_in) if isinstance(obs_in, dict) else obs_in
+
+    obs = OrchardObservation(
+        orchard_id=orchard_id,
+        observation_date=data.observation_date,
+        phenological_stage=data.phenological_stage,
+        min_temp_observed_c=data.min_temp_observed_c,
+        damage_observed_fa=data.damage_observed_fa,
+        damage_severity=data.damage_severity,
+        notes_fa=data.notes_fa,
+    )
+    db.add(obs)
+    await db.commit()
+    await db.refresh(obs)
+
+    return {
+        "id": str(obs.id),
+        "orchard_id": str(obs.orchard_id),
+        "observation_date": obs.observation_date.isoformat(),
+        "phenological_stage": obs.phenological_stage,
+        "min_temp_observed_c": obs.min_temp_observed_c,
+        "damage_observed_fa": obs.damage_observed_fa,
+        "damage_severity": obs.damage_severity,
+        "notes_fa": obs.notes_fa,
+        "created_at": obs.created_at.isoformat() if obs.created_at else None,
+    }
+
+
+@router.get(
+    "/frost/orchards/{orchard_id}/observations",
+    tags=["Agriculture", "Frost"],
+    summary="List observations for an orchard with optional filters",
+)
+async def list_observations_endpoint(
+    orchard_id: uuid.UUID,
+    start_date: Optional[date] = Query(None, description="Filter observations on or after this date"),
+    end_date: Optional[date] = Query(None, description="Filter observations on or before this date"),
+    severity: Optional[str] = Query(None, description="Filter by damage_severity (none, light, moderate, severe, total)"),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """List ground-truth observations for an orchard with date range and severity filtering."""
+    from app.db.models.frost import Orchard, OrchardObservation
+    from sqlalchemy import select
+
+    stmt_orchard = select(Orchard).where(Orchard.id == orchard_id)
+    res_orchard = await db.execute(stmt_orchard)
+    if not res_orchard.scalar_one_or_none():
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    stmt = select(OrchardObservation).where(OrchardObservation.orchard_id == orchard_id)
+    if isinstance(start_date, (date, str)):
+        stmt = stmt.where(OrchardObservation.observation_date >= start_date)
+    if isinstance(end_date, (date, str)):
+        stmt = stmt.where(OrchardObservation.observation_date <= end_date)
+    if isinstance(severity, str) and severity:
+        stmt = stmt.where(OrchardObservation.damage_severity == severity)
+
+    stmt = stmt.order_by(OrchardObservation.observation_date.desc())
+    res = await db.execute(stmt)
+    observations = res.scalars().all()
+
+    return [
+        {
+            "id": str(o.id),
+            "orchard_id": str(o.orchard_id),
+            "observation_date": o.observation_date.isoformat(),
+            "phenological_stage": o.phenological_stage,
+            "min_temp_observed_c": o.min_temp_observed_c,
+            "damage_observed_fa": o.damage_observed_fa,
+            "damage_severity": o.damage_severity,
+            "notes_fa": o.notes_fa,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        for o in observations
+    ]
+
+
+@router.get(
+    "/frost/orchards/{orchard_id}/observations/{obs_id}",
+    tags=["Agriculture", "Frost"],
+    summary="Get single observation",
+)
+async def get_observation_endpoint(
+    orchard_id: uuid.UUID,
+    obs_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Retrieve details of a specific observation."""
+    from app.db.models.frost import OrchardObservation
+    from sqlalchemy import select
+
+    stmt = select(OrchardObservation).where(
+        OrchardObservation.orchard_id == orchard_id,
+        OrchardObservation.id == obs_id,
+    )
+    res = await db.execute(stmt)
+    obs = res.scalar_one_or_none()
+    if not obs:
+        raise AppException(
+            message=f"Observation {obs_id} not found for orchard {orchard_id}",
+            code="ERR_OBSERVATION_NOT_FOUND",
+            status_code=404,
+        )
+
+    return {
+        "id": str(obs.id),
+        "orchard_id": str(obs.orchard_id),
+        "observation_date": obs.observation_date.isoformat(),
+        "phenological_stage": obs.phenological_stage,
+        "min_temp_observed_c": obs.min_temp_observed_c,
+        "damage_observed_fa": obs.damage_observed_fa,
+        "damage_severity": obs.damage_severity,
+        "notes_fa": obs.notes_fa,
+        "created_at": obs.created_at.isoformat() if obs.created_at else None,
+    }
+
+
+@router.put(
+    "/frost/orchards/{orchard_id}/observations/{obs_id}",
+    tags=["Agriculture", "Frost"],
+    summary="Update an existing observation",
+)
+async def update_observation_endpoint(
+    orchard_id: uuid.UUID,
+    obs_id: uuid.UUID,
+    obs_in: Any = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Update fields of an existing ground-truth observation."""
+    from app.schemas.frost import OrchardObservationUpdate
+    from app.db.models.frost import OrchardObservation
+    from sqlalchemy import select
+
+    stmt = select(OrchardObservation).where(
+        OrchardObservation.orchard_id == orchard_id,
+        OrchardObservation.id == obs_id,
+    )
+    res = await db.execute(stmt)
+    obs = res.scalar_one_or_none()
+    if not obs:
+        raise AppException(
+            message=f"Observation {obs_id} not found for orchard {orchard_id}",
+            code="ERR_OBSERVATION_NOT_FOUND",
+            status_code=404,
+        )
+
+    data = OrchardObservationUpdate(**obs_in) if isinstance(obs_in, dict) else obs_in
+
+    if data.observation_date is not None:
+        obs.observation_date = data.observation_date
+    if data.phenological_stage is not None:
+        obs.phenological_stage = data.phenological_stage
+    if data.min_temp_observed_c is not None:
+        obs.min_temp_observed_c = data.min_temp_observed_c
+    if data.damage_observed_fa is not None:
+        obs.damage_observed_fa = data.damage_observed_fa
+    if data.damage_severity is not None:
+        obs.damage_severity = data.damage_severity
+    if data.notes_fa is not None:
+        obs.notes_fa = data.notes_fa
+
+    await db.commit()
+    await db.refresh(obs)
+
+    return {
+        "id": str(obs.id),
+        "orchard_id": str(obs.orchard_id),
+        "observation_date": obs.observation_date.isoformat(),
+        "phenological_stage": obs.phenological_stage,
+        "min_temp_observed_c": obs.min_temp_observed_c,
+        "damage_observed_fa": obs.damage_observed_fa,
+        "damage_severity": obs.damage_severity,
+        "notes_fa": obs.notes_fa,
+        "created_at": obs.created_at.isoformat() if obs.created_at else None,
+    }
+
+
+@router.delete(
+    "/frost/orchards/{orchard_id}/observations/{obs_id}",
+    tags=["Agriculture", "Frost"],
+    status_code=204,
+    summary="Delete an observation",
+)
+async def delete_observation_endpoint(
+    orchard_id: uuid.UUID,
+    obs_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Delete a ground-truth observation record."""
+    from app.db.models.frost import OrchardObservation
+    from sqlalchemy import select
+
+    stmt = select(OrchardObservation).where(
+        OrchardObservation.orchard_id == orchard_id,
+        OrchardObservation.id == obs_id,
+    )
+    res = await db.execute(stmt)
+    obs = res.scalar_one_or_none()
+    if not obs:
+        raise AppException(
+            message=f"Observation {obs_id} not found for orchard {orchard_id}",
+            code="ERR_OBSERVATION_NOT_FOUND",
+            status_code=404,
+        )
+
+    await db.delete(obs)
+    await db.commit()
+    return None
+
+
 @router.post(
     "/frost/evaluate-alerts",
     tags=["Agriculture", "Frost"],

@@ -452,6 +452,27 @@ aa5b907 untracked files on cline checkpoint
 6. **Topographic Advice:**
    - Added explicit advice: *"بادشکن‌ها نباید مسیر تخلیه هوای سرد رو به پایین‌دست (Cold-Air Drainage) را مسدود کنند."*
 
+---
+
+### Item E10 Decisions: Orchard Ground-Truth Observations & Model Calibration
+1. **Schema & Migration Integrity:**
+   - Alembic migration `005_orchard_observations.py` establishes table `orchard_observations` (`id`, `orchard_id`, `observation_date`, `phenological_stage`, `min_temp_observed_c`, `damage_observed_fa`, `damage_severity`, `notes_fa`, `created_at`, `updated_at`).
+   - Foreign key constraint references `orchards.id` with `ondelete="CASCADE"`.
+   - Indexes added on `orchard_id`, `observation_date`, `damage_severity`, and composite `(orchard_id, observation_date)`.
+   - Migration verified via clean `upgrade -> downgrade -> upgrade` cycle on PostgreSQL and SQLite.
+2. **Ground-Truth CRUD API & Query Filtering:**
+   - Complete CRUD endpoints implemented under `/api/v1/agriculture/frost/orchards/{id}/observations` protected by `require_frost_auth`:
+     - `POST /observations`: Record ground-truth observation (201 Created).
+     - `GET /observations`: List observations with optional filtering by `start_date`, `end_date`, and `damage_severity` (`none`, `light`, `moderate`, `severe`, `total`).
+     - `GET /observations/{obs_id}`: Retrieve single observation.
+     - `PUT /observations/{obs_id}`: Update observation severity and notes.
+     - `DELETE /observations/{obs_id}`: Delete observation record (204 No Content).
+3. **Calibration Loop Architecture:**
+   - Documented in `docs/frost-calibration-loop.md`.
+   - The calibration loop uses field observation pairs $(T_{\min,\text{observed}}, \text{damage\_severity})$ to fit empirical logistic mortality curves ($P(\text{injury}) = \frac{1}{1 + e^{-(T - T_{50})/\beta}}$) and calibrate topographic stagnation coefficients against in-situ data.
+   - Evidence level promotes from "C" (uncalibrated placeholder) to "B" (field-calibrated) once sample size $N \ge 30$ freeze events per developmental stage are accumulated.
+
+
 
 
 
