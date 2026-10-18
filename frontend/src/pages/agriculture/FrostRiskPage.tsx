@@ -509,70 +509,50 @@ export default function FrostRiskPage() {
         </div>
       </div>
 
-      {/* Shared Location Empty State (E7) */}
-      {!sharedGeometry ? (
+      {/* Shared Analysis Location Scope Badge */}
+      {sharedGeometry && (
         <div
-          data-testid="frost-empty-state"
+          data-testid="shared-location-badge"
           style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            backgroundColor: '#0f172a',
-            border: '2px dashed #334155',
-            borderRadius: '12px',
-            margin: '24px 0',
+            padding: '12px 16px',
+            backgroundColor: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: '8px',
+            marginBottom: '16px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
+            fontSize: '0.85rem',
           }}
         >
-          <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📍</div>
-          <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
-            موقعیتی تعیین نشده است
-          </h3>
-          <p style={{ fontSize: '0.95rem', color: '#94a3b8', margin: 0 }}>
-            ابتدا موقعیت را در کادر محدوده تعیین کنید
-          </p>
-        </div>
-      ) : (
-        <>
-          {/* Shared Analysis Location Scope Badge */}
-          <div
-            data-testid="shared-location-badge"
-            style={{
-              padding: '12px 16px',
-              backgroundColor: '#1e293b',
-              border: '1px solid #334155',
-              borderRadius: '8px',
-              marginBottom: '16px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '12px',
-              fontSize: '0.85rem',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '1.2rem' }}>🏡</span>
-              <strong style={{ color: '#f8fafc' }}>موقعیت تحلیل:</strong>
-              <span style={{ color: '#cbd5e1' }}>{sharedLocationName}</span>
-              <span
-                style={{
-                  backgroundColor: '#0f172a',
-                  color: '#34d399',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontSize: '0.75rem',
-                  border: '1px solid #334155',
-                  fontWeight: 600,
-                }}
-              >
-                {sharedGeometry.type === 'Polygon' ? 'چندضلعی باغ (Polygon)' : 'نقطه مکانی (GPS Point)'}
-              </span>
-            </div>
-            {assessment && (
-              <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
-                {assessment.location_sampling_method || (assessment.geometry_type === 'Point' ? 'نمونه‌برداری در نقطه GPS با بافر حوضچه' : 'پیش‌بینی سلول مرکز چندضلعی')}
-              </div>
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '1.2rem' }}>🏡</span>
+            <strong style={{ color: '#f8fafc' }}>موقعیت تحلیل:</strong>
+            <span style={{ color: '#cbd5e1' }}>{sharedLocationName}</span>
+            <span
+              style={{
+                backgroundColor: '#0f172a',
+                color: '#34d399',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '0.75rem',
+                border: '1px solid #334155',
+                fontWeight: 600,
+              }}
+            >
+              {sharedGeometry.type === 'Polygon' ? 'چندضلعی باغ (Polygon)' : 'نقطه مکانی (GPS Point)'}
+            </span>
           </div>
+          {assessment && (
+            <div style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+              {assessment.location_sampling_method || (assessment.geometry_type === 'Point' ? 'نمونه‌برداری در نقطه GPS با بافر حوضچه' : 'پیش‌بینی سلول مرکز چندضلعی')}
+            </div>
+          )}
+        </div>
+      )}
+
 
           {/* SECTION A: Overview Table of ALL Orchards (R6 Item a) */}
           <div className="card mb-4" data-testid="orchards-overview-card">
@@ -872,86 +852,104 @@ export default function FrostRiskPage() {
                   <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '8px', color: '#334155' }}>
                     🌙 پیش‌بینی شب‌های آتی باغ (جهت بررسی جزئیات عوامل، شب مورد نظر را انتخاب کنید):
                   </div>
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="table table-sm" style={{ width: '100%', marginBottom: 0, fontSize: '0.82rem' }}>
-                      <thead style={{ backgroundColor: '#f8fafc' }}>
-                        <tr>
-                          <th style={{ padding: '6px 10px', textAlign: 'right' }}>شب / تاریخ</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>کمترین دمای مؤثر</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>ساعات زیر آستانه</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>ریسک راهنما ٪</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>دروازه ایمنی (GATE)</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>رده نهایی</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center' }}>انتخاب</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {orchardRiskReport.nights.map((n) => {
-                          const isNightSelected = n.night_date === selectedNight?.night_date;
-                          const nStyle = CATEGORY_STYLE[n.final_category] || CATEGORY_STYLE.none;
+                  {orchardRiskReport.nights.length === 0 ? (
+                    <div
+                      data-testid="no-nights-below-threshold"
+                      style={{
+                        padding: '14px 18px',
+                        textAlign: 'center',
+                        color: '#166534',
+                        backgroundColor: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '6px',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                      }}
+                    >
+                      هیچ شب زیر آستانه نیست
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table table-sm" style={{ width: '100%', marginBottom: 0, fontSize: '0.82rem' }}>
+                        <thead style={{ backgroundColor: '#f8fafc' }}>
+                          <tr>
+                            <th style={{ padding: '6px 10px', textAlign: 'right' }}>شب / تاریخ</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>کمترین دمای مؤثر</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>ساعات زیر آستانه</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>ریسک راهنما ٪</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>دروازه ایمنی (GATE)</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>رده نهایی</th>
+                            <th style={{ padding: '6px 10px', textAlign: 'center' }}>انتخاب</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orchardRiskReport.nights.map((n) => {
+                            const isNightSelected = n.night_date === selectedNight?.night_date;
+                            const nStyle = CATEGORY_STYLE[n.final_category] || CATEGORY_STYLE.none;
 
-                          return (
-                            <tr
-                              key={n.night_date}
-                              style={{
-                                backgroundColor: isNightSelected ? '#dbeafe' : '#ffffff',
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => setSelectedNightDate(n.night_date)}
-                            >
-                              <td style={{ padding: '6px 10px', fontWeight: 600 }}>{n.night_display_fa}</td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center', direction: 'ltr' }}>
-                                <FormattedNumber value={n.effective_tmin_c} unit="°C" />
-                              </td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                {n.hours_below_threshold > 0 ? (
-                                  <span>
-                                    <FormattedNumber value={n.hours_below_threshold} /> ساعت
+                            return (
+                              <tr
+                                key={n.night_date}
+                                style={{
+                                  backgroundColor: isNightSelected ? '#dbeafe' : '#ffffff',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => setSelectedNightDate(n.night_date)}
+                              >
+                                <td style={{ padding: '6px 10px', fontWeight: 600 }}>{n.night_display_fa}</td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center', direction: 'ltr' }}>
+                                  <FormattedNumber value={n.effective_tmin_c} unit="°C" />
+                                </td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  {n.hours_below_threshold > 0 ? (
+                                    <span>
+                                      <FormattedNumber value={n.hours_below_threshold} /> ساعت
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, direction: 'ltr' }}>
+                                  <FormattedNumber value={n.risk_index} unit="٪" />
+                                </td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  {n.gate_triggered ? (
+                                    <span style={{ color: '#dc2626', fontWeight: 600 }}>🚨 فعال شد</span>
+                                  ) : (
+                                    <span style={{ color: '#64748b' }}>عادی</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  <span
+                                    style={{
+                                      display: 'inline-block',
+                                      padding: '1px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      backgroundColor: nStyle.bg,
+                                      color: nStyle.text,
+                                      border: `1px solid ${nStyle.border}`,
+                                    }}
+                                  >
+                                    {n.final_category_fa}
                                   </span>
-                                ) : (
-                                  <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, direction: 'ltr' }}>
-                                <FormattedNumber value={n.risk_index} unit="٪" />
-                              </td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                {n.gate_triggered ? (
-                                  <span style={{ color: '#dc2626', fontWeight: 600 }}>🚨 فعال شد</span>
-                                ) : (
-                                  <span style={{ color: '#64748b' }}>عادی</span>
-                                )}
-                              </td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                <span
-                                  style={{
-                                    display: 'inline-block',
-                                    padding: '1px 6px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    backgroundColor: nStyle.bg,
-                                    color: nStyle.text,
-                                    border: `1px solid ${nStyle.border}`,
-                                  }}
-                                >
-                                  {n.final_category_fa}
-                                </span>
-                              </td>
-                              <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                <input
-                                  type="radio"
-                                  name="selected_night"
-                                  checked={isNightSelected}
-                                  onChange={() => setSelectedNightDate(n.night_date)}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                </td>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  <input
+                                    type="radio"
+                                    name="selected_night"
+                                    checked={isNightSelected}
+                                    onChange={() => setSelectedNightDate(n.night_date)}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 {/* ONE Factor Table for Selected Night (EXACT COLUMNS REQUIRED BY R6) */}
@@ -1138,14 +1136,36 @@ export default function FrostRiskPage() {
               <span className="card-title">⚙️ تحلیل فوری محدوده جاری (Ad-Hoc Analysis)</span>
             </div>
             <div className="card-body">
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '14px',
-                  marginBottom: '14px',
-                }}
-              >
+              {!sharedGeometry ? (
+                <div
+                  data-testid="frost-empty-state"
+                  style={{
+                    padding: '30px 20px',
+                    textAlign: 'center',
+                    backgroundColor: '#0f172a',
+                    border: '2px dashed #334155',
+                    borderRadius: '12px',
+                    margin: '12px 0',
+                  }}
+                >
+                  <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📍</div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
+                    موقعیتی تعیین نشده است
+                  </h3>
+                  <p style={{ fontSize: '0.95rem', color: '#94a3b8', margin: 0 }}>
+                    ابتدا موقعیت را در کادر محدوده تعیین کنید
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                      gap: '14px',
+                      marginBottom: '14px',
+                    }}
+                  >
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>
                     محصول باغی:
@@ -1290,6 +1310,8 @@ export default function FrostRiskPage() {
                   {error}
                 </div>
               )}
+                </>
+              )}
             </div>
           </div>
 
@@ -1331,7 +1353,7 @@ export default function FrostRiskPage() {
               {assessment.cold_air_pooling && (
                 <ColdAirPoolingSection
                   pooling={assessment.cold_air_pooling}
-                  geometry={sharedGeometry}
+                  geometry={sharedGeometry ?? undefined}
                 />
               )}
             </>
@@ -1451,8 +1473,6 @@ export default function FrostRiskPage() {
               )}
             </div>
           </div>
-        </>
-      )}
     </div>
   );
 }

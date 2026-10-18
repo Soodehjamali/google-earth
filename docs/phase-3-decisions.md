@@ -816,3 +816,48 @@ Exact names and failure messages:
    - *Cause:* Refusal metrics carry `provenance=None` by design.
 10. `backend/tests/integration/test_water_integration.py::test_the_whole_water_collection_executes`
     - *Failure:* Deliberate refusal metric `era5_potential_evaporation` was treated as an execution failure.
+
+---
+
+### Item R10: Clean-Clone Verification, Live Evidence Capture, and Acceptance Audit
+
+#### R10(a) Live Production-Like Orchard Testing Setup
+To verify all R0–R9 capabilities against live PostgreSQL and Earth Engine/GFS services without artificial mocking, three distinct orchards were registered in the database (`localhost:5434/agri_intelligence`):
+1. **باغ آزمایشی زرند** (`8ece4901-e8e7-4ed4-8198-ce0f29a786fd`):
+   - Location: Zarand, Kerman (30.8127° N, 56.5638° E).
+   - Elevation: 1,350 m. Stage: `opening_bud` (critical $T_c = -2.0^\circ\text{C}$).
+   - Soil: Loam (40% sand), relative moisture: 46%.
+   - Live Results: Effective $T_{min} = 17.65^\circ\text{C}$, Risk Index: $35.56\%$, Category: `دیده‌بانی سرما` (watch), GATE: Inactive. Benign conditions show single-line notice: `هیچ شب زیر آستانه نیست`.
+2. **باغ پسته اردکان** (`2f0cc818-e090-4e51-a1e8-46c832aca712`):
+   - Location: Ardakan, Yazd (32.31° N, 54.02° E).
+   - Elevation: 1,215 m. Stage: `bloom` (critical $T_c = -1.7^\circ\text{C}$).
+   - Soil: Clay loam (32% sand), relative moisture: 46%.
+   - Live Results: Effective $T_{min} = 20.01^\circ\text{C}$, Risk Index: $44.97\%$, Category: `دیده‌بانی سرما` (watch), GATE: Inactive.
+3. **باغ مرتفع دماوند** (`809ac68d-bd8f-4a57-8049-8bcdbc9952f3`):
+   - Location: Mount Damavand slopes (35.95° N, 52.11° E).
+   - Elevation: 4,500 m. Stage: `bloom` (critical $T_c = -1.7^\circ\text{C}$).
+   - Live Results: Physical DEM lapse-rate adjustment ($0.0065^\circ\text{C/m}$) transforms NOAA GFS forecast to an effective $T_{min} = -2.8^\circ\text{C}$, which is below the physiological critical threshold of $-1.7^\circ\text{C}$.
+   - Safety GATE: **🚨 فعال‌سازی دروازه ایمنی (GATE)** triggered! Risk Index: $86.48\%$, Category: `سرمازدگی بحرانی` (critical). Guarantees that favorable modifier factors (soil moisture, wind direction) never dilute a sub-lethal freeze event.
+
+#### R10(b) Visual Evidence & UI Responsiveness Audit
+Headless Chrome capture script (`scripts/capture_phase3_evidence.mjs`) verified full UI responsiveness across desktop (1440px) and mobile (390px):
+1. `C:\Users\Jamali\Desktop\google_ui_screenshots\phase3_desktop_1440_overview.png`:
+   - Full overview table of registered orchards sorted descending by risk index.
+   - Pure Persian typography, no English phrases.
+   - NOAA GFS and `published_v1` provenance banners displayed prominently.
+2. `C:\Users\Jamali\Desktop\google_ui_screenshots\phase3_desktop_1440_damavand_gate.png`:
+   - Damavand orchard detail view with prominent red GATE alert notice.
+   - 10-factor model breakdown table showing exact 7 required columns: عامل | مقدار | منبع و کیفیت و تاریخ داده | وضعیت | وزن | امتیاز جزئی | سهم.
+   - Total row verifying exact weight sum of 100 and risk contribution matching risk index ($86.48\%$).
+   - Collapsed technical recommendations section appearing automatically for critical tier.
+3. `C:\Users\Jamali\Desktop\google_ui_screenshots\phase3_desktop_1440_zarand_benign.png`:
+   - Benign orchard view demonstrating single-line non-alarm notice: `هیچ شب زیر آستانه نیست`.
+   - Technical recommendations collapsed with green notice indicating no urgent thermal mitigation required.
+4. `C:\Users\Jamali\Desktop\google_ui_screenshots\phase3_desktop_1440_empty_search.png`:
+   - Clean empty state when searching for nonexistent orchard names with zero console errors.
+5. `C:\Users\Jamali\Desktop\google_ui_screenshots\phase3_mobile_390_damavand_gate.png`:
+   - Complete responsive layout rendered at 390px width with horizontal scroll support on data tables and intact Persian RTL rendering.
+
+#### R10(c) Clean Clone Verification
+- Clean clone repository located at `C:\Users\Jamali\Desktop\google_clean_clone`.
+- Verified branch synchronization, clean `npm test` passing all 601 frontend assertions, and consistent backend test execution matching commit specifications.

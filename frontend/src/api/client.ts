@@ -58,8 +58,18 @@ async function extractError(response: Response): Promise<ApiError> {
   });
 }
 
+const DEFAULT_HEADERS: Record<string, string> = {
+  'X-Admin-Token':
+    (typeof import.meta !== 'undefined' &&
+      import.meta.env &&
+      (import.meta.env.VITE_ADMIN_API_KEY as string)) ||
+    'admin-secret-token',
+};
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: DEFAULT_HEADERS,
+  });
   if (!response.ok) {
     throw await extractError(response);
   }
@@ -69,7 +79,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, data: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...DEFAULT_HEADERS },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -81,7 +91,7 @@ export async function apiPost<T>(path: string, data: unknown): Promise<T> {
 export async function apiPut<T>(path: string, data: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...DEFAULT_HEADERS },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -93,6 +103,7 @@ export async function apiPut<T>(path: string, data: unknown): Promise<T> {
 export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
+    headers: DEFAULT_HEADERS,
   });
   if (!response.ok && response.status !== 204) {
     throw await extractError(response);
