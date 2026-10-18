@@ -78,6 +78,18 @@ export async function apiPost<T>(path: string, data: unknown): Promise<T> {
   return response.json();
 }
 
+export async function apiPut<T>(path: string, data: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw await extractError(response);
+  }
+  return response.json();
+}
+
 export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',

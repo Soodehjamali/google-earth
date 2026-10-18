@@ -661,3 +661,25 @@ aa5b907 untracked files on cline checkpoint
    - Idempotency is preserved per rule and night: re-evaluating the same night at the same or lower severity does not send duplicate notifications; upward escalation (e.g. warning -> critical) dispatches the escalated alert.
 4. **Recommendation Filtering:**
    - Agronomic recommendations (`GENERIC_RECOMMENDATIONS_FA`) are surfaced ONLY when the parcel's overall risk reaches `warning` or `critical`. For non-hazardous periods (`none`, `watch`), recommendations list is empty or informational only.
+
+---
+
+### Item R6: Pure Persian Per-Orchard UI Overhaul
+1. **Overview Table of All Orchards:**
+   - Implemented in `FrostRiskPage.tsx` using `frostApi.getFrostOrchardsRiskSummary()`.
+   - Displays all registered orchards sorted descending by risk severity (hierarchy + risk index).
+   - Columns: `نام باغ`, `مرحله رشدی` (with `⚠️ قدیمی/نامشخص` indicator when stale), `کمترین دمای مؤثر` (formatted in LTR with mathematical minus U+2212), `ساعات زیر آستانه` (or `"هیچ شب زیر آستانه نیست"` if 0), `رطوبت خاک` (relative root-zone moisture percent or `"نامشخص"`), `وزش باد` (speed in m/s or `"نامشخص"`), `ریسک راهنما ٪`, `رده نهایی` (colored category badge), and `عملیات` (select orchard button).
+2. **Selected Orchard Multi-Night View and Exact 7-Column Factor Table:**
+   - Compact nights table lists all nights with effective Tmin, hours below, guidance risk percent, GATE trigger status, and final category.
+   - For the selected night, renders ONE factor table with the EXACT 7 required column headers:
+     `عامل` | `مقدار` | `منبع و کیفیت و تاریخ داده` | `وضعیت` | `وزن` | `امتیاز جزئی` | `سهم`
+   - Totals row presents total weight (100.0%) and total contribution equal to the guidance risk index.
+   - Prominent GATE notice is displayed whenever the safety gate triggers (`gate_triggered == true`).
+3. **Collapsible Recommendations:**
+   - Surfaced only when the night's final category is `warning` or `critical`.
+   - When severity is `none` or `watch`, technical physical recommendations are hidden with an explicit reassurance: `"هیچ توصیه فوری برای این شب وجود ندارد (رده خطر زیر سطح هشدار است)."`
+4. **Pure Persian & Disclosure Honesty:**
+   - Elimination of all English phrases: no English stage names like `(Early Bloom)` or `(Pistachio)`, no `(Watch)` or `(Advisory)`, no `0.0 h below critical threshold`.
+   - Exact Persian guidance label rendered: `"ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)"`.
+   - Explicit disclaimer that weights and thresholds are uncalibrated and illustrative.
+   - Sub-zero numbers rendered in LTR direction with mathematical minus sign U+2212 (`−`).

@@ -238,3 +238,94 @@ export interface OrchardObservationCreate {
   notes_fa?: string | null;
 }
 
+export interface OrchardSummaryItem {
+  orchard_id: string;
+  name: string;
+  crop: string;
+  current_stage: string;
+  stage_is_stale: boolean;
+  worst_night_date: string | null;
+  worst_effective_tmin_c: number | null;
+  hours_below_threshold: number;
+  relative_rootzone_moisture: number | null;
+  wind_speed_mps: number | null;
+  risk_index: number;
+  final_category: string;
+  final_category_fa: string;
+  gate_triggered: boolean;
+}
+
+export interface OrchardNightRiskFactor {
+  id: string;
+  label_fa: string;
+  raw_value: any;
+  unit: string;
+  source_module: string;
+  quality_state: string;
+  as_of: string;
+  status: string; // مطلوب / خنثی / نامطلوب / نامشخص
+  weight: number;
+  subscore: number;
+  contribution: number;
+  applied: boolean;
+  source_note: string;
+  is_stale: boolean;
+  details?: Record<string, any>;
+}
+
+export interface OrchardNightRiskDetail {
+  night_date: string;
+  night_display_fa: string;
+  start_time_utc: string;
+  end_time_utc: string;
+  min_temp_local_time: string;
+  effective_tmin_c: number;
+  hours_below_threshold: number;
+  longest_continuous_hours: number;
+  risk_index: number;
+  index_category: string;
+  gate_category: string;
+  final_category: string;
+  final_category_fa: string;
+  gate_triggered: boolean;
+  gate_reason_fa: string | null;
+  factors: OrchardNightRiskFactor[];
+  total_weight: number;
+  total_contribution: number;
+  wind_speed_mps: number | null;
+  relative_moisture: number | null;
+  window_coverage: number;
+  is_partial_night: boolean;
+  duration_display_text: string;
+}
+
+export interface OrchardRiskReport {
+  orchard_id: string;
+  orchard_name: string;
+  crop: string;
+  crop_fa: string;
+  current_stage: string;
+  stage_fa: string;
+  stage_is_stale: boolean;
+  critical_temperature_c: number;
+  threshold_set: string;
+  thresholds_verified: boolean;
+  evidence_level: string;
+  index_is_probability: boolean;
+  guidance_risk_label_fa: string;
+  overall_final_category: string;
+  overall_final_category_fa: string;
+  worst_night: {
+    night_date: string;
+    effective_tmin_c: number;
+    risk_index: number;
+    final_category: string;
+    final_category_fa: string;
+    gate_triggered: boolean;
+    hours_below_threshold: number;
+  } | null;
+  nights: OrchardNightRiskDetail[];
+  recommendations_fa: string[];
+  assembled_at: string;
+}
+

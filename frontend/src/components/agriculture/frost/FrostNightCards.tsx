@@ -30,14 +30,14 @@ const SEVERITY_META: Record<
     icon: '🚨',
   },
   watch: {
-    labelFa: 'دیده‌بانی سرما (Watch)',
+    labelFa: 'دیده‌بانی سرما',
     bg: '#fff7ed',
     text: '#c2410c',
     border: '#fb923c',
     icon: '⚠️',
   },
   advisory: {
-    labelFa: 'هشدار مقدماتی (Advisory)',
+    labelFa: 'هشدار مقدماتی',
     bg: '#fefce8',
     text: '#854d0e',
     border: '#facc15',
@@ -249,8 +249,14 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
                       )}
                     </div>
 
-                    <div style={{ fontFamily: 'monospace', fontWeight: 600, direction: 'ltr', textAlign: 'left', color: '#0f172a', marginBottom: '4px' }}>
-                      {night.duration_display_text || '0.0 h below critical threshold'}
+                    <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>
+                      {night.duration_below_t10_h > 0 ? (
+                        <span>
+                          <FormattedNumber value={night.duration_below_t10_h} /> ساعت زیر آستانه <FormattedNumber value={effectiveTc10 ?? 0} unit="°C" />
+                        </span>
+                      ) : (
+                        <span>هیچ شب زیر آستانه نیست</span>
+                      )}
                     </div>
 
                     <div style={{ fontSize: '0.82rem', color: '#334155', lineHeight: '1.4' }}>
