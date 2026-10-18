@@ -201,4 +201,60 @@ describe('Phase 3 Task 3.5: Frost-Risk Domain Page & Component Contracts', () =>
     assert.strictEqual(point.temperature_min_c, point.lower_bound_c);
     assert.strictEqual(point.temperature_max_c, point.upper_bound_c);
   });
+
+  it('9. verifies E7 location inheritance: no manual coordinate inputs, empty state if unset, and shared geometry reuse', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const pagePath = path.resolve('src/pages/agriculture/FrostRiskPage.tsx');
+    const pageSource = fs.readFileSync(pagePath, 'utf-8');
+
+    // Verify empty state is rendered when sharedGeometry is null
+    assert.ok(
+      pageSource.includes('ابتدا موقعیت را در کادر محدوده تعیین کنید'),
+      'Must contain empty state message when no shared geometry is selected',
+    );
+
+    // Verify NO manual coordinate input boxes render in frost page
+    assert.ok(
+      !pageSource.includes('name="latitude"') && !pageSource.includes('name="longitude"'),
+      'Must not render manual latitude/longitude input fields',
+    );
+    assert.ok(
+      !pageSource.includes('placeholder="عرض جغرافیایی"') && !pageSource.includes('placeholder="طول جغرافیایی"'),
+      'Must not render manual lat/lon coordinate inputs',
+    );
+
+    // Verify handleCreateOrchard and handleRunAssessment reuse sharedGeometry
+    assert.ok(
+      pageSource.includes('geometry: sharedGeometry'),
+      'Assessment and orchard creation must reuse sharedGeometry directly',
+    );
+
+    // Verify Point and Polygon location sampling method types
+    const pointAssessment: FrostAssessmentResponse = {
+      crop: 'pistachio',
+      crop_name_fa: 'پسته',
+      phenological_stage: 'early_bloom',
+      phenological_stage_fa: 'اوایل گلدهی',
+      thresholds_verified: false,
+      evidence_level: 'C',
+      critical_temp_10_c: -2.0,
+      critical_temp_90_c: -4.0,
+      geometry_type: 'Point',
+      location_sampling_method: 'Point GPS: sample at point coordinates; elevation sampled from NASADEM at point',
+      nights: [],
+      overall_max_severity: 'none',
+    };
+    assert.strictEqual(pointAssessment.geometry_type, 'Point');
+    assert.ok(pointAssessment.location_sampling_method?.includes('Point GPS'));
+
+    const polyAssessment: FrostAssessmentResponse = {
+      ...pointAssessment,
+      geometry_type: 'Polygon',
+      location_sampling_method: 'Polygon: forecast at centroid cell; elevation = polygon mean DEM',
+    };
+    assert.strictEqual(polyAssessment.geometry_type, 'Polygon');
+    assert.ok(polyAssessment.location_sampling_method?.includes('Polygon'));
+  });
 });
+

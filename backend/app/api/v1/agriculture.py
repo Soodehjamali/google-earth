@@ -2032,8 +2032,12 @@ async def create_orchard_endpoint(
     lat = data.latitude
     lng = data.longitude
     if (lat is None or lng is None) and data.geometry:
+        gtype = data.geometry.get("type", "Polygon")
         coords = data.geometry.get("coordinates")
-        if coords and isinstance(coords, list) and len(coords) > 0:
+        if gtype == "Point" and coords and len(coords) >= 2:
+            lng = float(coords[0])
+            lat = float(coords[1])
+        elif coords and isinstance(coords, list) and len(coords) > 0:
             flat = coords[0] if isinstance(coords[0][0], list) else coords
             lng = float(sum(pt[0] for pt in flat) / len(flat))
             lat = float(sum(pt[1] for pt in flat) / len(flat))

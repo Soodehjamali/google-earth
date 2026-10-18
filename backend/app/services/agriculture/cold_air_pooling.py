@@ -120,6 +120,8 @@ class ColdAirPoolingResult:
     is_heuristic_proxy: bool = True
     disclaimer_fa: str = POOLING_DISCLAIMER_FA
     config_used: Dict[str, Any] = field(default_factory=dict)
+    geometry_type: str = "Polygon"
+    sampling_description: str = "Polygon: cold-air pooling aggregated across parcel area statistics"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -282,6 +284,14 @@ def calculate_cold_air_pooling_ee(
     cfg = config or DEFAULT_POOLING_CONFIG
     cfg.validate()
 
+    geom_dict = (
+        geometry
+        if isinstance(geometry, dict)
+        else (geometry.__geo_interface__ if hasattr(geometry, "__geo_interface__") else {})
+    )
+    gtype = geom_dict.get("type", "Polygon") if geom_dict else "Polygon"
+    point_buffer_m = 500.0
+
     # Build EE Geometry
     if isinstance(geometry, dict):
         ee_geom = ee.Geometry(geometry)
@@ -292,11 +302,18 @@ def calculate_cold_air_pooling_ee(
 
     # Spatial context with buffer (valley context)
     buffered_geom = ee_geom.buffer(buffer_m)
-    bounds_dict = ee_geom.bounds().getInfo()
+    bounds_dict = buffered_geom.bounds().getInfo()
     coords = bounds_dict["coordinates"][0]
     lons = [c[0] for c in coords]
     lats = [c[1] for c in coords]
     bbox_4 = [min(lons), min(lats), max(lons), max(lats)]
+
+    if gtype == "Point":
+        stats_geom = ee_geom.buffer(point_buffer_m)
+        sampling_desc = f"Point GPS: cold-air pooling aggregated over {point_buffer_m}m buffer"
+    else:
+        stats_geom = ee_geom
+        sampling_desc = "Polygon: cold-air pooling aggregated across parcel area statistics"
 
     # Load NASADEM
     dem = ee.Image(NASADEM_DATASET_ID).select(NASADEM_ELEVATION_BAND)
@@ -366,7 +383,7 @@ def calculate_cold_air_pooling_ee(
             .combine(ee.Reducer.percentile([90]), sharedInputs=True)
             .combine(ee.Reducer.minMax(), sharedInputs=True)
         ),
-        geometry=ee_geom,
+        geometry=stats_geom,
         scale=30,
         maxPixels=1e9,
         bestEffort=True,
@@ -425,6 +442,8 @@ def calculate_cold_air_pooling_ee(
         is_heuristic_proxy=True,
         disclaimer_fa=POOLING_DISCLAIMER_FA,
         config_used=asdict(cfg),
+        geometry_type=gtype,
+        sampling_description=sampling_desc,
     )
 
 

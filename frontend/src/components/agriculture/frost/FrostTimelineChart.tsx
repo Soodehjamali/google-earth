@@ -17,23 +17,38 @@ import FormattedNumber from '../../common/FormattedNumber';
 import { toPersianDigits } from '../persianDate';
 
 interface FrostTimelineChartProps {
-  points: FrostPoint[];
+  points?: FrostPoint[];
+  forecast?: { series?: FrostPoint[] };
   nights?: FrostNightAssessment[];
   criticalTemp10?: number;
+  criticalT10?: number;
   criticalTemp90?: number;
+  criticalT90?: number;
+  cropNameFa?: string;
+  stageNameFa?: string;
   height?: number;
 }
 
 export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
   points,
+  forecast,
   nights = [],
   criticalTemp10,
+  criticalT10,
   criticalTemp90,
+  criticalT90,
   height = 360,
 }) => {
+  const effectivePoints = useMemo(() => {
+    return points || forecast?.series || [];
+  }, [points, forecast]);
+
+  const effectiveTc10 = criticalTemp10 ?? criticalT10;
+  const effectiveTc90 = criticalTemp90 ?? criticalT90;
+
   const chartData = useMemo(() => {
-    if (!points || !Array.isArray(points)) return [];
-    return points.map((p) => {
+    if (!effectivePoints || !Array.isArray(effectivePoints)) return [];
+    return effectivePoints.map((p) => {
       // Format local hour for x-axis
       const d = new Date(p.time_utc);
       const hours = d.getHours().toString().padStart(2, '0');
@@ -59,21 +74,23 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
         is_interpolated: p.is_interpolated,
       };
     });
-  }, [points]);
+  }, [effectivePoints]);
 
   const yDomain = useMemo(() => {
     let minVal = -5;
     let maxVal = 25;
-    points.forEach((p) => {
-      const low = p.lower_bound_c ?? p.temperature_min_c;
-      const high = p.upper_bound_c ?? p.temperature_max_c;
-      if (low < minVal) minVal = low;
-      if (high > maxVal) maxVal = high;
-    });
-    if (criticalTemp10 !== undefined && criticalTemp10 < minVal) minVal = criticalTemp10;
-    if (criticalTemp90 !== undefined && criticalTemp90 < minVal) minVal = criticalTemp90;
+    if (effectivePoints && Array.isArray(effectivePoints)) {
+      effectivePoints.forEach((p) => {
+        const low = p.lower_bound_c ?? p.temperature_min_c;
+        const high = p.upper_bound_c ?? p.temperature_max_c;
+        if (low !== undefined && low !== null && low < minVal) minVal = low;
+        if (high !== undefined && high !== null && high > maxVal) maxVal = high;
+      });
+    }
+    if (effectiveTc10 !== undefined && effectiveTc10 < minVal) minVal = effectiveTc10;
+    if (effectiveTc90 !== undefined && effectiveTc90 < minVal) minVal = effectiveTc90;
     return [Math.floor(minVal - 2), Math.ceil(maxVal + 2)];
-  }, [points, criticalTemp10, criticalTemp90]);
+  }, [effectivePoints, effectiveTc10, effectiveTc90]);
 
   const customTooltip = (tooltipProps: unknown) => {
     const props = tooltipProps as {

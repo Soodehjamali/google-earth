@@ -306,6 +306,8 @@ class FrostRiskAssessment:
     disclaimer_fa: str
     recommendations_warning_fa: str = RECOMMENDATION_WARNING_FA
     evidence_level: str = "C"
+    geometry_type: str = "Polygon"
+    location_sampling_method: str = "Polygon: forecast at centroid cell; elevation = polygon mean DEM"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -561,6 +563,13 @@ def assess_frost_risk(
     if unknown_stage_note_fa:
         combined_warning = f"{combined_warning} {unknown_stage_note_fa}".strip()
 
+    geom_type = getattr(forecast, "geometry_type", "Polygon")
+    loc_method = getattr(
+        forecast,
+        "location_sampling_method",
+        "Polygon: forecast at centroid cell; elevation = polygon mean DEM",
+    )
+
     return FrostRiskAssessment(
         crop=crop,
         phenological_stage=stage_cfg.stage_key,
@@ -579,4 +588,6 @@ def assess_frost_risk(
         disclaimer_fa=disclaimer,
         recommendations_warning_fa=RECOMMENDATION_WARNING_FA,
         evidence_level="B" if crop_cfg.verified else "C",
+        geometry_type=geom_type,
+        location_sampling_method=loc_method,
     )

@@ -391,6 +391,21 @@ aa5b907 untracked files on cline checkpoint
    - In production configuration (`settings.is_production == True`), `FakeForecastProvider` is strictly unreachable and immediately raises HTTP 403 `ERR_FORBIDDEN` if instantiated.
    - Every forecast response honestly reports its true `source`: `"deterministic_fake"` for fake provider and `"NOAA/GFS0P25"` for live GEE provider.
 
+---
+
+### Item E7 Decisions: Shared Location Inheritance & Coordinate Input Elimination
+1. **Shared Scope Context Inheritance:**
+   - The frost advisory page (`FrostRiskPage.tsx`) consumes the parent-owned comprehensive analysis context (`useAgricultureContext`), identical to the other domain pages (`DomainPage.tsx`, `PestDiseasePage.tsx`).
+   - Separate manual lat/lon input fields and two-point coordinate inputs are completely eliminated from `FrostRiskPage.tsx`.
+   - If no analysis location has been set in the platform scope box, the page renders an empty state card with prompt `"ابتدا موقعیت را در کادر محدوده تعیین کنید"`.
+2. **Point vs Polygon Geometry Support & Sampling Disclosures:**
+   - **Single GPS Point (`Point`):** Forecast samples at point coordinates; elevation is sampled from NASADEM 30m at point; cold-air-pooling proxy aggregates over a configurable 500m buffer (`"Point GPS: cold-air pooling aggregated over 500.0m buffer"`).
+   - **Field Polygon (`Polygon`):** Forecast evaluates at parcel centroid cell; elevation = polygon mean DEM; cold-air-pooling proxy aggregates parcel area statistics (`"Polygon: cold-air pooling aggregated across parcel area statistics"`).
+   - Every API response explicitly reports `geometry_type` and `location_sampling_method`.
+3. **Save as Orchard Workflow:**
+   - Orchard registration ("Save as orchard") directly reuses the shared analysis geometry (`sharedGeometry`) rather than requiring manual coordinate re-entry.
+   - Centroid coordinates (`latitude`, `longitude`) for registered orchards are computed automatically from Point or Polygon coordinates without manual entry.
+
 
 
 

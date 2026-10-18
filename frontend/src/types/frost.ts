@@ -1,4 +1,4 @@
-export type FrostSeverity = 'none' | 'advisory' | 'watch' | 'warning';
+export type FrostSeverity = 'none' | 'advisory' | 'watch' | 'warning' | 'critical';
 
 export interface FrostPoint {
   time_utc: string;
@@ -24,23 +24,35 @@ export interface FrostForecastResponse {
   temperature_adjustment_c: number;
   dem_source: string;
   elevation_uncertainty_c: number;
-  lead_time_uncertainty_table: Record<string, number>;
-  points: FrostPoint[];
+  lead_time_uncertainty_table?: Record<string, number>;
+  points?: FrostPoint[];
+  series?: FrostPoint[];
+  uncertainty_elevation_c?: number;
+  uncertainty_forecast_c?: number;
+  uncertainty_total_c?: number;
   native_spatial_resolution_m?: number;
   quality_state?: string;
 }
 
 export interface ColdAirPoolingResponse {
   pooling_risk_proxy: number;
-  risk_label: string;
-  risk_label_fa: string;
-  site_elevation_m: number;
-  min_elevation_m: number;
-  max_elevation_m: number;
-  relief_m: number;
-  mean_slope_deg: number;
-  disclaimer_fa: string;
+  risk_label?: string;
+  risk_label_fa?: string;
+  site_elevation_m?: number;
+  min_elevation_m?: number;
+  max_elevation_m?: number;
+  mean_elevation_m?: number;
+  height_above_valley_floor_m?: number;
+  p90_pooling_risk_proxy?: number;
+  min_pooling_risk_proxy?: number;
+  max_pooling_risk_proxy?: number;
+  tpi_300m?: number;
+  tpi_1000m?: number;
+  relief_m?: number;
+  mean_slope_deg?: number;
+  disclaimer_fa?: string;
   tile_url?: string;
+  raster_tile_url?: string | null;
   color_ramp?: string[];
 }
 
@@ -70,6 +82,8 @@ export interface FrostAssessmentResponse {
   critical_temp_10_c: number;
   critical_temp_90_c: number;
   cold_air_pooling_proxy?: number | null;
+  geometry_type?: string;
+  location_sampling_method?: string;
   nights: FrostNightAssessment[];
   overall_max_severity: FrostSeverity;
   earliest_critical_night?: string | null;

@@ -801,6 +801,62 @@ def test_tile_proxy_upstream_error_and_timeout_envelope():
         assert resp.json()["code"] == "ERR_TILE_UPSTREAM_TIMEOUT"
 
 
+def test_location_inheritance_point_and_polygon_support(monkeypatch):
+    """Verify E7 location inheritance: Point & Polygon support, sampling metadata disclosure, and no manual lat/lon required."""
+    from app.core.config import settings
+    from app.api.v1.agriculture import _assess_rate_limiter_history
+
+    _assess_rate_limiter_history.clear()
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-secret-token")
+    monkeypatch.setattr(settings, "FROST_USE_LIVE_GEE", False)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Admin-Token": "admin-secret-token"}
+
+    # 1. Polygon request
+    poly_payload = {
+        "geometry": SAMPLE_POLYGON,
+        "crop": "pistachio",
+        "phenological_stage": "early_bloom",
+        "horizon_h": 48,
+    }
+    resp_poly = client.post("/api/v1/agriculture/frost/assess", json=poly_payload, headers=headers)
+    assert resp_poly.status_code == 200, f"Error {resp_poly.status_code}: {resp_poly.text}"
+    data_poly = resp_poly.json()
+    assert data_poly["geometry_type"] == "Polygon"
+    assert "Polygon" in data_poly["location_sampling_method"]
+    assert "centroid" in data_poly["location_sampling_method"]
+
+    # 2. Point GPS request
+    point_geom = {"type": "Point", "coordinates": [54.02, 32.31]}
+    point_payload = {
+        "geometry": point_geom,
+        "crop": "pistachio",
+        "phenological_stage": "early_bloom",
+        "horizon_h": 48,
+    }
+    resp_point = client.post("/api/v1/agriculture/frost/assess", json=point_payload, headers=headers)
+    assert resp_point.status_code == 200, f"Error {resp_point.status_code}: {resp_point.text}"
+    data_point = resp_point.json()
+    assert data_point["geometry_type"] == "Point"
+    assert "Point GPS" in data_point["location_sampling_method"]
+    assert "point coordinates" in data_point["location_sampling_method"]
+
+    # 3. Create orchard with Point geometry (no manual lat/lon needed)
+    orchard_point = {
+        "name": "E7 Test GPS Point Orchard",
+        "geometry": point_geom,
+        "crop": "pistachio",
+        "default_phenology_stage": "early_bloom",
+    }
+    resp_orch_pt = client.post("/api/v1/agriculture/frost/orchards", json=orchard_point, headers=headers)
+    assert resp_orch_pt.status_code == 201, f"Error {resp_orch_pt.status_code}: {resp_orch_pt.text}"
+    data_orch_pt = resp_orch_pt.json()
+    assert data_orch_pt["geometry"]["type"] == "Point"
+    assert abs(data_orch_pt["longitude"] - 54.02) < 1e-4
+    assert abs(data_orch_pt["latitude"] - 32.31) < 1e-4
+
+
+
 
 
 

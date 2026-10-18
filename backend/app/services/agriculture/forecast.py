@@ -90,6 +90,8 @@ class ForecastResult:
     horizon_hours: int
     disclaimer_fa: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+    geometry_type: str = "Polygon"
+    location_sampling_method: str = "Polygon: forecast at centroid cell; elevation = polygon mean DEM"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -311,6 +313,17 @@ class NoaaGfsForecastProvider(ForecastProvider):
         # Sort by lead_hours
         series.sort(key=lambda x: x.lead_hours)
 
+        geom_dict = (
+            geometry
+            if isinstance(geometry, dict)
+            else (geometry.__geo_interface__ if hasattr(geometry, "__geo_interface__") else {})
+        )
+        gtype = geom_dict.get("type", "Polygon") if geom_dict else "Polygon"
+        if gtype == "Point":
+            loc_method = "Point GPS: sample at point coordinates; elevation sampled from NASADEM at point"
+        else:
+            loc_method = "Polygon: forecast at centroid cell; elevation = polygon mean DEM"
+
         return ForecastResult(
             series=series,
             source=NOAA_GFS_DATASET_ID,
@@ -331,6 +344,8 @@ class NoaaGfsForecastProvider(ForecastProvider):
                 "total_timesteps": len(series),
                 "elevation_lapse_rate_c_per_km": self.quality_config.default_lapse_rate_c_per_km,
             },
+            geometry_type=gtype,
+            location_sampling_method=loc_method,
         )
 
 
@@ -422,6 +437,17 @@ class FakeForecastProvider(ForecastProvider):
                 )
             )
 
+        geom_dict = (
+            geometry
+            if isinstance(geometry, dict)
+            else (geometry.__geo_interface__ if hasattr(geometry, "__geo_interface__") else {})
+        )
+        gtype = geom_dict.get("type", "Polygon") if geom_dict else "Polygon"
+        if gtype == "Point":
+            loc_method = "Point GPS: sample at point coordinates; elevation sampled from NASADEM at point"
+        else:
+            loc_method = "Polygon: forecast at centroid cell; elevation = polygon mean DEM"
+
         return ForecastResult(
             series=series,
             source="deterministic_fake",
@@ -437,4 +463,6 @@ class FakeForecastProvider(ForecastProvider):
                 "provider": "FakeForecastProvider",
                 "total_timesteps": len(series),
             },
+            geometry_type=gtype,
+            location_sampling_method=loc_method,
         )
