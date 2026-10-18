@@ -467,10 +467,37 @@ aa5b907 untracked files on cline checkpoint
      - `GET /observations/{obs_id}`: Retrieve single observation.
      - `PUT /observations/{obs_id}`: Update observation severity and notes.
      - `DELETE /observations/{obs_id}`: Delete observation record (204 No Content).
-3. **Calibration Loop Architecture:**
-   - Documented in `docs/frost-calibration-loop.md`.
-   - The calibration loop uses field observation pairs $(T_{\min,\text{observed}}, \text{damage\_severity})$ to fit empirical logistic mortality curves ($P(\text{injury}) = \frac{1}{1 + e^{-(T - T_{50})/\beta}}$) and calibrate topographic stagnation coefficients against in-situ data.
-   - Evidence level promotes from "C" (uncalibrated placeholder) to "B" (field-calibrated) once sample size $N \ge 30$ freeze events per developmental stage are accumulated.
+---
+
+## Phase 3 Redesign v2 Decisions
+
+### Item R1: Per-Orchard Input Assembly, Soil Moisture Normalization & Spatial GFS Sharing
+1. **Single Source of Truth for Platform Factors (P1):**
+   - In accordance with Product Decision P1, input factors utilize existing platform analysis services:
+     - Root-zone soil moisture from `app.services.agriculture.soil` / `soil_intelligence` (SMAP / ERA5-Land).
+     - Field capacity ($FC$) and wilting point ($WP$) from `soil_intelligence` (ISRIC SoilGrids 250m water retention: wv0033 and wv1500).
+     - Soil texture classification and sand content from `soil_intelligence` (ISRIC SoilGrids 250m).
+     - Site elevation, slope, and aspect from `app.services.agriculture.terrain` (NASADEM 30m).
+     - Cold-air pooling proxy from `app.services.agriculture.cold_air_pooling` (NASADEM 30m).
+     - Dynamic atmospheric forecast factors (wind speed, direction, cloud cover, relative humidity/dewpoint) are extracted from NOAA/GFS0P25.
+2. **Relative Soil Moisture Normalization:**
+   - Moisture is normalized against the orchard's own physical soil characteristics:
+     $$\text{relative} = \text{clamp}\left(\frac{\theta - WP}{FC - WP}, 0.0, 1.0\right)$$
+   - If either $FC$ or $WP$ is unavailable, or if $FC \le WP$, normalized moisture is set to `None`, status is marked `"نامشخص"`, and subscore falls back to neutral $0.50$.
+3. **GFS Spatial Cell Sharing and Thermodynamic Isolation:**
+   - Raw GFS forecasts are indexed by 0.25-degree grid cells ($(\text{round}(\text{lat} \times 4)/4, \text{round}(\text{lon} \times 4)/4)$) and fetched once per cell.
+   - For each orchard in that cell, elevation correction is computed strictly using the orchard's own site elevation $z_{\text{site}}$:
+     $$\Delta T = \Gamma \cdot \frac{z_{\text{site}} - z_{\text{cell}}}{1000}$$
+   - This ensures multiple orchards in the same macro-cell share a single network call while preserving exact local thermal differentiation.
+4. **Caching Cadence and Staleness Gating:**
+   - Static inputs (topography, soil texture, water retention) are cached long-term (30 days) with baseline timestamps.
+   - Dynamic inputs (soil moisture) are cached for 6 hours.
+   - Staleness is validated per factor against `DEFAULT_MAX_FACTOR_AGE_HOURS`:
+     - Forecast series: 6 hours
+     - Soil root-zone moisture: 120 hours (accounting for satellite assimilation cadence)
+     - Phenological stage: 336 hours (14 days, per R4)
+     - Static topography and soil maps: 8760 hours (1 year)
+
 
 
 
