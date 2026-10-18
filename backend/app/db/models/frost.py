@@ -35,6 +35,10 @@ class Orchard(Base, TimestampMixin):
     default_phenology_stage: Mapped[str] = mapped_column(
         String(50), nullable=False, default="early_bloom"
     )
+    current_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    stage_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     alert_rules = relationship(

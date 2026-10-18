@@ -595,6 +595,40 @@ aa5b907 untracked files on cline checkpoint
    - `evidence_level: "C"`
    - Persian UI label: *"ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)"*
 
+---
+
+### Item R4: Per-Orchard Stage Tracking, Migration 006, and Conservative Staleness Gating
+1. **Schema and Migration 006:**
+   - Alembic migration `006_orchard_current_stage.py` adds:
+     - `current_stage`: VARCHAR(50), nullable=True
+     - `stage_updated_at`: DateTime(timezone=True), nullable=True
+   - Model `Orchard` in `backend/app/db/models/frost.py` and schemas in `backend/app/schemas/frost.py` (`OrchardCreate`, `OrchardUpdate`, `OrchardResponse`) updated accordingly.
+2. **PostgreSQL Migration Verification Cycle (Raw Command Evidence):**
+   - Verified via clean `upgrade -> downgrade -> upgrade` test cycle on PostgreSQL:
+   ```text
+   $ alembic upgrade head
+   INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+   INFO  [alembic.runtime.migration] Will assume transactional DDL.
+   INFO  [alembic.runtime.migration] Running upgrade 005_orchard_observations -> 006_orchard_current_stage, Add current_stage and stage_updated_at to orchards table (R4)
+
+   $ alembic downgrade -1
+   INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+   INFO  [alembic.runtime.migration] Will assume transactional DDL.
+   INFO  [alembic.runtime.migration] Running downgrade 006_orchard_current_stage -> 005_orchard_observations, Add current_stage and stage_updated_at to orchards table (R4)
+
+   $ alembic upgrade head
+   INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+   INFO  [alembic.runtime.migration] Will assume transactional DDL.
+   INFO  [alembic.runtime.migration] Running upgrade 005_orchard_observations -> 006_orchard_current_stage, Add current_stage and stage_updated_at to orchards table (R4)
+   ```
+   - Verified columns via async SQLAlchemy reflection: `current_stage` and `stage_updated_at` confirmed present in PostgreSQL `orchards` table.
+3. **Conservative Staleness Decision:**
+   - Decision: A developmental stage older than 14 days (336 hours) without grower update is classified as stale and treated as unknown.
+   - When stale, the risk model falls back to the **most sensitive configured developmental stage** (`full_bloom`, subscore $1.00$), flagged explicitly as *"مرحله قدیمی/نامشخص"*.
+   - Rationale: In spring, phenological progression is rapid; assuming an out-of-date resistant stage (e.g. unopened bud from 3 weeks ago when trees are actually in full bloom) would dangerously underestimate mortality risk. Defaulting to maximum sensitivity ensures farmer vigilance.
+   - Satellite-derived SOS/EOS phenology metrics are retained strictly as advisory hints in the UI and never overwrite grower observations.
+
+
 
 
 

@@ -42,6 +42,17 @@ class OrchardCreate(BaseModel):
     elevation: Optional[float] = Field(None, description="Elevation in meters above sea level.")
     crop: str = Field("pistachio", description="Crop identifier, e.g. pistachio.")
     default_phenology_stage: str = Field("early_bloom", description="Default phenological stage.")
+    current_stage: Optional[str] = Field(None, description="Current grower-observed stage.")
+
+
+class OrchardUpdate(BaseModel):
+    """Schema for updating an existing orchard parcel."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    crop: Optional[str] = None
+    default_phenology_stage: Optional[str] = None
+    current_stage: Optional[str] = Field(None, description="Current grower-observed stage.")
+    elevation: Optional[float] = None
 
 
 class AlertRuleCreate(BaseModel):
@@ -76,6 +87,9 @@ class OrchardResponse(BaseModel):
     elevation: Optional[float]
     crop: str
     default_phenology_stage: str
+    current_stage: Optional[str] = None
+    stage_updated_at: Optional[str] = None
+    stage_is_stale: bool = False
     created_at: str
     alert_rules: List[AlertRuleResponse] = []
 
