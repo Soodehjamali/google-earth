@@ -71,6 +71,32 @@ def calculate_dew_point_magnus(temp_c: float, rh_pct: Optional[float]) -> Option
         return None
 
 
+def calculate_wind_direction_meteorological(u: Optional[float], v: Optional[float]) -> Optional[float]:
+    """Calculate wind direction in meteorological convention (direction wind blows FROM) in degrees [0, 360).
+
+    Formula (meteorological convention):
+        dir_from = (270.0 - atan2(v, u) in degrees) % 360.0
+
+    Physical proofs:
+        u=0, v=-5 -> 0.0 (from north)
+        u=-5, v=0 -> 90.0 (from east)
+        u=0, v=5  -> 180.0 (from south)
+        u=5, v=0  -> 270.0 (from west)
+    """
+    if u is None or v is None:
+        return None
+    try:
+        u_f = float(u)
+        v_f = float(v)
+        if math.isnan(u_f) or math.isnan(v_f):
+            return None
+        rad = math.atan2(v_f, u_f)
+        deg = math.degrees(rad)
+        return round((270.0 - deg) % 360.0, 1)
+    except Exception:
+        return None
+
+
 @dataclass
 class ForecastTimestep:
     """One timestep in the meteorological forecast series."""
@@ -89,6 +115,9 @@ class ForecastTimestep:
     is_interpolated: bool
     relative_humidity_percent: Optional[float] = None
     wind_speed_10m_mps: Optional[float] = None
+    wind_direction_10m_deg: Optional[float] = None
+    u_wind_10m_mps: Optional[float] = None
+    v_wind_10m_mps: Optional[float] = None
     total_cloud_cover_percent: Optional[float] = None
     dewpoint_2m_c: Optional[float] = None
     # Deprecated backwards-compatibility aliases
@@ -300,7 +329,10 @@ class NoaaGfsForecastProvider(ForecastProvider):
 
             u = props.get("u_component_of_wind_10m_above_ground")
             v = props.get("v_component_of_wind_10m_above_ground")
-            wind_speed = math.sqrt(float(u)**2 + float(v)**2) if (u is not None and v is not None) else None
+            u_mps = round(float(u), 2) if u is not None else None
+            v_mps = round(float(v), 2) if v is not None else None
+            wind_speed = math.sqrt(u_mps**2 + v_mps**2) if (u_mps is not None and v_mps is not None) else None
+            wind_dir = calculate_wind_direction_meteorological(u_mps, v_mps)
 
             # Apply Phase 2 elevation correction
             # Night detection: UTC hour for Iran (~UTC+3.5) night is roughly 15:30 to 02:30 UTC
@@ -341,6 +373,9 @@ class NoaaGfsForecastProvider(ForecastProvider):
                     is_interpolated=False,
                     relative_humidity_percent=round(rh_pct, 1) if rh_pct is not None else None,
                     wind_speed_10m_mps=round(wind_speed, 1) if wind_speed is not None else None,
+                    wind_direction_10m_deg=wind_dir,
+                    u_wind_10m_mps=u_mps,
+                    v_wind_10m_mps=v_mps,
                     total_cloud_cover_percent=round(cloud_pct, 1) if cloud_pct is not None else None,
                     dewpoint_2m_c=dew_point_c,
                 )
@@ -470,6 +505,9 @@ class FakeForecastProvider(ForecastProvider):
                     is_interpolated=is_interpolated,
                     relative_humidity_percent=45.0,
                     wind_speed_10m_mps=1.5,
+                    wind_direction_10m_deg=calculate_wind_direction_meteorological(-1.0, 1.0),
+                    u_wind_10m_mps=-1.0,
+                    v_wind_10m_mps=1.0,
                     total_cloud_cover_percent=15.0,
                     dewpoint_2m_c=calculate_dew_point_magnus(corr.corrected_value, 45.0),
                 )

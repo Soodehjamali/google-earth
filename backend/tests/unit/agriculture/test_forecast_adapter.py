@@ -161,3 +161,34 @@ def test_fake_forecast_provider_unreachable_in_production(monkeypatch):
     assert exc_info.value.code == "ERR_FORBIDDEN"
     assert exc_info.value.status_code == 403
 
+
+def test_meteorological_wind_direction_convention():
+    """Verify meteorological wind direction (direction wind blows FROM) in degrees [0, 360).
+
+    Convention:
+        dir_from = (270.0 - atan2(v, u) in degrees) % 360.0
+
+    Required test cases:
+        u=0,  v=-5 -> 0   (from north)
+        u=-5, v=0  -> 90  (from east)
+        u=0,  v=5  -> 180 (from south)
+        u=5,  v=0  -> 270 (from west)
+    """
+    from app.services.agriculture.forecast import calculate_wind_direction_meteorological
+
+    assert calculate_wind_direction_meteorological(0.0, -5.0) == 0.0
+    assert calculate_wind_direction_meteorological(-5.0, 0.0) == 90.0
+    assert calculate_wind_direction_meteorological(0.0, 5.0) == 180.0
+    assert calculate_wind_direction_meteorological(5.0, 0.0) == 270.0
+
+    # Intermediate checks:
+    # u=-5, v=-5 -> blows southwest -> from northeast (45 deg)
+    assert calculate_wind_direction_meteorological(-5.0, -5.0) == 45.0
+    # u=5, v=5 -> blows northeast -> from southwest (225 deg)
+    assert calculate_wind_direction_meteorological(5.0, 5.0) == 225.0
+
+    # None handling
+    assert calculate_wind_direction_meteorological(None, 5.0) is None
+    assert calculate_wind_direction_meteorological(5.0, None) is None
+
+
