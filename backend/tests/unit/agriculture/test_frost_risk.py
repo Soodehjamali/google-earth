@@ -927,6 +927,18 @@ def test_published_v1_threshold_set_loading():
 
     assert "swelling_bud" in stages
     assert stages["swelling_bud"].t_critical_c is None  # S2 did not provide a number
+    assert stages["swelling_bud"].t_critical_10_c is None
+    assert stages["swelling_bud"].t_critical_90_c is None
+    assert "داده منتشرشده‌ای وجود ندارد" in (stages["swelling_bud"].notes_fa or "")
+
+    # R7 assertions: single_critical is true, tc90 dropped, opening_bud has English alias in name_fa
+    assert cfg.single_critical is True
+    assert stages["unopened_bud"].t_critical_90_c is None
+    assert stages["opening_bud"].t_critical_90_c is None
+    assert stages["bloom"].t_critical_90_c is None
+    assert stages["fruit"].t_critical_90_c is None
+    assert "Opening bud" in stages["opening_bud"].name_fa
+    assert stages["opening_bud"].t_critical_c == -2.0
 
 
 @pytest.mark.asyncio

@@ -174,10 +174,10 @@ class StageThreshold:
 
     stage_key: str
     name_fa: str
-    t_critical_10_c: float
-    t_critical_90_c: float
-    status: str
-    source: Optional[str]
+    t_critical_10_c: Optional[float] = None
+    t_critical_90_c: Optional[float] = None
+    status: str = "published"
+    source: Optional[str] = None
     t_critical_c: Optional[float] = None
     conflicting_published_value: Optional[float] = None
     conflicting_source: Optional[str] = None
@@ -202,6 +202,7 @@ class CropThresholdConfig:
     verified: bool
     verification_warning_fa: str
     stages: Dict[str, StageThreshold] = field(default_factory=dict)
+    single_critical: bool = False
 
 
 def load_frost_thresholds_config(config_path: Optional[Path] = None) -> Dict[str, CropThresholdConfig]:
@@ -374,6 +375,7 @@ def load_frost_threshold_set(
         return base_configs.get(crop, next(iter(base_configs.values())))
 
     t_set = raw["threshold_sets"][set_name]
+    is_single = bool(t_set.get("single_critical", False))
     stages_data = t_set.get("stages", {})
     crop_stages: Dict[str, StageThreshold] = {}
 
@@ -381,8 +383,20 @@ def load_frost_threshold_set(
         st_status = st_val.get("status", t_set.get("status", "published"))
         st_source = st_val.get("source")
         tc_crit = float(st_val["t_critical_c"]) if st_val.get("t_critical_c") is not None else None
-        tc10 = float(st_val.get("t_critical_10_c", tc_crit if tc_crit is not None else -2.0))
-        tc90 = float(st_val.get("t_critical_90_c", tc10 - 2.0))
+
+        raw_tc10 = st_val.get("t_critical_10_c")
+        if raw_tc10 is not None:
+            tc10 = float(raw_tc10)
+        elif tc_crit is not None:
+            tc10 = float(tc_crit)
+        else:
+            tc10 = None
+
+        raw_tc90 = st_val.get("t_critical_90_c")
+        if is_single or raw_tc90 is None:
+            tc90 = None
+        else:
+            tc90 = float(raw_tc90)
 
         duration_rules = None
         if "duration_rules" in st_val and st_val["duration_rules"] is not None:
@@ -428,6 +442,7 @@ def load_frost_threshold_set(
         verified=t_set.get("verified", False),
         verification_warning_fa=warning_fa,
         stages=crop_stages,
+        single_critical=is_single,
     )
 
 
@@ -544,8 +559,8 @@ class FrostRiskAssessment:
     phenological_stage: str
     crop_fa: str
     stage_fa: str
-    t_critical_10_c: float
-    t_critical_90_c: float
+    t_critical_10_c: Optional[float]
+    t_critical_90_c: Optional[float]
     thresholds_status: str
     thresholds_source: Optional[str]
     thresholds_verified: bool
@@ -563,6 +578,7 @@ class FrostRiskAssessment:
     active_threshold_set_name_fa: str = "آستانه‌های منتشرشده در متون علمی (حکم‌آبادی ۱۳۸۹ و ۱۳۹۰)"
     active_threshold_set_status: str = "published"
     illustrative_only: bool = False
+    single_critical: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -868,16 +884,27 @@ def assess_frost_risk(
         resolved_stage_key = STAGE_ALIASES.get(phenological_stage, phenological_stage)
 
     if not resolved_stage_key or resolved_stage_key == "unknown" or resolved_stage_key not in crop_cfg.stages:
-        most_sensitive = max(crop_cfg.stages.values(), key=lambda s: s.t_critical_10_c)
-        stage_cfg = most_sensitive
+        valid_stages = [
+            s for s in crop_cfg.stages.values()
+            if s.t_critical_10_c is not None or s.t_critical_c is not None
+        ]
+        if valid_stages:
+            most_sensitive = max(
+                valid_stages,
+                key=lambda s: s.t_critical_c if s.t_critical_c is not None else (s.t_critical_10_c if s.t_critical_10_c is not None else -999.0),
+            )
+            stage_cfg = most_sensitive
+        else:
+            stage_cfg = next(iter(crop_cfg.stages.values()))
+        crit_val = stage_cfg.t_critical_c if stage_cfg.t_critical_c is not None else stage_cfg.t_critical_10_c
         unknown_stage_note_fa = (
             f"مرحله فنولوژیکی نامشخص است؛ بر مبنای اصل احتیاط کشاورزی، حساس‌ترین مرحله رشد "
-            f"({stage_cfg.name_fa} با آستانه {stage_cfg.t_critical_10_c}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
+            f"({stage_cfg.name_fa} با آستانه {crit_val}°C) به عنوان مبنای ارزیابی در نظر گرفته شد."
         )
     else:
         stage_cfg = crop_cfg.stages[resolved_stage_key]
 
-    tc10 = stage_cfg.t_critical_10_c
+    tc10 = stage_cfg.t_critical_10_c if stage_cfg.t_critical_10_c is not None else stage_cfg.t_critical_c
     tc90 = stage_cfg.t_critical_90_c
 
     # 2. Factor Register & Topography pooling configuration (E9)
@@ -1066,7 +1093,7 @@ def assess_frost_risk(
         ref_temp = (
             stage_cfg.duration_rules[0].reference_temperature_c
             if stage_cfg.duration_rules
-            else (stage_cfg.t_critical_c if stage_cfg.t_critical_c is not None else tc10)
+            else (stage_cfg.t_critical_c if stage_cfg.t_critical_c is not None else (tc10 if tc10 is not None else 0.0))
         )
 
         # Net effective step adjustment
@@ -1108,8 +1135,8 @@ def assess_frost_risk(
         else:
             duration_display_text = f"0.0 h below {ref_temp:.1f}°C"
 
-        hrs_tc10 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc10)
-        hrs_tc90 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc90)
+        hrs_tc10 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc10) if tc10 is not None else 0.0
+        hrs_tc90 = sum(1.0 for s in steps if (s.temperature_2m_c - effective_step_adjustment) <= tc90) if tc90 is not None else 0.0
 
         if risk_hierarchy.get(level, 0) > risk_hierarchy.get(overall_level, 0):
             overall_level = level
@@ -1256,4 +1283,5 @@ def assess_frost_risk(
         active_threshold_set_name_fa=set_name_fa,
         active_threshold_set_status=crop_cfg.status,
         illustrative_only=bool(active_set == "engine_default_v0"),
+        single_critical=getattr(crop_cfg, "single_critical", False),
     )

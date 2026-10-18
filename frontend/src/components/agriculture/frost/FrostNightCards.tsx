@@ -211,21 +211,25 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
 
                     <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px' }}>
                       <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>
-                        مدت زیر آستانه ۱۰٪ ({effectiveTc10 !== undefined ? `${effectiveTc10}°` : 'Tc10'})
+                        {effectiveTc90 !== undefined && effectiveTc90 !== null
+                          ? `مدت زیر آستانه ۱۰٪ (${effectiveTc10 !== undefined ? `${effectiveTc10}°` : 'Tc10'})`
+                          : `مدت زیر آستانه بحرانی (${effectiveTc10 !== undefined ? `${effectiveTc10}°C` : 'Tc'})`}
                       </div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>
                         <FormattedNumber value={night.duration_below_t10_h} unit="h" digits={1} />
                       </div>
                     </div>
 
-                    <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px' }}>
-                      <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>
-                        مدت زیر آستانه ۹۰٪ ({effectiveTc90 !== undefined ? `${effectiveTc90}°` : 'Tc90'})
+                    {effectiveTc90 !== undefined && effectiveTc90 !== null && (
+                      <div style={{ backgroundColor: '#f8fafc', padding: '10px', borderRadius: '6px' }} data-testid="duration-t90-card">
+                        <div className="text-muted" style={{ fontSize: '0.75rem', marginBottom: '4px' }}>
+                          مدت زیر آستانه ۹۰٪ ({effectiveTc90}°)
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: night.duration_below_t90_h > 0 ? '#b91c1c' : '#334155' }}>
+                          <FormattedNumber value={night.duration_below_t90_h} unit="h" digits={1} />
+                        </div>
                       </div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: night.duration_below_t90_h > 0 ? '#b91c1c' : '#334155' }}>
-                        <FormattedNumber value={night.duration_below_t90_h} unit="h" digits={1} />
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Sourced Duration Exposure & Rule Explanation (E8) */}

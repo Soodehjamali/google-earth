@@ -209,21 +209,24 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
             />
 
             {/* Phenological Critical Threshold Lines */}
-            {criticalTemp10 !== undefined && (
+            {criticalTemp10 !== undefined && criticalTemp10 !== null && (
               <ReferenceLine
                 y={criticalTemp10}
                 stroke="#d97706"
                 strokeDasharray="4 4"
                 strokeWidth={2}
                 label={{
-                  value: `Tc10: ${criticalTemp10}°C (آستانه ۱۰٪)`,
+                  value:
+                    criticalTemp90 !== undefined && criticalTemp90 !== null
+                      ? `Tc10: ${criticalTemp10}°C (آستانه ۱۰٪)`
+                      : `آستانه بحرانی خسارت (Tc): ${criticalTemp10}°C`,
                   fill: '#b45309',
                   position: 'insideTopLeft',
                   fontSize: 11,
                 }}
               />
             )}
-            {criticalTemp90 !== undefined && (
+            {criticalTemp90 !== undefined && criticalTemp90 !== null && (
               <ReferenceLine
                 y={criticalTemp90}
                 stroke="#dc2626"

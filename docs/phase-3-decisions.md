@@ -683,3 +683,25 @@ aa5b907 untracked files on cline checkpoint
    - Exact Persian guidance label rendered: `"ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)"`.
    - Explicit disclaimer that weights and thresholds are uncalibrated and illustrative.
    - Sub-zero numbers rendered in LTR direction with mathematical minus sign U+2212 (`−`).
+
+---
+
+### Item R7: Published Threshold Set Fix, Single Critical Mode, and Dynamic Stages
+1. **Elimination of Invented T90 Mortality Numbers:**
+   - Primary research sources (Hokmabadi 2010 [S1], Hokmabadi 2011 [S2]) report single critical temperatures per phenological stage rather than multi-tier (10%/90%) mortality curves.
+   - `config/frost_thresholds.yaml` threshold set `published_v1` is configured with `single_critical: true` and all `t_critical_90_c` values are set to `null`.
+   - Backend `load_frost_threshold_set` parses `single_critical: true`, avoids defaulting to synthesized $T_{10} - 2^\circ\text{C}$ kill thresholds, and sets `CropThresholdConfig.single_critical = True`.
+   - Frontend components (`FrostNightCards.tsx`, `FrostTimelineChart.tsx`, `FrostRiskPage.tsx`) drop the 90% duration column, reference lines, and labels when single-critical threshold sets are active.
+2. **Explicit Disclosure of Missing Swelling Bud Data:**
+   - Source S2 provides no numerical critical temperature for the swelling bud stage.
+   - In `config/frost_thresholds.yaml`, `swelling_bud` critical temperature is set to `null` with explicit note: `"در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است (داده منتشرشده‌ای وجود ندارد)."`.
+   - In the frontend UI stage dropdown, `swelling_bud` is disabled with that verbatim citation note.
+3. **Opening Bud Label Verification:**
+   - Verified that `opening_bud` in `config/frost_thresholds.yaml` and UI is labeled `"جوانه در حال باز شدن (Opening bud)"` at $-2.0^\circ\text{C}$.
+4. **Dynamic Stage Dropdown per Active Threshold Set:**
+   - Stage dropdown options in `FrostRiskPage.tsx` update dynamically based on the active `thresholdSet`:
+     - When `published_v1`: exposes only stages defined in literature (`unopened_bud` at $-4.0^\circ\text{C}$, `opening_bud` at $-2.0^\circ\text{C}$, `bloom` at $-1.7^\circ\text{C}$, `fruit` at $-2.0^\circ\text{C}$, and disabled `swelling_bud`).
+     - When `engine_default_v0`: exposes legacy placeholder stages.
+   - Headless browser screenshot captured at `C:\Users\Jamali\Desktop\google_ui_screenshots\published_v1_stage_dropdown.png`.
+   - Automated unit tests verified in `frontend/src/components/agriculture/__tests__/frost_r7_stage.test.ts`.
+

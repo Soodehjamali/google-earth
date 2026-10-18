@@ -102,12 +102,13 @@ threshold_sets:
     status: "published"
     verified: false
     evidence_level: "C"
+    single_critical: true
     stages:
       unopened_bud:
         name_fa: "جوانه بازنشده"
         t_critical_c: -4.0
         t_critical_10_c: -4.0
-        t_critical_90_c: -6.0
+        t_critical_90_c: null
         duration_rules:
           - reference_temperature_c: -4.0
             min_hours: 2.0
@@ -122,10 +123,10 @@ threshold_sets:
         source: "Hokmabadi H. (2011) [S2]; Hokmabadi H. (2010) p. 72 [S1]"
         status: "published"
       opening_bud:
-        name_fa: "جوانه در حال باز شدن"
+        name_fa: "جوانه در حال باز شدن (Opening bud)"
         t_critical_c: -2.0
         t_critical_10_c: -2.0
-        t_critical_90_c: -4.0
+        t_critical_90_c: null
         duration_rules:
           - reference_temperature_c: -4.0
             min_hours: 2.0
@@ -143,7 +144,7 @@ threshold_sets:
         name_fa: "گلدهی"
         t_critical_c: -1.7
         t_critical_10_c: -1.7
-        t_critical_90_c: -3.5
+        t_critical_90_c: null
         conflicting_published_value: 2.0
         conflicting_source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
         conflicting_notes_fa: "مقدار ۲+ درجه در S2 با مقدار ۱.۷- درجه در S1 متعارض است و به عنوان آستانه خسارت استفاده نمی‌شود."
@@ -154,19 +155,19 @@ threshold_sets:
         name_fa: "میوه (ارزنک)"
         t_critical_c: -2.0
         t_critical_10_c: -2.0
-        t_critical_90_c: -4.0
+        t_critical_90_c: null
         duration_rules: null
         source: "Hokmabadi H. (2011) [S2]"
         status: "published"
       swelling_bud:
-        name_fa: "تورم جوانه"
+        name_fa: "جوانه متورم (تورم جوانه)"
         t_critical_c: null
-        t_critical_10_c: -4.0
-        t_critical_90_c: -7.0
+        t_critical_10_c: null
+        t_critical_90_c: null
         duration_rules: null
         source: null
         status: "placeholder"
-        notes_fa: "در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است."
+        notes_fa: "در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است (داده منتشرشده‌ای وجود ندارد)."
   engine_default_v0:
     name: "آستانه‌های پیش‌فرض اولیه سامانه (فرضی/Placeholder)"
     status: "placeholder"

@@ -20,24 +20,47 @@ const CROP_OPTIONS = [
   { value: 'pistachio', labelFa: 'پسته' },
 ];
 
-const PHENOLOGY_STAGES = [
-  { value: 'unopened_bud', labelFa: 'جوانه بازنشده (خواب / متورم)' },
-  { value: 'opening_bud', labelFa: 'جوانه در حال باز شدن' },
-  { value: 'full_bloom', labelFa: 'گل کامل' },
-  { value: 'fruit', labelFa: 'میوه تازه تشکیل‌شده' },
-  { value: 'dormant', labelFa: 'خواب زمستانه' },
-  { value: 'early_bloom', labelFa: 'اوایل گلدهی' },
-  { value: 'fruit_set', labelFa: 'تشکیل میوه' },
+export interface PhenologyStageOption {
+  value: string;
+  labelFa: string;
+  disabled?: boolean;
+  missingDataNote?: string;
+  criticalTempC?: number | null;
+}
+
+export const PUBLISHED_V1_STAGES: PhenologyStageOption[] = [
+  { value: 'unopened_bud', labelFa: 'جوانه بازنشده (−۴°C)', criticalTempC: -4.0 },
+  { value: 'opening_bud', labelFa: 'جوانه در حال باز شدن (Opening bud) (−۲°C)', criticalTempC: -2.0 },
+  { value: 'bloom', labelFa: 'گلدهی / شکوفه بازشده (−۱.۷°C)', criticalTempC: -1.7 },
+  { value: 'fruit', labelFa: 'میوه (ارزنک) (−۲°C)', criticalTempC: -2.0 },
+  {
+    value: 'swelling_bud',
+    labelFa: 'تورم جوانه (داده منتشرشده‌ای وجود ندارد)',
+    disabled: true,
+    missingDataNote: 'در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است (داده منتشرشده‌ای وجود ندارد).',
+    criticalTempC: null,
+  },
+];
+
+export const ENGINE_DEFAULT_STAGES: PhenologyStageOption[] = [
+  { value: 'dormant', labelFa: 'خواب زمستانه (پیش‌فرض فرضی)', criticalTempC: -5.0 },
+  { value: 'swelling_bud', labelFa: 'تورم جوانه (پیش‌فرض فرضی)', criticalTempC: -4.0 },
+  { value: 'bud_burst', labelFa: 'جوانه در حال باز شدن (پیش‌فرض فرضی)', criticalTempC: -3.0 },
+  { value: 'early_bloom', labelFa: 'اوایل گلدهی (پیش‌فرض فرضی)', criticalTempC: -2.0 },
+  { value: 'full_bloom', labelFa: 'گل کامل (پیش‌فرض فرضی)', criticalTempC: -1.0 },
+  { value: 'fruit_set', labelFa: 'تشکیل میوه (پیش‌فرض فرضی)', criticalTempC: -1.0 },
 ];
 
 const STAGE_NAME_MAP: Record<string, string> = {
   unopened_bud: 'جوانه بازنشده',
-  opening_bud: 'جوانه در حال باز شدن',
-  bud_burst: 'جوانه در حال باز شدن',
+  opening_bud: 'جوانه در حال باز شدن (Opening bud)',
+  bud_burst: 'جوانه در حال باز شدن (Opening bud)',
+  bloom: 'گلدهی / شکوفه بازشده',
   full_bloom: 'گل کامل',
   early_bloom: 'اوایل گلدهی',
-  fruit: 'میوه تازه تشکیل‌شده',
+  fruit: 'میوه (ارزنک)',
   fruit_set: 'تشکیل میوه',
+  swelling_bud: 'تورم جوانه (فاقد داده)',
   dormant: 'خواب زمستانه',
 };
 
@@ -93,6 +116,18 @@ export default function FrostRiskPage() {
   const [alertChannel, setAlertChannel] = useState<string>('sms');
   const [evalResult, setEvalResult] = useState<EvaluateAlertsResponse | null>(null);
   const [evaluating, setEvaluating] = useState<boolean>(false);
+
+  // Dynamic stages based on active threshold set (R7)
+  const currentStageOptions = thresholdSet === 'published_v1' ? PUBLISHED_V1_STAGES : ENGINE_DEFAULT_STAGES;
+
+  const handleThresholdSetChange = (newSet: string) => {
+    setThresholdSet(newSet);
+    const options = newSet === 'published_v1' ? PUBLISHED_V1_STAGES : ENGINE_DEFAULT_STAGES;
+    const currentIsValid = options.some((opt) => opt.value === stage && !opt.disabled);
+    if (!currentIsValid) {
+      setStage(options[0].value);
+    }
+  };
 
   // Load registered orchards summaries (R5/R6)
   const loadSummaries = useCallback(async () => {
@@ -194,7 +229,8 @@ export default function FrostRiskPage() {
         thresholds_verified: Boolean(res.thresholds_verified),
         evidence_level: res.evidence_level || (Boolean(res.thresholds_verified) ? 'B' : 'C'),
         critical_temp_10_c: res.t_critical_10_c ?? res.critical_temp_10_c,
-        critical_temp_90_c: res.t_critical_90_c ?? res.critical_temp_90_c,
+        critical_temp_90_c: (res.single_critical || thresholdSet === 'published_v1') ? undefined : (res.t_critical_90_c ?? res.critical_temp_90_c),
+        single_critical: Boolean(res.single_critical || thresholdSet === 'published_v1'),
         cold_air_pooling_proxy: res.pooling_risk_proxy ?? res.cold_air_pooling_proxy,
         geometry_type: res.geometry_type || (sharedGeometry.type as string),
         location_sampling_method: res.location_sampling_method || '',
@@ -655,14 +691,23 @@ export default function FrostRiskPage() {
                       className="form-control"
                       value={editingStage}
                       onChange={(e) => setEditingStage(e.target.value)}
+                      data-testid="editing-stage-select-dropdown"
                       style={{ padding: '4px 8px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #93c5fd' }}
                     >
-                      {PHENOLOGY_STAGES.map((s) => (
-                        <option key={s.value} value={s.value}>
+                      {currentStageOptions.map((s) => (
+                        <option key={s.value} value={s.value} disabled={s.disabled}>
                           {s.labelFa}
                         </option>
                       ))}
                     </select>
+                    {editingStage === 'swelling_bud' && (
+                      <span
+                        data-testid="editing-stage-missing-note"
+                        style={{ fontSize: '0.75rem', color: '#b91c1c', fontWeight: 600 }}
+                      >
+                        ⚠️ داده منتشرشده‌ای وجود ندارد
+                      </span>
+                    )}
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
@@ -1005,14 +1050,23 @@ export default function FrostRiskPage() {
                     className="form-control"
                     value={stage}
                     onChange={(e) => setStage(e.target.value)}
+                    data-testid="stage-select-dropdown"
                     style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                   >
-                    {PHENOLOGY_STAGES.map((s) => (
-                      <option key={s.value} value={s.value}>
+                    {currentStageOptions.map((s) => (
+                      <option key={s.value} value={s.value} disabled={s.disabled}>
                         {s.labelFa}
                       </option>
                     ))}
                   </select>
+                  {stage === 'swelling_bud' && (
+                    <div
+                      data-testid="swelling-bud-missing-note"
+                      style={{ marginTop: '6px', fontSize: '0.78rem', color: '#b91c1c', fontWeight: 600 }}
+                    >
+                      ⚠️ در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است (داده منتشرشده‌ای وجود ندارد).
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1040,7 +1094,7 @@ export default function FrostRiskPage() {
                   <select
                     className="form-control"
                     value={thresholdSet}
-                    onChange={(e) => setThresholdSet(e.target.value)}
+                    onChange={(e) => handleThresholdSetChange(e.target.value)}
                     data-testid="threshold-set-select"
                     style={{ width: '100%', padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                   >
@@ -1127,8 +1181,8 @@ export default function FrostRiskPage() {
                   evidenceLevel={assessment.evidence_level}
                   cropNameFa={assessment.crop_name_fa}
                   stageNameFa={assessment.phenological_stage_fa}
-                  t10={assessment.critical_temp_10_c}
-                  t90={assessment.critical_temp_90_c}
+                  t10={assessment.critical_temp_10_c ?? undefined}
+                  t90={assessment.critical_temp_90_c ?? undefined}
                 />
               )}
 
@@ -1137,8 +1191,8 @@ export default function FrostRiskPage() {
                 <FrostTimelineChart
                   points={assessment.forecast.series}
                   forecast={assessment.forecast}
-                  criticalT10={assessment.critical_temp_10_c}
-                  criticalT90={assessment.critical_temp_90_c}
+                  criticalT10={assessment.critical_temp_10_c ?? undefined}
+                  criticalT90={assessment.critical_temp_90_c ?? undefined}
                   cropNameFa={assessment.crop_name_fa}
                   stageNameFa={assessment.phenological_stage_fa}
                 />
@@ -1147,8 +1201,8 @@ export default function FrostRiskPage() {
               {/* Nightly Frost Assessment Cards */}
               <FrostNightCards
                 nights={assessment.nights}
-                criticalT10={assessment.critical_temp_10_c}
-                criticalT90={assessment.critical_temp_90_c}
+                criticalT10={assessment.critical_temp_10_c ?? undefined}
+                criticalT90={assessment.critical_temp_90_c ?? undefined}
               />
 
               {/* Cold-Air Pooling Topography Section */}
