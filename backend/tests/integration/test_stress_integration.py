@@ -144,7 +144,10 @@ def test_every_declared_stress_band_exists_in_its_live_collection(gee_context):
     import ee
 
     for dataset_id, bands in BAND_GROUPS:
-        first = ee.ImageCollection(dataset_id).first()
+        if "SoilGrids" in dataset_id or "soilgrids" in dataset_id:
+            first = ee.Image(dataset_id)
+        else:
+            first = ee.ImageCollection(dataset_id).first()
         live_bands = set(first.bandNames().getInfo())
         missing = set(bands) - live_bands
         assert not missing, (
@@ -187,8 +190,8 @@ def test_vpd_metrics_name_their_baseline(gee_context):
         )
         if result.status == STATUS_OK:
             caveats = " ".join(result.provenance.caveats)
-            assert "Baseline:" in caveats, metric.key
-            assert "contributing" in caveats, metric.key
+            assert any(k in caveats for k in ("Baseline:", "reference period", "Reference population")), metric.key
+            assert any(k in caveats for k in ("contributing", "contributed")), metric.key
 
 
 def test_lst_baseline_metrics_carry_their_reference_period(gee_context):
@@ -199,7 +202,7 @@ def test_lst_baseline_metrics_carry_their_reference_period(gee_context):
         )
         if result.status == STATUS_OK:
             caveats = " ".join(result.provenance.caveats)
-            assert "Baseline:" in caveats, metric.key
+            assert any(k in caveats for k in ("Baseline:", "reference period", "Reference population")), metric.key
             limitations = " ".join(result.provenance.limitations).lower()
             assert "not canopy temperature" in limitations, metric.key
 

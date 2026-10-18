@@ -862,6 +862,11 @@ async def test_location_inheritance_point_and_polygon_support(monkeypatch):
         assert abs(data_orch_pt["longitude"] - 54.02) < 1e-4
         assert abs(data_orch_pt["latitude"] - 32.31) < 1e-4
 
+        # Clean up created orchard immediately
+        orch_id = data_orch_pt["id"]
+        del_resp = await client.delete(f"/api/v1/agriculture/frost/orchards/{orch_id}", headers=headers)
+        assert del_resp.status_code == 204
+
 
 def test_alembic_migration_005_upgrade_downgrade_cycle(tmp_path):
     """Verify that migration 005_orchard_observations executes clean upgrade -> downgrade -> upgrade (E10)."""
@@ -1053,6 +1058,16 @@ async def test_orchard_observations_crud_and_filtering():
         assert exc_info.value.status_code == 404
         assert exc_info.value.code == "ERR_OBSERVATION_NOT_FOUND"
     finally:
+        try:
+            async with async_session_factory() as cleanup_db:
+                from sqlalchemy import delete
+                from app.db.models.frost import OrchardObservation, Orchard
+                if "orchard_id" in locals():
+                    await cleanup_db.execute(delete(OrchardObservation).where(OrchardObservation.orchard_id == orchard_id))
+                    await cleanup_db.execute(delete(Orchard).where(Orchard.id == orchard_id))
+                    await cleanup_db.commit()
+        except Exception:
+            pass
         await dispose_engine()
 
 

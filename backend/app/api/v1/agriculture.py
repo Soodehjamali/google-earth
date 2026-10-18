@@ -2040,6 +2040,7 @@ async def list_orchards_endpoint(
 async def get_orchards_risk_summary_endpoint(
     horizon_h: int = Query(240, ge=24, le=384),
     threshold_set: str = Query("published_v1"),
+    q: Optional[str] = Query(None, description="Search filter by orchard name"),
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(require_frost_auth),
 ):
@@ -2048,7 +2049,10 @@ async def get_orchards_risk_summary_endpoint(
     from app.services.agriculture.frost_orchard_service import assess_orchards_summary
     from sqlalchemy import select
 
-    stmt = select(Orchard).order_by(Orchard.name)
+    stmt = select(Orchard)
+    if q and isinstance(q, str) and q.strip():
+        stmt = stmt.where(Orchard.name.ilike(f"%{q.strip()}%"))
+    stmt = stmt.order_by(Orchard.name)
     result = await db.execute(stmt)
     orchards = result.scalars().all()
 

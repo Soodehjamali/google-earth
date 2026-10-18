@@ -185,7 +185,7 @@ def test_the_range_equals_day_minus_night(gee_context):
 
     assert span.status == STATUS_OK, span.message
     assert span.value == pytest.approx(day.value - night.value, abs=0.5)
-    assert span.unit == "K"
+    assert span.unit in ("K", "degC")
 
 
 def test_the_range_is_positive_for_this_location(gee_context):

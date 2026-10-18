@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { frostApi } from '../../api/frost';
 import type {
   FrostAssessmentResponse,
@@ -104,6 +104,24 @@ export default function FrostRiskPage() {
   const [loadingOrchardRisk, setLoadingOrchardRisk] = useState<boolean>(false);
   const [selectedNightDate, setSelectedNightDate] = useState<string | null>(null);
   const [showRecommendations, setShowRecommendations] = useState<boolean>(true);
+
+  // Orchard search & pagination (R9)
+  const [orchardSearchQuery, setOrchardSearchQuery] = useState<string>('');
+  const [orchardPage, setOrchardPage] = useState<number>(1);
+  const ORCHARD_PAGE_SIZE = 10;
+
+  const filteredSummaries = useMemo(() => {
+    if (!orchardSearchQuery.trim()) return summaries;
+    const q = orchardSearchQuery.trim().toLowerCase();
+    return summaries.filter((s) => s.name.toLowerCase().includes(q));
+  }, [summaries, orchardSearchQuery]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSummaries.length / ORCHARD_PAGE_SIZE));
+  const currentPage = Math.min(orchardPage, totalPages);
+  const paginatedSummaries = useMemo(() => {
+    const start = (currentPage - 1) * ORCHARD_PAGE_SIZE;
+    return filteredSummaries.slice(start, start + ORCHARD_PAGE_SIZE);
+  }, [filteredSummaries, currentPage]);
 
   // Stage update state
   const [editingStage, setEditingStage] = useState<string>('unopened_bud');
@@ -567,8 +585,37 @@ export default function FrostRiskPage() {
                   (مرتب‌شده نزولی بر اساس بیشترین شدت خطر)
                 </span>
               </div>
-              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="text"
+                    data-testid="orchard-search-input"
+                    className="form-control form-control-sm"
+                    placeholder="جستجوی نام باغ..."
+                    value={orchardSearchQuery}
+                    onChange={(e) => {
+                      setOrchardSearchQuery(e.target.value);
+                      setOrchardPage(1);
+                    }}
+                    style={{ fontSize: '0.8rem', padding: '4px 10px', minWidth: '180px' }}
+                  />
+                  {orchardSearchQuery && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => {
+                        setOrchardSearchQuery('');
+                        setOrchardPage(1);
+                      }}
+                      style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                    >
+                      پاک کردن
+                    </button>
+                  )}
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                  ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)
+                </div>
               </div>
             </div>
 
@@ -578,6 +625,10 @@ export default function FrostRiskPage() {
               ) : summaries.length === 0 ? (
                 <div className="text-center p-4 text-muted">
                   هنوز هیچ باغی در سامانه ثبت نشده است. از فرم زیر برای ثبت باغ استفاده نمایید.
+                </div>
+              ) : filteredSummaries.length === 0 ? (
+                <div className="text-center p-4 text-muted">
+                  هیچ باغی مطابق با عبارت «{orchardSearchQuery}» یافت نشد.
                 </div>
               ) : (
                 <table className="table" style={{ width: '100%', marginBottom: 0, fontSize: '0.85rem' }}>
@@ -595,7 +646,7 @@ export default function FrostRiskPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {summaries.map((item) => {
+                    {paginatedSummaries.map((item) => {
                       const isSelected = item.orchard_id === selectedOrchardId;
                       const catStyle = CATEGORY_STYLE[item.final_category] || CATEGORY_STYLE.none;
                       const stageLabel = STAGE_NAME_MAP[item.current_stage] || item.current_stage;
@@ -691,6 +742,43 @@ export default function FrostRiskPage() {
                     })}
                   </tbody>
                 </table>
+              )}
+
+              {filteredSummaries.length > ORCHARD_PAGE_SIZE && (
+                <div
+                  data-testid="orchard-pagination"
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '10px 16px',
+                    borderTop: '1px solid #e2e8f0',
+                    backgroundColor: '#f8fafc',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    disabled={currentPage <= 1}
+                    onClick={() => setOrchardPage((p) => Math.max(1, p - 1))}
+                    style={{ fontSize: '0.8rem', padding: '3px 10px' }}
+                  >
+                    قبلی
+                  </button>
+                  <span style={{ color: '#475569', fontWeight: 600 }}>
+                    صفحه {currentPage} از {totalPages} (مجموع {filteredSummaries.length} باغ)
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setOrchardPage((p) => Math.min(totalPages, p + 1))}
+                    style={{ fontSize: '0.8rem', padding: '3px 10px' }}
+                  >
+                    بعدی
+                  </button>
+                </div>
               )}
             </div>
           </div>
