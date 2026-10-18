@@ -832,3 +832,33 @@ def generate_spatial_layer(request: SpatialLayerRequest) -> SpatialLayerResponse
             unavailable_reason=str(exc),
             limitations=[f"Earth Engine processing error: {exc}"],
         )
+
+
+def build_spatial_layer_tile_template(
+    metric: str,
+    start_date: str,
+    end_date: str,
+    bbox: List[float],
+) -> Optional[str]:
+    """Regenerate Earth Engine tile URL template for spatial layers."""
+    polygon_coords = [
+        [
+            [bbox[0], bbox[1]],
+            [bbox[2], bbox[1]],
+            [bbox[2], bbox[3]],
+            [bbox[0], bbox[3]],
+            [bbox[0], bbox[1]],
+        ]
+    ]
+    geom = {"type": "Polygon", "coordinates": polygon_coords}
+    req = SpatialLayerRequest(
+        geometry=geom,
+        metric=metric,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    res = get_spatial_layer(req)
+    if res and res.tile_url_template:
+        return res.tile_url_template
+    return None
+

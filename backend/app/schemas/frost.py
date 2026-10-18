@@ -17,8 +17,9 @@ class FrostAssessRequest(BaseModel):
     pooling_risk_proxy: Optional[float] = Field(
         None, ge=0.0, le=1.0, description="Optional pre-computed cold-air-pooling proxy (0.0 to 1.0)."
     )
-    use_live_gee: bool = Field(
-        False, description="Whether to query live Earth Engine GFS and NASADEM (requires credentials)."
+    use_live_gee: Optional[bool] = Field(
+        False,
+        description="Deprecated. Forecast provider is controlled exclusively by server configuration.",
     )
 
 
@@ -75,7 +76,10 @@ class EvaluateAlertsRequest(BaseModel):
 
     dry_run: bool = Field(True, description="If True, dispatches in dry-run mode without real delivery.")
     force_crop: Optional[str] = Field(None, description="Optional override crop for all orchards.")
-    use_live_gee: bool = Field(False, description="Query live GEE instead of deterministic provider.")
+    use_live_gee: Optional[bool] = Field(
+        False,
+        description="Deprecated. Forecast provider is controlled exclusively by server configuration.",
+    )
 
 
 class NotificationLogResponse(BaseModel):

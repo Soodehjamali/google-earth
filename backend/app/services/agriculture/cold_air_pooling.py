@@ -426,3 +426,66 @@ def calculate_cold_air_pooling_ee(
         disclaimer_fa=POOLING_DISCLAIMER_FA,
         config_used=asdict(cfg),
     )
+
+
+def build_pooling_tile_template(
+    bbox: List[float],
+    buffer_deg: float = 0.05,
+    cfg: Optional[ColdAirPoolingConfig] = None,
+) -> str:
+    """Build or regenerate Earth Engine tile fetcher URL template for cold air pooling."""
+    import ee
+    from app.services.earth_engine.authentication import initialize_earth_engine
+
+    initialize_earth_engine()
+    cfg = cfg or DEFAULT_POOLING_CONFIG
+    ee_geom = ee.Geometry.BBox(bbox[0], bbox[1], bbox[2], bbox[3])
+    buffered_geom = ee_geom.buffer(buffer_deg * 111320)
+
+    dem = ee.Image(cfg.dem_dataset_id).select("elevation")
+    slope = ee.Terrain.slope(dem)
+    tpi_inner = dem.subtract(dem.focal_mean(cfg.tpi_inner_radius_m, "circle", "meters"))
+    tpi_outer = dem.subtract(dem.focal_mean(cfg.tpi_outer_radius_m, "circle", "meters"))
+    valley_floor = dem.focal_min(cfg.valley_floor_radius_m, "circle", "meters")
+    valley_max = dem.focal_max(cfg.valley_floor_radius_m, "circle", "meters")
+    relief = valley_max.subtract(valley_floor)
+    confinement = relief.divide(cfg.max_valley_height_scale_m).clamp(0.0, 1.0)
+    height_above_floor = dem.subtract(valley_floor)
+
+    f_floor = confinement.multiply(
+        ee.Image(1.0)
+        .subtract(height_above_floor.divide(cfg.max_valley_height_scale_m))
+        .clamp(0.0, 1.0)
+    )
+    f_tpi_inner = (
+        ee.Image(0.5)
+        .subtract(tpi_inner.divide(2.0 * cfg.tpi_inner_scale_m))
+        .clamp(0.0, 1.0)
+    )
+    f_tpi_outer = (
+        ee.Image(0.5)
+        .subtract(tpi_outer.divide(2.0 * cfg.tpi_outer_scale_m))
+        .clamp(0.0, 1.0)
+    )
+    f_slope = (
+        ee.Image(1.0)
+        .subtract(slope.divide(cfg.slope_max_deg))
+        .clamp(0.0, 1.0)
+    )
+
+    pooling_proxy = (
+        f_floor.multiply(cfg.weight_height_above_floor)
+        .add(f_tpi_inner.multiply(cfg.weight_tpi_inner))
+        .add(f_tpi_outer.multiply(cfg.weight_tpi_outer))
+        .add(f_slope.multiply(cfg.weight_slope))
+    )
+
+    vis_params = {
+        "min": 0.0,
+        "max": 1.0,
+        "palette": POOLING_VIS_PALETTE,
+    }
+    clipped = pooling_proxy.clip(buffered_geom)
+    map_id = clipped.getMapId(vis_params)
+    return str(map_id["tile_fetcher"].url_format)
+

@@ -347,6 +347,17 @@ class FakeForecastProvider(ForecastProvider):
         quality_config: Optional[QualityGatingConfig] = None,
         uncertainty_table: Optional[Tuple[Tuple[float, float], ...]] = None,
     ):
+        from app.core.config import settings
+        from app.core.exceptions import AppException
+
+        if getattr(settings, "is_production", False) or getattr(settings, "APP_ENV", "") == "production":
+            raise AppException(
+                message="Fake forecast provider is unreachable in production configuration",
+                code="ERR_FORBIDDEN",
+                reason="Production environment forbids synthetic/fake forecast data.",
+                status_code=403,
+            )
+
         self.base_tmin_c = base_tmin_c
         self.base_tmax_c = base_tmax_c
         self.z_site_m = z_site_m
@@ -413,7 +424,7 @@ class FakeForecastProvider(ForecastProvider):
 
         return ForecastResult(
             series=series,
-            source=NOAA_GFS_DATASET_ID,
+            source="deterministic_fake",
             issue_time_utc=self.start_time_utc.isoformat(),
             native_spatial_resolution_m=GFS_SPATIAL_RESOLUTION_M,
             native_temporal_resolution_h=1 if horizon_h <= 120 else 3,

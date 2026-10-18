@@ -26,7 +26,7 @@ async def test_fake_forecast_provider_basic_contract():
     result = await provider.get_hourly_forecast({"type": "Point", "coordinates": [54.0, 32.0]}, horizon_h=48)
 
     assert isinstance(result, ForecastResult)
-    assert result.source == NOAA_GFS_DATASET_ID
+    assert result.source == "deterministic_fake"
     assert result.quality_state == "coarse_context"
     assert result.native_spatial_resolution_m == GFS_SPATIAL_RESOLUTION_M
     assert result.horizon_hours == 48
@@ -148,3 +148,16 @@ async def test_live_noaa_gfs_provider():
     first = result.series[0]
     assert -50.0 < first.temperature_2m_c < 60.0
     assert first.total_uncertainty_c > 0.0
+
+
+def test_fake_forecast_provider_unreachable_in_production(monkeypatch):
+    """Verify that FakeForecastProvider cannot be instantiated in production configuration."""
+    from app.core.config import settings
+    from app.core.exceptions import AppException
+
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    with pytest.raises(AppException) as exc_info:
+        FakeForecastProvider()
+    assert exc_info.value.code == "ERR_FORBIDDEN"
+    assert exc_info.value.status_code == 403
+

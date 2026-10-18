@@ -192,17 +192,20 @@ def test_assess_frost_risk_endpoint_adhoc():
     assert "مرحله فنولوژیکی نامشخص است" in data_unknown["thresholds_warning_fa"]
 
 
-def test_assess_frost_risk_endpoint_gee_outage_503_envelope():
+def test_assess_frost_risk_endpoint_gee_outage_503_envelope(monkeypatch):
     """Verify that live Earth Engine outage returns ERR_GEE_UNAVAILABLE and HTTP 503."""
     from app.core.config import settings
-    settings.ADMIN_API_KEY = "admin-secret-token"
+    from app.api.v1.agriculture import _assess_rate_limiter_history
+
+    _assess_rate_limiter_history.clear()
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-secret-token")
+    monkeypatch.setattr(settings, "FROST_USE_LIVE_GEE", True)
     client = TestClient(app, raise_server_exceptions=False)
     headers = {"X-Admin-Token": "admin-secret-token"}
     payload = {
         "geometry": SAMPLE_POLYGON,
         "crop": "pistachio",
         "phenological_stage": "early_bloom",
-        "use_live_gee": True,
     }
 
     # Simulate GEE outage
@@ -701,6 +704,102 @@ async def test_evaluate_alerts_multiple_rules_per_orchard_different_recipients()
         )
         assert res3["dispatched_notifications"] == 2
         assert len(db_entries) == 4
+
+
+def test_client_cannot_force_fake_provider_when_server_configured_live(monkeypatch):
+    """Verify that a client passing use_live_gee=False cannot obtain fake data when server is configured live."""
+    from app.core.config import settings
+    from app.api.v1.agriculture import _assess_rate_limiter_history
+
+    _assess_rate_limiter_history.clear()
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "admin-secret-token")
+    monkeypatch.setattr(settings, "FROST_USE_LIVE_GEE", True)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Admin-Token": "admin-secret-token"}
+    payload = {
+        "geometry": SAMPLE_POLYGON,
+        "crop": "pistachio",
+        "phenological_stage": "early_bloom",
+        "use_live_gee": False,  # Client tries to force fake data
+    }
+
+    # Simulate GEE outage
+    with patch(
+        "app.services.agriculture.cold_air_pooling.calculate_cold_air_pooling_ee",
+        side_effect=RuntimeError("Simulated GEE outage"),
+    ):
+        resp = client.post("/api/v1/agriculture/frost/assess", json=payload, headers=headers)
+        # Server MUST have attempted live GEE and returned 503 ERR_GEE_UNAVAILABLE, NOT fake 200 data
+        assert resp.status_code == 503
+        data = resp.json()
+        assert data.get("code") == "ERR_GEE_UNAVAILABLE"
+
+
+def test_tile_proxy_bounded_cache_and_cross_worker_resolution():
+    """Verify bounded cache LRU eviction and cross-worker tile template resolution via shared store."""
+    from app.services.cache_service import CacheService
+
+    # 1. Bounded cache eviction
+    small_cache = CacheService(max_entries=5)
+    for i in range(10):
+        small_cache.set(f"key_{i}", f"val_{i}")
+    assert small_cache.size <= 5
+    # Oldest keys should be evicted
+    assert small_cache.get("key_0") is None
+
+    # 2. Cross-worker tile template resolution
+    worker_a_cache = CacheService(max_entries=100)
+    worker_b_cache = CacheService(max_entries=100)
+
+    # Worker A saves tile template
+    token_id = "test_worker_share_123"
+    expected_url = "https://earthengine.googleapis.com/v1/projects/earthengine-legacy/maps/test-map/{z}/{x}/{y}"
+    worker_a_cache.set(f"tile_template:{token_id}", expected_url, ttl=300)
+
+    # Worker B's in-memory cache is empty, but it resolves via shared disk store
+    assert f"tile_template:{token_id}" not in worker_b_cache._cache
+    resolved = worker_b_cache.get(f"tile_template:{token_id}")
+    assert resolved == expected_url
+
+
+def test_tile_proxy_upstream_error_and_timeout_envelope():
+    """Verify that tile proxy upstream errors and timeouts map to unified error envelope."""
+    import httpx
+    from unittest.mock import MagicMock
+    from app.services.agriculture.tile_auth import generate_signed_layer_token
+    from app.services.cache_service import cache_service
+
+    bbox = [53.65, 32.40, 54.35, 32.70]
+    token_id = "upstream_err_test"
+    signed_token = generate_signed_layer_token(
+        metric="ndvi",
+        start_date="2025-06-01",
+        end_date="2025-09-01",
+        bbox=bbox,
+        token_id=token_id,
+        ttl_seconds=3600,
+    )
+    cache_service.set(f"tile_template:{token_id}", "https://mock.earthengine.google.com/{z}/{x}/{y}")
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # Upstream 500 error -> 502 ERR_TILE_UPSTREAM_ERROR
+    with patch("httpx.AsyncClient.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.content = b"Internal Server Error"
+        mock_get.return_value = mock_resp
+
+        resp = client.get(f"/api/v1/agriculture/tiles/{signed_token}/14/10635/6630.png")
+        assert resp.status_code == 502
+        assert resp.json()["code"] == "ERR_TILE_UPSTREAM_ERROR"
+
+    # Upstream timeout -> 504 ERR_TILE_UPSTREAM_TIMEOUT
+    with patch("httpx.AsyncClient.get", side_effect=httpx.TimeoutException("Read timed out")):
+        resp = client.get(f"/api/v1/agriculture/tiles/{signed_token}/14/10635/6630.png")
+        assert resp.status_code == 504
+        assert resp.json()["code"] == "ERR_TILE_UPSTREAM_TIMEOUT"
+
 
 
 

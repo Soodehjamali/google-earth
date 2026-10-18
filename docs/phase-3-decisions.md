@@ -368,6 +368,30 @@ aa5b907 untracked files on cline checkpoint
 9f3da4b new vwesion
 ```
 
+---
+
+## Close-Out 3 Decisions: Sourced Research & Item E0
+
+### Sourced Research Provenance & Author Independence
+- **Decision:** Sources `[S1]` (Hokmabadi 2010) and `[S2]` (Hokmabadi 2011) are authored by the **SAME author** (H. Hokmabadi). Therefore, they **do not constitute independent confirmations** of pistachio critical temperature thresholds. Where discrepancies exist (notably bloomed flowers: $-1.7^\circ\text{C}$ in S1 vs $+2.0^\circ\text{C}$ in S2), the discrepancy must be explicitly exposed to the user as a conflicting published value rather than averaged or arbitrarily selected.
+- **Why:** Adheres strictly to scientific honesty and peer-review rigor.
+
+### Item E0 Decisions: Tile Proxy & Forecast Source Integrity
+1. **Multi-Worker Tile Template Resolution & Cache Miss Regeneration:**
+   - *Root Cause:* `CacheService` was strictly an in-memory dictionary local to each Python process. In a multi-worker production environment (e.g. Uvicorn with multiple worker processes), the worker that generated the signed tile token cached `tile_template:<id>` in its local memory. Subsequent browser tile fetches hit different worker processes, encountering a cache miss (`None`) and returning HTTP 404 `ERR_TILE_LAYER_EXPIRED`.
+   - *Fix:* `CacheService` now integrates a host-shared disk-backed store in `tempfile.gettempdir() / "antigravity_tile_cache"` for all `tile_template:*` keys. If a worker process does not find the key in memory, it checks the shared host store. If the template is absent from both (e.g. expired or evicted), `regenerate_tile_template_from_payload(payload)` deterministically reconstructs the Earth Engine tile template from the HMAC-verified parameters in the signed token payload (`m`, `b`, `s`, `e`).
+2. **Tile Proxy Resilience, Proxy Environment, and Error Envelopes:**
+   - Upstream client configured with `httpx.AsyncClient(timeout=timeout_sec, trust_env=True)` ensuring that corporate or staging HTTP/HTTPS proxies (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are automatically respected.
+   - Upstream timeouts raise `AppException` with HTTP 504 and `ERR_TILE_UPSTREAM_TIMEOUT`. Upstream HTTP 5xx or connection failures raise `AppException` with HTTP 502 and `ERR_TILE_UPSTREAM_ERROR`, ensuring all proxy errors conform to the platform's unified error envelope.
+   - Tile responses carry strict `Cache-Control: private, max-age=86400` on success and `Cache-Control: private, no-cache` on empty 404 responses.
+   - `CacheService` is bounded (`max_entries=5000` with LRU/expired entry eviction), preventing memory leaks.
+3. **Server-Controlled Forecast Provider Integrity:**
+   - The choice of forecast provider (live GEE vs deterministic fake) is strictly a **server configuration setting** (`settings.FROST_USE_LIVE_GEE` or `settings.is_production`).
+   - The `use_live_gee` request field is deprecated and ignored on the server. A client sending `use_live_gee: false` **cannot obtain fake data** when the server is configured for live GEE or running in production.
+   - In production configuration (`settings.is_production == True`), `FakeForecastProvider` is strictly unreachable and immediately raises HTTP 403 `ERR_FORBIDDEN` if instantiated.
+   - Every forecast response honestly reports its true `source`: `"deterministic_fake"` for fake provider and `"NOAA/GFS0P25"` for live GEE provider.
+
+
 
 
 

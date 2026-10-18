@@ -204,3 +204,35 @@ def verify_layer_token(
 
     token_id = payload.get("tid")
     return True, 200, "OK", "", token_id, payload
+
+
+def regenerate_tile_template_from_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Regenerate Earth Engine map tile URL template from signed layer token payload."""
+    if not payload or not isinstance(payload, dict):
+        return None
+    metric = payload.get("m")
+    bbox = payload.get("b", [])
+    if not metric or not bbox or len(bbox) != 4:
+        return None
+    if metric == "pooling_risk_proxy":
+        try:
+            from app.services.agriculture.cold_air_pooling import build_pooling_tile_template
+
+            return build_pooling_tile_template(bbox)
+        except Exception as exc:
+            logger.warning("Could not regenerate pooling tile template: %s", exc)
+            return None
+    else:
+        try:
+            from app.services.agriculture.spatial_layer import build_spatial_layer_tile_template
+
+            return build_spatial_layer_tile_template(
+                metric=metric,
+                start_date=payload.get("s", ""),
+                end_date=payload.get("e", ""),
+                bbox=bbox,
+            )
+        except Exception as exc:
+            logger.warning("Could not regenerate spatial layer tile template for %s: %s", metric, exc)
+            return None
+

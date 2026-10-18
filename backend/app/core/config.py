@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     # Frost Risk Authentication & Administration
     ADMIN_API_KEY: Optional[str] = None
     ALERT_ADMIN_OVERRIDE: bool = False
+    FROST_USE_LIVE_GEE: bool = False
+    GEE_TILE_TIMEOUT_SECONDS: float = 60.0
 
     @property
     def is_development(self) -> bool:

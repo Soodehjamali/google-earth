@@ -1322,12 +1322,18 @@ async def get_proxied_tile(
     # 4. Lookup upstream tile template
     url_template = cache_service.get(f"tile_template:{token_id}")
     if not url_template or not isinstance(url_template, str):
-        raise AppException(
-            message="Map tile layer session expired or not found",
-            code="ERR_TILE_LAYER_EXPIRED",
-            reason="The map tile layer token has expired or is invalid. Please refresh the map layer.",
-            status_code=404,
-        )
+        from app.services.agriculture.tile_auth import regenerate_tile_template_from_payload
+
+        url_template = regenerate_tile_template_from_payload(payload)
+        if url_template:
+            cache_service.set(f"tile_template:{token_id}", url_template, ttl=7200)
+        else:
+            raise AppException(
+                message="Map tile layer session expired or not found",
+                code="ERR_TILE_LAYER_EXPIRED",
+                reason="The map tile layer token has expired or is invalid. Please refresh the map layer.",
+                status_code=404,
+            )
 
     target_url = url_template.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
 
@@ -1336,6 +1342,7 @@ async def get_proxied_tile(
     try:
         import ee
         import google.auth.transport.requests
+
         if hasattr(ee.data, "_credentials") and ee.data._credentials:
             creds = ee.data._credentials
             if not getattr(creds, "valid", False):
@@ -1345,10 +1352,11 @@ async def get_proxied_tile(
     except Exception:
         pass
 
-    # 5. Fetch from upstream with concurrency cap (Semaphore 10) & 60s timeout
+    # 5. Fetch from upstream with concurrency cap (Semaphore 10) & configurable timeout (default 60s)
+    timeout_sec = float(getattr(settings, "GEE_TILE_TIMEOUT_SECONDS", 60.0))
     try:
         async with _tile_concurrency_semaphore:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=timeout_sec, trust_env=True) as client:
                 resp = await client.get(target_url, headers=ee_headers)
                 if resp.status_code == 200:
                     cache_service.set(tile_cache_key, resp.content, ttl=86400)
@@ -1358,7 +1366,11 @@ async def get_proxied_tile(
                         headers={"Cache-Control": "private, max-age=86400"},
                     )
                 elif resp.status_code == 404:
-                    return Response(status_code=404, content=b"")
+                    return Response(
+                        status_code=404,
+                        content=b"",
+                        headers={"Cache-Control": "private, no-cache"},
+                    )
                 else:
                     logger.warning(
                         "Tile proxy upstream error %s for z=%s x=%s y=%s",
@@ -1367,7 +1379,22 @@ async def get_proxied_tile(
                         x,
                         y,
                     )
-                    return Response(status_code=resp.status_code, content=resp.content)
+                    raise AppException(
+                        message="Upstream map tile fetch failed",
+                        code="ERR_TILE_UPSTREAM_ERROR",
+                        reason=f"Upstream Earth Engine returned HTTP {resp.status_code}.",
+                        status_code=502,
+                    )
+    except httpx.TimeoutException as exc:
+        logger.warning("Tile proxy timeout for z=%s x=%s y=%s: %s", z, x, y, exc)
+        raise AppException(
+            message="Upstream map tile fetch timed out",
+            code="ERR_TILE_UPSTREAM_TIMEOUT",
+            reason="Upstream Earth Engine tile fetch timed out.",
+            status_code=504,
+        )
+    except AppException:
+        raise
     except Exception as exc:
         logger.warning(
             "Tile proxy fetch failed for z=%s x=%s y=%s: %s",
@@ -1376,7 +1403,12 @@ async def get_proxied_tile(
             y,
             type(exc).__name__,
         )
-        return Response(status_code=502, content=b"")
+        raise AppException(
+            message="Upstream map tile fetch failed",
+            code="ERR_TILE_UPSTREAM_ERROR",
+            reason=f"Failed to fetch tile from upstream Earth Engine: {type(exc).__name__}",
+            status_code=502,
+        )
 
 
 
@@ -1891,10 +1923,15 @@ async def assess_frost_risk_endpoint(
 
     check_geometry_bounds(req.geometry)
 
-    # Obtain forecast
+    # Obtain forecast - server setting controls live vs fake; client cannot force fake
     provider = None
     pooling_res = None
-    if req.use_live_gee:
+    use_live = (
+        getattr(settings, "is_production", False)
+        or getattr(settings, "APP_ENV", "") == "production"
+        or getattr(settings, "FROST_USE_LIVE_GEE", False)
+    )
+    if use_live:
         try:
             provider = NoaaGfsForecastProvider()
             pooling_res = calculate_cold_air_pooling_ee(req.geometry)
@@ -2144,9 +2181,14 @@ async def evaluate_alerts_endpoint(
         crop = req.force_crop or orchard.crop
         stage = orchard.default_phenology_stage
 
+        use_live = (
+            getattr(settings, "is_production", False)
+            or getattr(settings, "APP_ENV", "") == "production"
+            or getattr(settings, "FROST_USE_LIVE_GEE", False)
+        )
         provider = (
             NoaaGfsForecastProvider()
-            if req.use_live_gee
+            if use_live
             else FakeForecastProvider(z_site_m=orchard.elevation or 1200.0)
         )
         forecast_res = await provider.get_hourly_forecast(orchard.geometry, horizon_h=rule.lead_time_h + 24)
