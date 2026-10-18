@@ -18,6 +18,9 @@ export interface FrostPoint {
 }
 
 export interface FrostForecastResponse {
+  source?: string;
+  is_fake?: boolean;
+  metadata?: Record<string, any>;
   grid_elevation_m: number;
   site_elevation_m: number;
   elevation_delta_m: number;
@@ -254,6 +257,8 @@ export interface OrchardSummaryItem {
   final_category: string;
   final_category_fa: string;
   gate_triggered: boolean;
+  forecast_source?: string;
+  is_fake?: boolean;
 }
 
 export interface OrchardNightRiskFactor {
@@ -328,5 +333,7 @@ export interface OrchardRiskReport {
   nights: OrchardNightRiskDetail[];
   recommendations_fa: string[];
   assembled_at: string;
+  forecast_source?: string;
+  is_fake?: boolean;
 }
 

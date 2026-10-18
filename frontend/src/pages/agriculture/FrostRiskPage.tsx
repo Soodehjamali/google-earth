@@ -269,6 +269,9 @@ export default function FrostRiskPage() {
           active_threshold_set: n.active_threshold_set || res.threshold_set || thresholdSet,
         })),
         forecast: res.forecast ? {
+          source: res.forecast.source,
+          is_fake: res.forecast.source === 'deterministic_fake' || res.forecast.metadata?.provider === 'FakeForecastProvider',
+          metadata: res.forecast.metadata,
           grid_elevation_m: res.forecast.cell_elevation_m ?? res.forecast.grid_elevation_m ?? 0,
           site_elevation_m: res.forecast.site_elevation_m ?? 0,
           elevation_delta_m: res.forecast.series?.[0]?.elevation_delta_m ?? res.forecast.elevation_delta_m ?? 0,
@@ -366,9 +369,40 @@ export default function FrostRiskPage() {
     orchardRiskReport?.nights?.[0] ||
     null;
 
+  // Source honesty detection (R8): fake provider indicator
+  const isFakeForecastUsed = Boolean(
+    orchardRiskReport?.is_fake ||
+    orchardRiskReport?.forecast_source === 'deterministic_fake' ||
+    (assessment?.forecast && (assessment.forecast.source === 'deterministic_fake' || (assessment.forecast as any).metadata?.provider === 'FakeForecastProvider')) ||
+    summaries.some((s) => s.is_fake || s.forecast_source === 'deterministic_fake')
+  );
+
   return (
     <div className="frost-risk-page" data-testid="frost-risk-page">
       <DomainNavCards />
+
+      {/* Source Honesty Banner (R8): Fake Provider Warning */}
+      {isFakeForecastUsed && (
+        <div
+          data-testid="fake-provider-honesty-banner"
+          style={{
+            backgroundColor: '#fef2f2',
+            color: '#991b1b',
+            border: '2px solid #ef4444',
+            borderRadius: '8px',
+            padding: '12px 18px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            fontWeight: 700,
+            fontSize: '0.95rem',
+          }}
+        >
+          <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+          <span>داده شبیه‌سازی‌شده؛ برای تصمیم استفاده نشود</span>
+        </div>
+      )}
 
       {/* Page Header */}
       <div className="card mb-3">

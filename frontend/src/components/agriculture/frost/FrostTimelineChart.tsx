@@ -241,9 +241,9 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
               />
             )}
 
-            {/* Uncertainty band & temperature bounds */}
+            {/* Uncertainty band & temperature bounds - linear connection of native forecast points */}
             <Area
-              type="monotone"
+              type="linear"
               dataKey="tempRange"
               name="باند عدم‌قطعیت پیش‌بینی (دمای تصحیح‌شده ± عدم‌قطعیت)"
               fill="#bfdbfe"
@@ -251,7 +251,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
               stroke="none"
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="upper_bound_c"
               name="حد بالای عدم‌قطعیت (+σ)"
               stroke="#93c5fd"
@@ -260,7 +260,7 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
               dot={false}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="lower_bound_c"
               name="حد پایین عدم‌قطعیت (−σ)"
               stroke="#93c5fd"
@@ -269,14 +269,14 @@ export const FrostTimelineChart: React.FC<FrostTimelineChartProps> = ({
               dot={false}
             />
 
-            {/* Corrected temperature main forecast line */}
+            {/* Corrected temperature main forecast line - native points with linear connect */}
             <Line
-              type="monotone"
+              type="linear"
               dataKey="corrected_temperature_c"
               name="دمای پیش‌بینی‌شده (تصحیح تراز ارتفاع)"
               stroke="#2563eb"
-              strokeWidth={2.5}
-              dot={false}
+              strokeWidth={2}
+              dot={{ r: 2.5, fill: '#2563eb' }}
               activeDot={{ r: 5, fill: '#1d4ed8' }}
             />
           </ComposedChart>

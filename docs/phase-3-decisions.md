@@ -705,3 +705,23 @@ aa5b907 untracked files on cline checkpoint
    - Headless browser screenshot captured at `C:\Users\Jamali\Desktop\google_ui_screenshots\published_v1_stage_dropdown.png`.
    - Automated unit tests verified in `frontend/src/components/agriculture/__tests__/frost_r7_stage.test.ts`.
 
+---
+
+### Item R8: Source Honesty Banner and Native Unsmoothed Chart Points
+1. **Source Honesty Banner:**
+   - If a fake forecast provider is detected anywhere in the platform run (`source == "deterministic_fake"` or `provider == "FakeForecastProvider"`), a prominent warning banner is displayed at the top of the frost page:
+     `داده شبیه‌سازی‌شده؛ برای تصمیم استفاده نشود`
+   - Testid: `data-testid="fake-provider-honesty-banner"`.
+2. **Native Chart Points and Elimination of Artificial Splines:**
+   - In `FrostTimelineChart.tsx`, all curves (`<Line>` and `<Area>`) were converted from `type="monotone"` to `type="linear"`.
+   - Native hourly GFS forecast timesteps are connected with straight linear segments without any cubic spline interpolation. This guarantees that the plotted temperature curve never dips lower than any discrete forecast data point.
+   - Discrete forecast points are rendered visually on the primary forecast curve using `dot={{ r: 2.5, fill: '#2563eb' }}`.
+3. **Explanation for Historical Sine Curve in Development Page:**
+   - The user noted that during earlier development, the frost forecast temperature chart appeared as a smooth sine curve.
+   - **Real Root Cause:** The chart was NOT hallucinating points or introducing an artificial trigonometric curve. Rather, `FakeForecastProvider` (used in test/dev environments prior to live GEE GFS integration) generates synthetic hourly diurnal temperatures using a mathematical cosine formula:
+     ```python
+     diurnal_phase = (hour - 2) * (2 * math.pi / 24.0)
+     t_raw = midpoint - amplitude * math.cos(diurnal_phase)
+     ```
+     This deterministic synthetic diurnal model intentionally simulated a natural daily heating/cooling cycle. In contrast, real NOAA GFS 0.25° forecast data consists of physical atmospheric model outputs which exhibit complex, asymmetric weather fronts and temperature fluctuations.
+

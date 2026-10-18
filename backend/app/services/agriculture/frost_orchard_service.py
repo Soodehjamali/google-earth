@@ -97,6 +97,8 @@ class OrchardRiskReport:
     nights: List[OrchardNightRiskDetail]
     recommendations_fa: List[str]
     assembled_at: str
+    forecast_source: str = "noaa_gfs_live"
+    is_fake: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         res = asdict(self)
@@ -120,6 +122,8 @@ class OrchardSummaryItem:
     final_category: str
     final_category_fa: str
     gate_triggered: bool
+    forecast_source: str = "noaa_gfs_live"
+    is_fake: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -328,6 +332,8 @@ async def assess_single_orchard_risk(
         nights=night_results,
         recommendations_fa=recs,
         assembled_at=inputs.assembled_at,
+        forecast_source=inputs.orchard_forecast.source if inputs.orchard_forecast else "unknown",
+        is_fake=(inputs.orchard_forecast.source == "deterministic_fake") if inputs.orchard_forecast else False,
     )
 
 
@@ -383,6 +389,8 @@ async def assess_orchards_summary(
                 final_category=report.overall_final_category,
                 final_category_fa=report.overall_final_category_fa,
                 gate_triggered=bool(worst.get("gate_triggered", False)),
+                forecast_source=report.forecast_source,
+                is_fake=report.is_fake,
             )
             summaries.append(item)
         except Exception as exc:
