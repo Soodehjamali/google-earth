@@ -285,7 +285,35 @@ export interface OrchardNightRiskFactor {
   is_stale: boolean;
   static?: boolean;
   details?: Record<string, any>;
+  spatial_resolution_fa?: string;
+  source_name_fa?: string;
 }
+
+export const FACTOR_RESOLUTION_MAP: Record<string, string> = {
+  temperature_duration: '~۲۸ کیلومتر',
+  phenological_stage: 'داده باغدار',
+  soil_rootzone_moisture: '~۹–۱۱ کیلومتر',
+  soil_texture_depth: '۲۵۰ متر',
+  wind_speed: '~۲۸ کیلومتر',
+  wind_direction: '~۲۸ کیلومتر',
+  cloud_cover: '~۲۸ کیلومتر',
+  humidity_dewpoint: '~۲۸ کیلومتر',
+  topography_pooling: '۳۰ متر',
+  topography_slope_aspect: '۳۰ متر',
+};
+
+export const FACTOR_SOURCE_FA_MAP: Record<string, string> = {
+  temperature_duration: 'پیش‌بینی عددی GFS و مدل رقومی ارتفاع',
+  phenological_stage: 'داده ثبت‌شده باغدار',
+  soil_rootzone_moisture: 'پایش رطوبت ماهواره‌ای و بازتحلیل (SMAP / ERA5-Land)',
+  soil_texture_depth: 'نقشه‌برداری رقومی خاک (SoilGrids)',
+  wind_speed: 'پیش‌بینی جوی GFS NOAA',
+  wind_direction: 'پیش‌بینی باد GFS NOAA و مدل شیب',
+  cloud_cover: 'پیش‌بینی تابش و ابرناکی GFS NOAA',
+  humidity_dewpoint: 'پیش‌بینی رطوبت جوی و محاسبات روان‌سنجی GFS',
+  topography_pooling: 'مدل رقومی ارتفاع راداری (NASADEM)',
+  topography_slope_aspect: 'مدل رقومی ارتفاع راداری (NASADEM)',
+};
 
 export interface OrchardNightRiskWindow {
   start_local: string;

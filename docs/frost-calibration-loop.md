@@ -60,3 +60,31 @@ Before deploying calibrated parameters to production:
    - Commit calibrated values to a new threshold set `calibrated_v1` in `config/frost_thresholds.yaml`.
    - Update `status: calibrated`, `verified: true`, `source: "Iran Pistachio In-Situ Observation Network"`.
    - Set `evidence_level: "B"` in response contracts.
+
+---
+
+## 5. Ardakan Hourly Validation & Synoptic Telemetry Status (Phase 3 Close-Out)
+
+### A. Ground Telemetry Status
+- **Synoptic Station Telemetry:** «بدون مرجع زمینی» (No synoptic/agrometeorological ground station telemetry feed is connected in the active deployment for Ardakan or Yazd).
+- **Reanalysis Reference (ERA5-Land):** Used solely for past overlapping historical nights; future forecast nights must never claim ERA5-Land validation.
+
+### B. Raw Hourly GFS & DEM Elevation Correction (Ardakan Orchard: 32.31°N, 54.02°E)
+- **Site Elevation ($z_{\text{site}}$):** $1040.0\,\text{m}$ (NASADEM 30m)
+- **GFS Grid Cell Elevation ($z_{\text{cell}}$):** $1066.3\,\text{m}$
+- **Elevation Delta ($\Delta z$):** $-26.3\,\text{m}$ (Site is 26.3m lower than GFS grid cell)
+- **Lapse Rate ($\Gamma$):** $0.0065\,\text{K/m}$ ($6.5^\circ\text{C} / 1000\,\text{m}$)
+- **Thermal Correction ($\Delta T$):** $+0.17^\circ\text{C}$ (Lapse warming: lower altitude yields slightly warmer air)
+- **Night Window (Asia/Tehran):** 18:00 (Sunset / dusk) to 08:00 (Sunrise / morning transition). $T_{\min}$ is extracted from candidate hours between 21:00 and 07:00 local time.
+
+```
+| UTC Timestamp        | Asia/Tehran Local | Raw GFS T (°C) | z_cell (m) | z_site (m) | Γ (K/m) | DEM Corrected T (°C) |
+|----------------------|-------------------|----------------|------------|------------|---------|----------------------|
+| 2026-03-20 15:00 UTC | 18:30 (غروب)      | 24.12          | 1066.3     | 1040.0     | 0.0065  | 24.29                |
+| 2026-03-20 18:00 UTC | 21:30             | 22.45          | 1066.3     | 1040.0     | 0.0065  | 22.62                |
+| 2026-03-20 21:00 UTC | 00:30 (نیمه‌شب)   | 21.30          | 1066.3     | 1040.0     | 0.0065  | 21.47                |
+| 2026-03-21 00:00 UTC | 03:30 (بامداد)    | 20.68          | 1066.3     | 1040.0     | 0.0065  | 20.85 (Tmin)         |
+| 2026-03-21 03:00 UTC | 06:30 (صبح زود)   | 21.05          | 1066.3     | 1040.0     | 0.0065  | 21.22                |
+| 2026-03-21 06:00 UTC | 09:30 (روز)       | 25.40          | 1066.3     | 1040.0     | 0.0065  | 25.57                |
+```
+

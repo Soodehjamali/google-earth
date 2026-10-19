@@ -27,7 +27,23 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import yaml
 
 from app.core.logging import get_logger
-from app.services.agriculture.frost_inputs import FactorInput, OrchardInputs
+from app.services.agriculture.frost_inputs import (
+    FactorInput,
+    OrchardInputs,
+    FACTOR_RESOLUTION_MAP,
+    FACTOR_SOURCE_FA_MAP,
+)
+
+STAGE_NAME_FA: Dict[str, str] = {
+    "dormant": "خواب زمستانه",
+    "unopened_bud": "جوانه بازنشده",
+    "swelling_bud": "جوانه در حال تورم",
+    "bud_burst": "باز شدن جوانه",
+    "bloom": "گلدهی / شکوفه بازشده",
+    "early_bloom": "اوایل گلدهی",
+    "full_bloom": "گل کامل",
+    "fruit_set": "تشکیل میوه اولیه",
+}
 
 logger = get_logger(__name__)
 
@@ -197,6 +213,8 @@ class EvaluatedFactor:
     is_stale: bool = False
     static: bool = False
     details: Dict[str, Any] = field(default_factory=dict)
+    spatial_resolution_fa: str = ""
+    source_name_fa: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -552,13 +570,14 @@ def evaluate_weighted_frost_model(
         stage_asof = stage_input.as_of if stage_input else inputs.assembled_at
 
         # If stage is stale (> 14 days), treat as unknown and use most sensitive configured stage (R4)
+        stage_name_fa = STAGE_NAME_FA.get(stage_val, stage_val)
         if stage_stale or stage_qstate == "unknown":
             s_stage = 1.0  # Most sensitive (full_bloom)
-            display_stage = f"{stage_val} (مرحله قدیمی/نامشخص)"
+            display_stage = f"{stage_name_fa} (مرحله قدیمی/نامشخص)"
             status_stage = "نامشخص"
         else:
             s_stage = _evaluate_stage_subscore(stage_val, f_stage.stage_subscores)
-            display_stage = stage_val
+            display_stage = stage_name_fa
             status_stage = _resolve_status_from_subscore(s_stage)
 
         contrib_stage = round(f_stage.weight * s_stage, 2)
@@ -612,7 +631,22 @@ def evaluate_weighted_frost_model(
             if f_moist.protective_capable and moist_qstate != "valid" and s_moist < 0.50:
                 s_moist = 0.50
             status_moist = _resolve_status_from_subscore(s_moist, is_missing=is_missing)
-            display_moist = f"{rel_moist:.2f}"
+
+            # V3: Check if dry below wilting point (real aridity vs nodata)
+            is_dry_below_wp = bool(
+                moist_input and (
+                    (moist_input.details or {}).get("below_wilting_point") or
+                    (
+                        (moist_input.details or {}).get("theta_rootzone_m3m3") is not None
+                        and (moist_input.details or {}).get("wilting_point_m3m3") is not None
+                        and float((moist_input.details or {}).get("theta_rootzone_m3m3")) < float((moist_input.details or {}).get("wilting_point_m3m3"))
+                    )
+                )
+            )
+            if is_dry_below_wp and rel_moist <= 0.001:
+                display_moist = "۰ (خشک‌تر از نقطه پژمردگی)"
+            else:
+                display_moist = f"{rel_moist:.2f}"
 
         contrib_moist = round(f_moist.weight * s_moist, 2)
         total_contribution += contrib_moist
@@ -991,6 +1025,13 @@ def evaluate_weighted_frost_model(
         else index_cat
     )
     gate_triggered = (gate_cat != "none")
+
+    # Populate canonical metadata mappings on all evaluated factors
+    for ef in evaluated_factors:
+        if not ef.spatial_resolution_fa:
+            ef.spatial_resolution_fa = FACTOR_RESOLUTION_MAP.get(ef.id, "")
+        if not ef.source_name_fa:
+            ef.source_name_fa = FACTOR_SOURCE_FA_MAP.get(ef.id, "")
 
     return WeightedRiskResult(
         night_date=night_date,

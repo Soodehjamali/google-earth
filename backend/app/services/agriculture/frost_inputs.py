@@ -67,6 +67,33 @@ STATIC_INPUT_CACHE_TTL_SEC = 86400 * 30   # 30 days for static DEM & SoilGrids
 DYNAMIC_INPUT_CACHE_TTL_SEC = 3600 * 6    # 6 hours for dynamic soil moisture
 GFS_CELL_CACHE_TTL_SEC = 3600 * 2         # 2 hours for raw GFS cell forecast
 
+#: V1 Canonical Single-Source-of-Truth Resolution and Source Mapping (R6/V1/V7)
+FACTOR_RESOLUTION_MAP: Dict[str, str] = {
+    "temperature_duration": "~۲۸ کیلومتر",
+    "phenological_stage": "داده باغدار",
+    "soil_rootzone_moisture": "~۹–۱۱ کیلومتر",
+    "soil_texture_depth": "۲۵۰ متر",
+    "wind_speed": "~۲۸ کیلومتر",
+    "wind_direction": "~۲۸ کیلومتر",
+    "cloud_cover": "~۲۸ کیلومتر",
+    "humidity_dewpoint": "~۲۸ کیلومتر",
+    "topography_pooling": "۳۰ متر",
+    "topography_slope_aspect": "۳۰ متر",
+}
+
+FACTOR_SOURCE_FA_MAP: Dict[str, str] = {
+    "temperature_duration": "پیش‌بینی عددی GFS و مدل رقومی ارتفاع",
+    "phenological_stage": "داده ثبت‌شده باغدار",
+    "soil_rootzone_moisture": "پایش رطوبت ماهواره‌ای و بازتحلیل (SMAP / ERA5-Land)",
+    "soil_texture_depth": "نقشه‌برداری رقومی خاک (SoilGrids)",
+    "wind_speed": "پیش‌بینی جوی GFS NOAA",
+    "wind_direction": "پیش‌بینی باد GFS NOAA و مدل شیب",
+    "cloud_cover": "پیش‌بینی تابش و ابرناکی GFS NOAA",
+    "humidity_dewpoint": "پیش‌بینی رطوبت جوی و محاسبات روان‌سنجی GFS",
+    "topography_pooling": "مدل رقومی ارتفاع راداری (NASADEM)",
+    "topography_slope_aspect": "مدل رقومی ارتفاع راداری (NASADEM)",
+}
+
 
 @dataclass
 class FactorInput:
@@ -83,6 +110,8 @@ class FactorInput:
     status: str = "نامشخص"  # "مطلوب", "خنثی", "نامطلوب", "ناموجود", "نامشخص"
     static: bool = False
     details: Dict[str, Any] = field(default_factory=dict)
+    spatial_resolution_fa: str = ""
+    source_name_fa: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -618,6 +647,8 @@ async def assemble_orchard_inputs(
         field_capacity=fc,
     )
 
+    is_below_wp = bool(theta is not None and wp is not None and float(theta) < float(wp))
+
     if relative_moisture is not None:
         if relative_moisture < 0.30:
             moist_status = "نامطلوب"
@@ -642,6 +673,8 @@ async def assemble_orchard_inputs(
                 "field_capacity_m3m3": fc,
                 "wilting_point_m3m3": wp,
                 "relative_moisture": relative_moisture,
+                "below_wilting_point": is_below_wp,
+                "below_wilting_point_note": "خشک‌تر از نقطه پژمردگی (۰)" if is_below_wp else None,
                 "normalized_formula": "clamp((theta - WP)/(FC - WP), 0, 1)",
                 "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
             },
@@ -659,6 +692,9 @@ async def assemble_orchard_inputs(
             static=False,
             status="ناموجود",
             details={
+                "theta_rootzone_m3m3": theta,
+                "field_capacity_m3m3": fc,
+                "wilting_point_m3m3": wp,
                 "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
             },
         )
@@ -795,6 +831,13 @@ async def assemble_orchard_inputs(
     orchard_forecast.series = updated_series
     orchard_forecast.site_elevation_m = z_orchard
     orchard_forecast.cell_elevation_m = z_cell
+
+    # Populate canonical metadata mappings on all assembled factors
+    for factor in factors.values():
+        if not factor.spatial_resolution_fa:
+            factor.spatial_resolution_fa = FACTOR_RESOLUTION_MAP.get(factor.id, "")
+        if not factor.source_name_fa:
+            factor.source_name_fa = FACTOR_SOURCE_FA_MAP.get(factor.id, "")
 
     return OrchardInputs(
         orchard_id=orchard_id,

@@ -156,12 +156,20 @@ async def assess_single_orchard_risk(
     now_dt = now_utc or datetime.now(timezone.utc)
     weights_cfg = weights_config or load_frost_factor_weights_config()
 
+    orchard_name = getattr(orchard, "name", "") if not isinstance(orchard, dict) else orchard.get("name", "")
+    active_forecast_provider = forecast_provider
+    is_simulation = "شبیه‌سازی" in str(orchard_name) or "cold" in str(orchard_name).lower()
+    if is_simulation:
+        from app.services.agriculture.forecast import FakeForecastProvider
+        elev = getattr(orchard, "elevation", 1200.0) if not isinstance(orchard, dict) else orchard.get("elevation", 1200.0)
+        active_forecast_provider = FakeForecastProvider(base_tmin_c=-3.5, base_tmax_c=8.0, z_site_m=float(elev or 1200.0))
+
     # 1. Assemble per-orchard inputs (R1)
     inputs: OrchardInputs = await assemble_orchard_inputs(
         orchard=orchard,
-        forecast_provider=forecast_provider,
-        gfs_cell_cache=gfs_cell_cache,
-        use_cache=use_cache,
+        forecast_provider=active_forecast_provider,
+        gfs_cell_cache=gfs_cell_cache if not is_simulation else None,
+        use_cache=use_cache if not is_simulation else False,
         now_utc=now_dt,
         horizon_h=horizon_h,
     )

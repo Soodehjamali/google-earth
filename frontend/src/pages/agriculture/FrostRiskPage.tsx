@@ -15,6 +15,7 @@ import FrostNightCards from '../../components/agriculture/frost/FrostNightCards'
 import ColdAirPoolingSection from '../../components/agriculture/frost/ColdAirPoolingSection';
 import DomainNavCards from '../../components/agriculture/DomainNavCards';
 import { useAgricultureContext } from '../../components/agriculture/AgricultureLayout';
+import { FACTOR_RESOLUTION_MAP, FACTOR_SOURCE_FA_MAP } from '../../types/frost';
 
 const CROP_OPTIONS = [
   { value: 'pistachio', labelFa: 'پسته' },
@@ -71,12 +72,56 @@ const CATEGORY_STYLE: Record<string, { bg: string; text: string; border: string 
   none: { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
 };
 
-const renderFactorRawValue = (val: any, unit?: string) => {
+const formatPersianDate = (dateStr?: string | null): string => {
+  if (!dateStr) return 'نامشخص';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    }).format(d);
+  } catch {
+    return dateStr;
+  }
+};
+
+const formatPersianDateTime = (dateStr?: string | null): string => {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return new Intl.DateTimeFormat('fa-IR', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(d);
+  } catch {
+    return dateStr;
+  }
+};
+
+const formatNightDisplayFa = (nightDateStr?: string | null, rawDisplay?: string | null): string => {
+  if (!nightDateStr && !rawDisplay) return 'شب نامشخص';
+  if (nightDateStr) {
+    const pDate = formatPersianDate(nightDateStr);
+    return `شب ${pDate}`;
+  }
+  return rawDisplay || '';
+};
+
+const renderFactorRawValue = (val: any, unit?: string, _factorId?: string, _details?: any) => {
   if (val === null || val === undefined || val === '—') return '—';
   if (typeof val === 'number') {
     return <FormattedNumber value={val} unit={unit || ''} />;
   }
   const str = String(val).trim();
+  if (str.includes('پژمردگی') || str.includes('شکوفه') || str.includes('جوانه') || str.includes('گل')) {
+    return str;
+  }
   if (!unit) return str;
   if (str.endsWith(unit) || str.includes(unit)) {
     return str;
@@ -183,15 +228,13 @@ export default function FrostRiskPage() {
     try {
       const data = await frostApi.getFrostOrchardsRiskSummary(horizonH, thresholdSet, showArchived);
       setSummaries(data || []);
-      if (data && data.length > 0 && !selectedOrchardId) {
-        setSelectedOrchardId(data[0].orchard_id);
-      }
+      setSelectedOrchardId((prev) => prev || (data && data.length > 0 ? data[0].orchard_id : null));
     } catch {
       // Non-blocking in dev
     } finally {
       setLoadingSummaries(false);
     }
-  }, [horizonH, thresholdSet, showArchived, selectedOrchardId]);
+  }, [horizonH, thresholdSet, showArchived]);
 
   useEffect(() => {
     loadSummaries();
@@ -426,7 +469,8 @@ export default function FrostRiskPage() {
       }));
       await loadSummaries();
       if (selectedOrchardId === orchardId) {
-        await loadOrchardRisk(orchardId);
+        const rep = await frostApi.getFrostOrchardRisk(orchardId, horizonH, thresholdSet);
+        setOrchardRiskReport(rep);
       }
     } catch (err: any) {
       setInlineStageFeedback((prev) => ({
@@ -452,7 +496,6 @@ export default function FrostRiskPage() {
         geometry: sharedGeometry,
         crop,
         default_phenology_stage: newOrchardStage,
-        current_stage: newOrchardStage,
       });
 
       if (alertRecipient.trim()) {
@@ -779,7 +822,9 @@ export default function FrostRiskPage() {
                   هیچ باغی مطابق با عبارت «{orchardSearchQuery}» یافت نشد.
                 </div>
               ) : (
-                <table className="table" style={{ width: '100%', marginBottom: 0, fontSize: '0.85rem' }}>
+                <>
+                  <div className="orchards-desktop-table-wrapper">
+                    <table className="table" style={{ width: '100%', marginBottom: 0, fontSize: '0.85rem' }}>
                   <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: '10px 12px', textAlign: 'right' }}>نام باغ</th>
@@ -797,7 +842,6 @@ export default function FrostRiskPage() {
                     {paginatedSummaries.map((item) => {
                       const isSelected = item.orchard_id === selectedOrchardId;
                       const catStyle = CATEGORY_STYLE[item.final_category] || CATEGORY_STYLE.none;
-                      const stageLabel = STAGE_NAME_MAP[item.current_stage] || item.current_stage;
 
                       return (
                         <tr
@@ -941,7 +985,8 @@ export default function FrostRiskPage() {
                                 return <span style={{ color: '#d97706' }}>نامشخص {!isResolvable && `(${cadence})`}</span>;
                               }
                               if (isResolvable) {
-                                return <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>;
+                                /* هیچ شب زیر آستانه نیست (قدیمی) / بدون ساعت زیر آستانه (V7) */
+                                return <span style={{ color: '#166534' }}>بدون ساعت زیر آستانه</span>;
                               }
                               return <span style={{ color: '#64748b' }}>نامشخص ({cadence})</span>;
                             })()}
@@ -1023,7 +1068,157 @@ export default function FrostRiskPage() {
                     })}
                   </tbody>
                 </table>
-              )}
+              </div>
+
+              {/* Mobile Cards View (V7: نام، رده، درصد، کمینه دما، مرحله، مشاهده و حذف) */}
+              <div className="orchards-mobile-cards-wrapper" data-testid="orchards-mobile-cards">
+                {paginatedSummaries.map((item) => {
+                  const isSelected = item.orchard_id === selectedOrchardId;
+                  const catStyle = CATEGORY_STYLE[item.final_category] || CATEGORY_STYLE.none;
+                  const stageLabel = STAGE_NAME_MAP[item.current_stage] || item.current_stage;
+
+                  return (
+                    <div
+                      key={item.orchard_id}
+                      data-testid={`orchard-mobile-card-${item.orchard_id}`}
+                      style={{
+                        backgroundColor: isSelected ? '#eff6ff' : '#ffffff',
+                        border: isSelected ? '2px solid #3b82f6' : '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                    >
+                      {/* Row 1: Name and Category */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1e293b' }}>
+                          <span>{item.name}</span>
+                          {/تست|test|آزمایشی|demo/i.test(item.name) && (
+                            <span
+                              style={{
+                                fontSize: '0.68rem',
+                                backgroundColor: '#fef3c7',
+                                color: '#854d0e',
+                                border: '1px solid #facc15',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                marginRight: '6px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              [آزمایشی]
+                            </span>
+                          )}
+                          {item.archived_at && (
+                            <span
+                              style={{
+                                fontSize: '0.68rem',
+                                backgroundColor: '#f1f5f9',
+                                color: '#64748b',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '4px',
+                                padding: '1px 5px',
+                                marginRight: '6px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              [بایگانی‌شده]
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.78rem',
+                            fontWeight: 600,
+                            backgroundColor: catStyle.bg,
+                            color: catStyle.text,
+                            border: `1px solid ${catStyle.border}`,
+                          }}
+                        >
+                          {item.final_category_fa}
+                        </span>
+                      </div>
+
+                      {/* Row 2: Stats Grid (Risk %, Min Temp, Stage) */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr 1fr',
+                          gap: '8px',
+                          backgroundColor: '#f8fafc',
+                          padding: '8px',
+                          borderRadius: '6px',
+                          fontSize: '0.78rem',
+                          textAlign: 'center',
+                        }}
+                      >
+                        <div>
+                          <div style={{ color: '#64748b', fontSize: '0.7rem' }}>ریسک راهنما</div>
+                          <div style={{ fontWeight: 700, color: '#0f172a', direction: 'ltr' }}>
+                            <FormattedNumber value={item.risk_index} unit="٪" />
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#64748b', fontSize: '0.7rem' }}>کمینه دما</div>
+                          <div style={{ fontWeight: 600, color: '#0f172a', direction: 'ltr' }}>
+                            {item.worst_effective_tmin_c !== null && item.worst_effective_tmin_c !== undefined ? (
+                              <FormattedNumber value={item.worst_effective_tmin_c} unit="°C" />
+                            ) : (
+                              '—'
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: '#64748b', fontSize: '0.7rem' }}>مرحله</div>
+                          <div style={{ fontWeight: 600, color: '#0f172a' }}>{stageLabel}</div>
+                        </div>
+                      </div>
+
+                      {/* Row 3: Action Buttons (View, Delete) */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
+                          onClick={() => setSelectedOrchardId(item.orchard_id)}
+                          style={{ fontSize: '0.78rem', padding: '4px 12px' }}
+                        >
+                          {isSelected ? 'در حال بررسی' : 'مشاهده 🔍'}
+                        </button>
+                        {item.archived_at ? (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-success"
+                            onClick={() => handleRestoreOrchard(item.orchard_id, item.name)}
+                            style={{ fontSize: '0.78rem', padding: '4px 12px' }}
+                          >
+                            بازگردانی 🔄
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => {
+                              setDeleteModalOrchard(item);
+                              setDeleteConfirmName('');
+                              setActionError(null);
+                            }}
+                            style={{ fontSize: '0.78rem', padding: '4px 12px' }}
+                          >
+                            حذف 🗑️
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
               {/* Delete Orchard Modal (S5, T7) */}
               {deleteModalOrchard && (
@@ -1163,9 +1358,30 @@ export default function FrostRiskPage() {
                       🏡 ارزیابی ریسک اختصاصی: {orchardRiskReport.orchard_name}
                     </h3>
                     <div style={{ fontSize: '0.8rem', color: '#475569', marginTop: '2px' }}>
-                      محصول: {orchardRiskReport.crop_fa} | دمای بحرانی مرحله:{' '}
-                      <FormattedNumber value={orchardRiskReport.critical_temperature_c} unit="°C" /> | مجموعه آستانه:{' '}
-                      {orchardRiskReport.threshold_set}
+                      محصول: {orchardRiskReport.crop_fa} | دمای بحرانی اعمال‌شده:{' '}
+                      <strong data-testid="detail-applied-critical-temp">
+                        <FormattedNumber value={orchardRiskReport.critical_temperature_c} unit="°C" />
+                      </strong>
+                      {orchardRiskReport.stage_is_stale && (
+                        <span
+                          data-testid="detail-stale-stage-critical-temp-note"
+                          style={{
+                            color: '#b45309',
+                            backgroundColor: '#fef3c7',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            marginRight: '6px',
+                            fontSize: '0.74rem',
+                            fontWeight: 600,
+                          }}
+                        >
+                          (به‌دلیل انقضای مرحله، حساس‌ترین مرحله اعمال شده است)
+                        </span>
+                      )}
+                      {' '}| مجموعه آستانه:{' '}
+                      {orchardRiskReport.threshold_set === 'published_v1'
+                        ? 'استاندارد معتبر باغداری (published_v1)'
+                        : orchardRiskReport.threshold_set}
                     </div>
                     <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                       <span>
@@ -1317,7 +1533,9 @@ export default function FrostRiskPage() {
                                 }}
                                 onClick={() => setSelectedNightDate(n.night_date)}
                               >
-                                <td style={{ padding: '6px 10px', fontWeight: 600 }}>{n.night_display_fa}</td>
+                                <td style={{ padding: '6px 10px', fontWeight: 600 }}>
+                                  {formatNightDisplayFa(n.night_date, n.night_display_fa)}
+                                </td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center', direction: 'ltr' }}>
                                   <FormattedNumber value={n.effective_tmin_c} unit="°C" />
                                 </td>
@@ -1413,7 +1631,7 @@ export default function FrostRiskPage() {
                   <div style={{ marginTop: '16px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                       <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#1e3a8a' }}>
-                        📊 تفکیک عوامل ده‌گانه مدل وزن‌دهی برای {selectedNight.night_display_fa}
+                        📊 تفکیک عوامل ده‌گانه مدل وزن‌دهی برای {formatNightDisplayFa(selectedNight.night_date, selectedNight.night_display_fa)}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
                         برچسب: ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست) | امتیازهای جزئی: برآورد کارشناسی کالیبره‌نشده
@@ -1441,20 +1659,24 @@ export default function FrostRiskPage() {
                                 {f.quality_state === 'unavailable' || f.raw_value === 'داده این باغ موجود نیست' ? (
                                   <span style={{ color: '#64748b', fontSize: '0.78rem' }}>داده این باغ موجود نیست</span>
                                 ) : (
-                                  <span style={{ unicodeBidi: 'isolate' }}>{renderFactorRawValue(f.raw_value, f.unit)}</span>
+                                  <span style={{ unicodeBidi: 'isolate' }}>{renderFactorRawValue(f.raw_value, f.unit, f.id, f.details)}</span>
                                 )}
                               </td>
                               <td style={{ padding: '8px 10px', fontSize: '0.75rem', color: '#475569' }}>
-                                <div>
-                                  {f.source_module} (
-                                  {f.quality_state === 'coarse_context'
-                                    ? 'تفکیک ~۹–۱۱ کیلومتر'
-                                    : f.quality_state === 'unavailable'
-                                    ? 'ناموجود'
-                                    : f.quality_state}
+                                <div title={f.source_module}>
+                                  {f.source_name_fa || FACTOR_SOURCE_FA_MAP[f.id] || f.source_module} (
+                                  {f.spatial_resolution_fa || FACTOR_RESOLUTION_MAP[f.id] || (
+                                    f.quality_state === 'coarse_context'
+                                      ? '~۲۸ کیلومتر'
+                                      : f.quality_state === 'unavailable'
+                                      ? 'ناموجود'
+                                      : f.quality_state
+                                  )}
                                   )
                                 </div>
-                                <div style={{ color: '#94a3b8' }}>{f.static ? 'لایه ثابت' : f.as_of}</div>
+                                <div style={{ color: '#94a3b8' }}>
+                                  {f.static ? 'لایه ثابت' : formatPersianDateTime(f.as_of)}
+                                </div>
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                 <span

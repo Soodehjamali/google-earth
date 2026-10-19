@@ -1315,3 +1315,23 @@ tr:hover td {
 .spatial-unavailable {
   margin-bottom: 12px;
 }
+
+.orchards-desktop-table-wrapper {
+  display: block;
+}
+
+.orchards-mobile-cards-wrapper {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .orchards-desktop-table-wrapper {
+    display: none !important;
+  }
+  .orchards-mobile-cards-wrapper {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+  }
+}
