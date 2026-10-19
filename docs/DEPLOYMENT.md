@@ -107,6 +107,14 @@ The backend disposes its database connection pool on shutdown.
 - For higher-security deployments, store the key in a secrets manager and
   inject the file at runtime — the code only reads `EE_PRIVATE_KEY_FILE`.
 
+## Authentication and Admin Tokens
+
+- In production, protected administrative frost endpoints require the header `X-Admin-Token: <ADMIN_API_KEY>`.
+- The frontend client does NOT provide a fallback token (`admin-secret-token` has been removed). If `VITE_ADMIN_API_KEY` is omitted in client environment variables, administrative requests will not attach an admin token, requiring explicit authenticated configuration.
+- Hardcoded fallback tokens (such as `admin-secret-token` or `dev-admin-token-2026`) are prohibited in committed repository files.
+- Production operators must configure a strong, random `ADMIN_API_KEY` in `backend/.env` and supply corresponding authorization credentials to clients via environment variables or identity gateways.
+
+
 ## EXTERNAL EGRESS REQUIREMENT
 
 Earth Engine requires outbound HTTPS from the backend host to:

@@ -80,6 +80,8 @@ class FrostWeightedModelConfig:
     index_is_probability: bool = False
     thresholds_verified: bool = False
 
+    temperature_necessity: Dict[str, Any] = field(default_factory=dict)
+
     def get_factor(self, factor_id: str) -> Optional[FrostFactorRow]:
         for f in self.factors:
             if f.id == factor_id:
@@ -154,6 +156,14 @@ def load_frost_factor_weights_config(
         "warning_max": 70.0,
     })
     cold_sectors = data.get("cold_advection_sectors", [])
+    temp_necessity = data.get("temperature_necessity_attenuation", {
+        "label_fa": "تعدیل‌گر شرط لازم دما (placeholder کالیبره‌نشده)",
+        "status": "placeholder کالیبره‌نشده",
+        "source_note": "برآورد کارشناسی کالیبره‌نشده",
+        "margin_safe_c": 4.0,
+        "margin_warm_c": 10.0,
+        "m_min": 0.10,
+    })
 
     return FrostWeightedModelConfig(
         factors=parsed_factors,
@@ -163,6 +173,7 @@ def load_frost_factor_weights_config(
         evidence_level=str(data.get("evidence_level", "C")),
         index_is_probability=bool(data.get("index_is_probability", False)),
         thresholds_verified=bool(data.get("thresholds_verified", False)),
+        temperature_necessity=temp_necessity,
     )
 
 
@@ -176,14 +187,15 @@ class EvaluatedFactor:
     unit: str
     source_module: str
     quality_state: str
-    as_of: str
-    status: str          # مطلوب / خنثی / نامطلوب / نامشخص
+    as_of: Optional[str]
+    status: str          # مطلوب / خنثی / نامطلوب / ناموجود / نامشخص
     weight: float        # e.g. 40.0, 25.0, etc.
     subscore: float      # in [0, 1]
     contribution: float  # round(weight * subscore, 2)
     applied: bool
     source_note: str
     is_stale: bool = False
+    static: bool = False
     details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -207,6 +219,9 @@ class WeightedRiskResult:
     total_contribution: float      # Exactly matches risk_index
     effective_tmin_c: float
     critical_temperature_c: float
+    raw_risk_index: float = 0.0
+    necessity_multiplier: float = 1.0
+    necessity_margin_c: float = 0.0
     illustrative_only: bool = True
     index_is_probability: bool = False
     thresholds_verified: bool = False
@@ -218,8 +233,12 @@ class WeightedRiskResult:
         return res
 
 
-def _resolve_status_from_subscore(subscore: float, is_missing: bool = False) -> str:
+def _resolve_status_from_subscore(
+    subscore: float, is_missing: bool = False, is_unavailable: bool = False
+) -> str:
     """Map subscore in [0, 1] to Persian status label."""
+    if is_unavailable:
+        return "ناموجود"
     if is_missing:
         return "نامشخص"
     if subscore < 0.40:
@@ -503,7 +522,7 @@ def evaluate_weighted_frost_model(
                 raw_value=f"{night_tmin_c:.1f} °C (آستانه {critical_temp_c:.1f} °C)",
                 unit="°C",
                 source_module=f_temp.source_module,
-                quality_state="valid",
+                quality_state="coarse_context",
                 as_of=inputs.assembled_at,
                 status=status_temp,
                 weight=f_temp.weight,
@@ -574,21 +593,30 @@ def evaluate_weighted_frost_model(
     if f_moist:
         moist_input = inputs.factors.get("soil_rootzone_moisture")
         rel_moist = moist_input.value if moist_input else None
-        moist_qstate = moist_input.quality_state if moist_input else "unknown"
-        moist_asof = moist_input.as_of if moist_input else inputs.assembled_at
+        moist_qstate = moist_input.quality_state if moist_input else "unavailable"
+        moist_asof = moist_input.as_of if moist_input else None
         moist_stale = moist_input.is_stale if moist_input else False
+        moist_static = getattr(moist_input, "static", False) if moist_input else False
 
-        s_moist, is_missing = _evaluate_moisture_subscore(rel_moist)
-
-        # Asymmetry Floor: coarse_context cannot score below 0.50
-        if f_moist.protective_capable and moist_qstate != "valid" and s_moist < 0.50:
+        if moist_qstate == "unavailable":
             s_moist = 0.50
+            status_moist = "ناموجود"
+            display_moist = "داده این باغ موجود نیست"
+        elif rel_moist is None:
+            s_moist = 0.50
+            status_moist = "نامشخص"
+            display_moist = "نامشخص"
+        else:
+            s_moist, is_missing = _evaluate_moisture_subscore(rel_moist)
+            # Asymmetry Floor: coarse_context cannot score below 0.50
+            if f_moist.protective_capable and moist_qstate != "valid" and s_moist < 0.50:
+                s_moist = 0.50
+            status_moist = _resolve_status_from_subscore(s_moist, is_missing=is_missing)
+            display_moist = f"{rel_moist:.2f}"
 
-        status_moist = _resolve_status_from_subscore(s_moist, is_missing=is_missing)
         contrib_moist = round(f_moist.weight * s_moist, 2)
         total_contribution += contrib_moist
 
-        display_moist = f"{rel_moist:.2f}" if rel_moist is not None else "نامشخص"
         evaluated_factors.append(
             EvaluatedFactor(
                 id="soil_rootzone_moisture",
@@ -605,6 +633,7 @@ def evaluate_weighted_frost_model(
                 applied=True,
                 source_note=f_moist.source_note,
                 is_stale=moist_stale,
+                static=moist_static,
                 details=moist_input.details if moist_input else {},
             )
         )
@@ -615,18 +644,25 @@ def evaluate_weighted_frost_model(
     f_texture = cfg.get_factor("soil_texture_depth")
     if f_texture:
         tex_input = inputs.factors.get("soil_texture_depth")
-        tex_val = tex_input.value if tex_input else "لوم"
-        tex_qstate = tex_input.quality_state if tex_input else "coarse_context"
-        tex_asof = tex_input.as_of if tex_input else "2020-01-01T00:00:00Z"
-        sand_pct = (tex_input.details or {}).get("sand_percent") if tex_input else 40.0
+        tex_val = tex_input.value if tex_input else None
+        tex_qstate = tex_input.quality_state if tex_input else "unavailable"
+        tex_asof = tex_input.as_of if tex_input else None
+        tex_static = getattr(tex_input, "static", True) if tex_input else True
+        sand_pct = (tex_input.details or {}).get("sand_percent") if tex_input else None
 
-        s_tex = _evaluate_texture_subscore(str(tex_val), sand_pct, f_texture.texture_subscores)
-
-        # Asymmetry Floor: coarse_context cannot score below 0.50
-        if f_texture.protective_capable and tex_qstate != "valid" and s_tex < 0.50:
+        if tex_qstate == "unavailable" or tex_val is None:
             s_tex = 0.50
+            status_tex = "ناموجود"
+            display_tex = "داده این باغ موجود نیست"
+            tex_qstate = "unavailable"
+        else:
+            s_tex = _evaluate_texture_subscore(str(tex_val), sand_pct, f_texture.texture_subscores)
+            # Asymmetry Floor: coarse_context cannot score below 0.50
+            if f_texture.protective_capable and tex_qstate != "valid" and s_tex < 0.50:
+                s_tex = 0.50
+            status_tex = _resolve_status_from_subscore(s_tex)
+            display_tex = f"{tex_val} (شن {sand_pct:.0f}٪)" if sand_pct is not None else str(tex_val)
 
-        status_tex = _resolve_status_from_subscore(s_tex)
         contrib_tex = round(f_texture.weight * s_tex, 2)
         total_contribution += contrib_tex
 
@@ -634,7 +670,7 @@ def evaluate_weighted_frost_model(
             EvaluatedFactor(
                 id="soil_texture_depth",
                 label_fa=f_texture.label_fa,
-                raw_value=f"{tex_val} (شن {sand_pct:.0f}٪)",
+                raw_value=display_tex,
                 unit="رده بافت خاک",
                 source_module=f_texture.source_module,
                 quality_state=tex_qstate,
@@ -646,6 +682,7 @@ def evaluate_weighted_frost_model(
                 applied=True,
                 source_note=f_texture.source_note,
                 is_stale=False,
+                static=tex_static,
                 details=tex_input.details if tex_input else {},
             )
         )
@@ -793,9 +830,21 @@ def evaluate_weighted_frost_model(
     f_pool = cfg.get_factor("topography_pooling")
     if f_pool:
         pool_input = inputs.factors.get("topography_pooling")
-        pool_val = pool_input.value if pool_input else 0.40
-        s_pool, is_missing_pool = _evaluate_pooling_subscore(pool_val)
-        status_pool = _resolve_status_from_subscore(s_pool, is_missing=is_missing_pool)
+        pool_val = pool_input.value if pool_input else None
+        pool_qstate = pool_input.quality_state if pool_input else "unavailable"
+        pool_asof = pool_input.as_of if pool_input else None
+        pool_static = getattr(pool_input, "static", True) if pool_input else True
+
+        if pool_qstate == "unavailable" or pool_val is None:
+            s_pool = 0.50
+            status_pool = "ناموجود"
+            display_pool = "داده این باغ موجود نیست"
+            pool_qstate = "unavailable"
+        else:
+            s_pool, is_missing_pool = _evaluate_pooling_subscore(pool_val)
+            status_pool = _resolve_status_from_subscore(s_pool, is_missing=is_missing_pool)
+            display_pool = f"{pool_val:.2f}"
+
         contrib_pool = round(f_pool.weight * s_pool, 2)
         total_contribution += contrib_pool
 
@@ -803,11 +852,11 @@ def evaluate_weighted_frost_model(
             EvaluatedFactor(
                 id="topography_pooling",
                 label_fa=f_pool.label_fa,
-                raw_value=f"{pool_val:.2f}",
+                raw_value=display_pool,
                 unit="شاخص [۰-۱]",
                 source_module=f_pool.source_module,
-                quality_state="valid",
-                as_of=pool_input.as_of if pool_input else "2020-01-01T00:00:00Z",
+                quality_state=pool_qstate,
+                as_of=pool_asof,
                 status=status_pool,
                 weight=f_pool.weight,
                 subscore=s_pool,
@@ -815,7 +864,8 @@ def evaluate_weighted_frost_model(
                 applied=True,
                 source_note=f_pool.source_note,
                 is_stale=False,
-                details={"pooling_proxy": pool_val},
+                static=pool_static,
+                details=pool_input.details if pool_input else {},
             )
         )
 
@@ -825,9 +875,21 @@ def evaluate_weighted_frost_model(
     f_slope = cfg.get_factor("topography_slope_aspect")
     if f_slope:
         slope_input = inputs.factors.get("topography_slope_aspect")
-        slope_val = slope_input.value if slope_input else 2.0
-        s_slope, is_missing_slope = _evaluate_slope_subscore(slope_val)
-        status_slope = _resolve_status_from_subscore(s_slope, is_missing=is_missing_slope)
+        slope_val = slope_input.value if slope_input else None
+        slope_qstate = slope_input.quality_state if slope_input else "unavailable"
+        slope_asof = slope_input.as_of if slope_input else None
+        slope_static = getattr(slope_input, "static", True) if slope_input else True
+
+        if slope_qstate == "unavailable" or slope_val is None:
+            s_slope = 0.50
+            status_slope = "ناموجود"
+            display_slope = "داده این باغ موجود نیست"
+            slope_qstate = "unavailable"
+        else:
+            s_slope, is_missing_slope = _evaluate_slope_subscore(slope_val)
+            status_slope = _resolve_status_from_subscore(s_slope, is_missing=is_missing_slope)
+            display_slope = f"{slope_val:.1f}°"
+
         contrib_slope = round(f_slope.weight * s_slope, 2)
         total_contribution += contrib_slope
 
@@ -835,11 +897,11 @@ def evaluate_weighted_frost_model(
             EvaluatedFactor(
                 id="topography_slope_aspect",
                 label_fa=f_slope.label_fa,
-                raw_value=f"{slope_val:.1f}°",
+                raw_value=display_slope,
                 unit="درجه",
                 source_module=f_slope.source_module,
-                quality_state="valid",
-                as_of=slope_input.as_of if slope_input else "2020-01-01T00:00:00Z",
+                quality_state=slope_qstate,
+                as_of=slope_asof,
                 status=status_slope,
                 weight=f_slope.weight,
                 subscore=s_slope,
@@ -847,14 +909,46 @@ def evaluate_weighted_frost_model(
                 applied=True,
                 source_note=f_slope.source_note,
                 is_stale=False,
+                static=slope_static,
                 details=slope_input.details if slope_input else {},
             )
         )
 
     # -------------------------------------------------------------------------
-    # Aggregation & Verification
     # -------------------------------------------------------------------------
-    total_contribution = round(total_contribution, 2)
+    # S3: Temperature as a Necessary Condition (تعدیل‌گر شرط لازم دما)
+    # margin = Tmin_eff - T_crit
+    # m = 1.0 when margin <= margin_safe_c (4.0 °C)
+    # Linear attenuation from 1.0 down to m_min (0.10) between 4.0 °C and 10.0 °C
+    # m = 0.10 when margin >= margin_warm_c (10.0 °C)
+    # index_final = index * m
+    # -------------------------------------------------------------------------
+    margin_c = round(night_tmin_c - critical_temp_c, 2)
+    t_nec_cfg = cfg.temperature_necessity or {}
+    safe_margin = float(t_nec_cfg.get("margin_safe_c", 4.0))
+    warm_margin = float(t_nec_cfg.get("margin_warm_c", 10.0))
+    m_min = float(t_nec_cfg.get("m_min", 0.10))
+
+    if margin_c <= safe_margin:
+        m_attenuation = 1.0
+    elif margin_c >= warm_margin:
+        m_attenuation = m_min
+    else:
+        frac = (margin_c - safe_margin) / (warm_margin - safe_margin)
+        m_attenuation = 1.0 - frac * (1.0 - m_min)
+
+    m_attenuation = round(max(m_min, min(1.0, m_attenuation)), 4)
+    raw_risk_index = round(total_contribution, 2)
+
+    if m_attenuation < 1.0:
+        for ef in evaluated_factors:
+            ef.details["raw_contribution"] = ef.contribution
+            ef.details["necessity_multiplier"] = m_attenuation
+            ef.contribution = round(ef.contribution * m_attenuation, 2)
+        total_contribution = round(sum(ef.contribution for ef in evaluated_factors), 2)
+    else:
+        total_contribution = raw_risk_index
+
     risk_index = max(0.0, min(100.0, total_contribution))
 
     # Evaluate Index Category from Category Bands
@@ -912,6 +1006,9 @@ def evaluate_weighted_frost_model(
         total_contribution=total_contribution,
         effective_tmin_c=night_tmin_c,
         critical_temperature_c=critical_temp_c,
+        raw_risk_index=raw_risk_index,
+        necessity_multiplier=m_attenuation,
+        necessity_margin_c=margin_c,
         illustrative_only=cfg.illustrative_only,
         index_is_probability=cfg.index_is_probability,
         thresholds_verified=cfg.thresholds_verified,

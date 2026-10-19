@@ -51,7 +51,7 @@ logger = get_logger(__name__)
 #: Configurable staleness thresholds in hours
 DEFAULT_MAX_FACTOR_AGE_HOURS: Dict[str, float] = {
     "temperature_duration": 6.0,          # Forecast data refreshed within 6 hours
-    "phenological_stage": 14.0 * 24.0,     # User-entered stage valid for 14 days (336h)
+    "phenological_stage": 14.0 * 24.0,     # User-entered stage valid for 14 days (336h) per R4
     "soil_rootzone_moisture": 120.0,       # Satellite/assimilated soil moisture lag (5 days)
     "soil_texture_depth": 365.0 * 24.0,    # Static soil map (1 year)
     "wind_speed": 6.0,
@@ -77,10 +77,11 @@ class FactorInput:
     value: Any
     unit: str
     source_module: str
-    quality_state: str  # "valid", "coarse_context", "unknown"
-    as_of: str          # ISO 8601 UTC timestamp
+    quality_state: str  # "valid", "coarse_context", "unavailable", "unknown"
+    as_of: Optional[str]  # ISO 8601 UTC timestamp or None
     is_stale: bool
-    status: str = "نامشخص"  # "مطلوب", "خنثی", "نامطلوب", "نامشخص"
+    status: str = "نامشخص"  # "مطلوب", "خنثی", "نامطلوب", "ناموجود", "نامشخص"
+    static: bool = False
     details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -102,6 +103,10 @@ class OrchardInputs:
     crop: str = "pistachio"
     current_stage: str = "unopened_bud"
     stage_is_stale: bool = False
+    registered_elevation_m: Optional[float] = None
+    dem_elevation_m: Optional[float] = None
+    has_elevation_discrepancy: bool = False
+    elevation_discrepancy_warning_fa: Optional[str] = None
     orchard_forecast: Optional[ForecastResult] = None
     raw_cell_forecast: Optional[ForecastResult] = None
 
@@ -152,7 +157,8 @@ def normalize_rootzone_moisture(
     Formula:
         relative = clamp((theta - WP) / (FC - WP), 0.0, 1.0)
 
-    If FC or WP are missing, or (FC - WP) <= 0, returns None ('نامشخص' / neutral).
+    If theta, FC, or WP are missing, non-positive, or NaN, or (FC - WP) <= 0,
+    returns None ('ناموجود' / unavailable). Nodata or invalid values NEVER default to 0.00.
     """
     if theta is None or wilting_point is None or field_capacity is None:
         return None
@@ -162,9 +168,12 @@ def normalize_rootzone_moisture(
         fc = float(field_capacity)
         if math.isnan(th) or math.isnan(wp) or math.isnan(fc):
             return None
+        # Strict physical validity bounds: moisture fractions must be > 0
+        if th <= 0.0 or wp <= 0.0 or fc <= 0.0:
+            logger.warning(f"Invalid non-positive soil moisture value: theta={th}, WP={wp}, FC={fc}")
+            return None
         denom = fc - wp
         if denom <= 1e-5:
-            # Physical anomaly: Field capacity must exceed wilting point
             logger.warning(f"Invalid soil moisture bounds: FC={fc} <= WP={wp}")
             return None
         rel = (th - wp) / denom
@@ -218,11 +227,37 @@ def _can_query_ee() -> bool:
     import os
     if os.environ.get("RUN_GEE_INTEGRATION_TESTS", "").lower() in ("1", "true", "yes"):
         return True
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return False
     try:
         from app.core.config import settings
-        return getattr(settings, "ENVIRONMENT", "") == "production"
+        return bool(
+            getattr(settings, "USE_LIVE_GEE", False)
+            or getattr(settings, "FROST_USE_LIVE_GEE", False)
+            or getattr(settings, "is_production", False)
+        )
     except Exception:
         return False
+
+
+def extract_terrain_aspect_ee(geom_dict: Dict[str, Any]) -> Optional[float]:
+    """Sample terrain aspect from NASADEM in Earth Engine for given geometry."""
+    import ee
+    from app.services.earth_engine.authentication import initialize_earth_engine
+    from app.services.agriculture.terrain import NASADEM
+
+    initialize_earth_engine()
+    dem_img = ee.Image(NASADEM).select(["elevation"])
+    aspect_img = ee.Terrain.aspect(dem_img)
+    if geom_dict.get("type") == "Point":
+        pt_ee = ee.Geometry.Point(geom_dict["coordinates"])
+        asp_stats = aspect_img.reduceRegion(reducer=ee.Reducer.mean(), geometry=pt_ee, scale=30).getInfo()
+    else:
+        poly_ee = ee.Geometry(geom_dict)
+        asp_stats = aspect_img.reduceRegion(reducer=ee.Reducer.mean(), geometry=poly_ee, scale=30, bestEffort=True).getInfo()
+    if asp_stats and asp_stats.get("aspect") is not None:
+        return round(float(asp_stats["aspect"]), 1)
+    return None
 
 
 async def assemble_orchard_inputs(
@@ -320,7 +355,7 @@ async def assemble_orchard_inputs(
             "stage_key": current_stage,
             "stage_updated_at": stage_updated_at_iso,
             "is_stale": stage_is_stale,
-            "stale_reason_fa": "مرحله قدیمی/نامشخص (بیش از ۱۴ روز گذشته است)" if stage_is_stale else None,
+            "stale_reason_fa": "مرحله منقضی (بیش از ۲۰ روز گذشته است)" if stage_is_stale else None,
         },
     )
 
@@ -335,59 +370,136 @@ async def assemble_orchard_inputs(
             terrain_data = None
 
     if terrain_data is None:
-        pooling_proxy = 0.40  # Neutral baseline default
-        slope_deg = 2.0
-        aspect_deg = 180.0
+        pooling_proxy = None
+        slope_deg = None
+        aspect_deg = None
+        dem_elevation_m = None
 
         if _can_query_ee():
             try:
                 from app.services.agriculture.cold_air_pooling import calculate_cold_air_pooling_ee
                 pooling_res = calculate_cold_air_pooling_ee(geom_dict)
-                pooling_proxy = round(float(pooling_res.pooling_risk_proxy), 3)
+                pooling_proxy = round(float(pooling_res.mean_pooling_risk_proxy), 3)
+                slope_deg = round(float(pooling_res.mean_slope_deg), 1)
+                dem_elevation_m = round(float(pooling_res.mean_elevation_m), 1)
             except Exception as exc:
+                exc_str = str(exc).lower()
+                if any(err in exc_str for err in ["quota", "permission", "credential", "403", "401"]) or ("auth" in exc_str and "not initialized" not in exc_str):
+                    raise
                 logger.warning(f"Could not compute pooling proxy via Earth Engine: {exc}")
+                pooling_proxy = None
+
+            try:
+                aspect_deg = extract_terrain_aspect_ee(geom_dict)
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                if any(err in exc_str for err in ["quota", "permission", "credential", "403", "401"]) or ("auth" in exc_str and "not initialized" not in exc_str):
+                    raise
+                logger.warning(f"Could not compute aspect via Earth Engine: {exc}")
+                aspect_deg = None
 
         terrain_data = {
             "pooling_proxy": pooling_proxy,
             "slope_deg": slope_deg,
             "aspect_deg": aspect_deg,
-            "elevation_m": elevation_m,
-            "as_of": "2020-01-01T00:00:00Z",  # NASADEM baseline
+            "elevation_m": dem_elevation_m,
+            "static": True,
+            "as_of": None,
         }
-        if use_cache:
+        if use_cache and pooling_proxy is not None:
             try:
                 cache_service.set(terrain_cache_key, terrain_data, ttl=STATIC_INPUT_CACHE_TTL_SEC)
             except Exception:
                 pass
 
-    pooling_val = terrain_data.get("pooling_proxy", 0.40)
-    factors["topography_pooling"] = FactorInput(
-        id="topography_pooling",
-        label_fa="شاخص تجمیع هوای سرد",
-        value=pooling_val,
-        unit="شاخص (۰-۱)",
-        source_module="app.services.agriculture.cold_air_pooling",
-        quality_state="valid",
-        as_of=terrain_data.get("as_of", "2020-01-01T00:00:00Z"),
-        is_stale=False,
-        status="نامطلوب" if pooling_val >= 0.60 else ("مطلوب" if pooling_val < 0.30 else "خنثی"),
-        details={"pooling_proxy": pooling_val},
-    )
+    pooling_val = terrain_data.get("pooling_proxy")
+    if pooling_val is not None:
+        p_f = float(pooling_val)
+        factors["topography_pooling"] = FactorInput(
+            id="topography_pooling",
+            label_fa="شاخص تجمیع هوای سرد",
+            value=round(p_f, 3),
+            unit="شاخص (۰-۱)",
+            source_module="app.services.agriculture.cold_air_pooling",
+            quality_state="valid",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="نامطلوب" if p_f >= 0.60 else ("مطلوب" if p_f < 0.30 else "خنثی"),
+            details={"pooling_proxy": round(p_f, 3)},
+        )
+    else:
+        factors["topography_pooling"] = FactorInput(
+            id="topography_pooling",
+            label_fa="شاخص تجمیع هوای سرد",
+            value=None,
+            unit="شاخص (۰-۱)",
+            source_module="app.services.agriculture.cold_air_pooling",
+            quality_state="unavailable",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="ناموجود",
+            details={},
+        )
 
-    slope_val = float(terrain_data.get("slope_deg", 2.0))
-    aspect_val = float(terrain_data.get("aspect_deg", 180.0))
-    factors["topography_slope_aspect"] = FactorInput(
-        id="topography_slope_aspect",
-        label_fa="شیب و جهت دامنه",
-        value=slope_val,
-        unit="درجه",
-        source_module="app.services.agriculture.terrain",
-        quality_state="valid",
-        as_of=terrain_data.get("as_of", "2020-01-01T00:00:00Z"),
-        is_stale=False,
-        status="مطلوب" if slope_val > 5.0 else ("نامطلوب" if slope_val < 1.5 else "خنثی"),
-        details={"slope_deg": slope_val, "aspect_deg": aspect_val},
-    )
+    slope_val = terrain_data.get("slope_deg")
+    aspect_val = terrain_data.get("aspect_deg")
+    if slope_val is not None:
+        s_f = float(slope_val)
+        asp_f = float(aspect_val) if aspect_val is not None else 0.0
+        factors["topography_slope_aspect"] = FactorInput(
+            id="topography_slope_aspect",
+            label_fa="شیب و جهت دامنه",
+            value=round(s_f, 1),
+            unit="درجه",
+            source_module="app.services.agriculture.terrain",
+            quality_state="valid",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="مطلوب" if s_f > 5.0 else ("نامطلوب" if s_f < 1.5 else "خنثی"),
+            details={"slope_deg": round(s_f, 1), "aspect_deg": round(asp_f, 1)},
+        )
+    else:
+        factors["topography_slope_aspect"] = FactorInput(
+            id="topography_slope_aspect",
+            label_fa="شیب و جهت دامنه",
+            value=None,
+            unit="درجه",
+            source_module="app.services.agriculture.terrain",
+            quality_state="unavailable",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="ناموجود",
+            details={},
+        )
+
+    # T5: Elevation reconciliation with NASADEM 30m
+    registered_elevation_m = elevation_m
+    dem_elev = terrain_data.get("elevation_m")
+    dem_elevation_m = float(dem_elev) if dem_elev is not None else None
+
+    # Temperature calculation strictly uses DEM elevation when available
+    if dem_elevation_m is not None:
+        calculation_elevation_m = dem_elevation_m
+    else:
+        calculation_elevation_m = float(registered_elevation_m) if registered_elevation_m is not None else 1000.0
+
+    has_elevation_discrepancy = False
+    elevation_discrepancy_warning_fa = None
+    if registered_elevation_m is not None and dem_elevation_m is not None:
+        elev_diff = abs(registered_elevation_m - dem_elevation_m)
+        if elev_diff > 150.0:
+            has_elevation_discrepancy = True
+            elevation_discrepancy_warning_fa = (
+                f"ناهمخوانی با DEM: ارتفاع ثبت‌شده ({registered_elevation_m:.0f} متر) با "
+                f"مدل رقومی ۳۰ متری NASADEM ({dem_elevation_m:.0f} متر) {elev_diff:.0f} متر "
+                f"اختلاف دارد؛ محاسبات دما بر پایه ارتفاع DEM انجام شد."
+            )
+
+    elevation_m = calculation_elevation_m
 
     # -------------------------------------------------------------------------
     # 3. Static Soil Properties (SoilGrids 250m) & Dynamic Moisture
@@ -425,16 +537,29 @@ async def assemble_orchard_inputs(
                 clay_val = (props.get("clay") or {}).get("root_zone_value")
 
                 if soil_static_data is None:
-                    soil_static_data = {
-                        "field_capacity": fc_val,
-                        "wilting_point": wp_val,
-                        "class_en": texture_info.get("class_en", "Loam"),
-                        "class_fa": texture_info.get("class_fa", "لوم"),
-                        "sand_pct": sand_val if sand_val is not None else 40.0,
-                        "clay_pct": clay_val if clay_val is not None else 20.0,
-                        "as_of": "2020-01-01T00:00:00Z",
-                    }
-                    if use_cache:
+                    if fc_val is not None and wp_val is not None:
+                        soil_static_data = {
+                            "field_capacity": float(fc_val),
+                            "wilting_point": float(wp_val),
+                            "class_en": texture_info.get("class_en"),
+                            "class_fa": texture_info.get("class_fa"),
+                            "sand_pct": float(sand_val) if sand_val is not None else None,
+                            "clay_pct": float(clay_val) if clay_val is not None else None,
+                            "static": True,
+                            "as_of": None,
+                        }
+                    else:
+                        soil_static_data = {
+                            "field_capacity": None,
+                            "wilting_point": None,
+                            "class_en": None,
+                            "class_fa": None,
+                            "sand_pct": None,
+                            "clay_pct": None,
+                            "static": True,
+                            "as_of": None,
+                        }
+                    if use_cache and fc_val is not None:
                         try:
                             cache_service.set(soil_static_cache_key, soil_static_data, ttl=STATIC_INPUT_CACHE_TTL_SEC)
                         except Exception:
@@ -445,44 +570,47 @@ async def assemble_orchard_inputs(
                     root_moist = (moist_dict.get("rootzone") or {}).get("value")
                     moist_as_of = (moist_dict.get("rootzone") or {}).get("as_of") or now_iso
                     soil_dynamic_data = {
-                        "theta_rootzone": root_moist,
-                        "as_of": moist_as_of,
+                        "theta_rootzone": float(root_moist) if root_moist is not None else None,
+                        "as_of": moist_as_of if root_moist is not None else None,
                     }
-                    if use_cache:
+                    if use_cache and root_moist is not None:
                         try:
                             cache_service.set(soil_dynamic_cache_key, soil_dynamic_data, ttl=DYNAMIC_INPUT_CACHE_TTL_SEC)
                         except Exception:
                             pass
 
             except Exception as exc:
+                exc_str = str(exc).lower()
+                if any(err in exc_str for err in ["quota", "auth", "permission", "credential", "403", "401"]):
+                    raise
                 logger.warning(f"Could not compute soil intelligence via Earth Engine: {exc}")
 
         if soil_static_data is None:
             soil_static_data = {
-                "field_capacity": 0.25,
-                "wilting_point": 0.12,
-                "class_en": "Loam",
-                "class_fa": "لوم",
-                "sand_pct": 40.0,
-                "clay_pct": 20.0,
-                "as_of": "2020-01-01T00:00:00Z",
+                "field_capacity": None,
+                "wilting_point": None,
+                "class_en": None,
+                "class_fa": None,
+                "sand_pct": None,
+                "clay_pct": None,
+                "static": True,
+                "as_of": None,
             }
         if soil_dynamic_data is None:
             soil_dynamic_data = {
-                "theta_rootzone": 0.18,
-                "as_of": now_iso,
+                "theta_rootzone": None,
+                "as_of": None,
             }
-
 
     fc = soil_static_data.get("field_capacity")
     wp = soil_static_data.get("wilting_point")
     theta = soil_dynamic_data.get("theta_rootzone")
-    moist_as_of = soil_dynamic_data.get("as_of", now_iso)
+    moist_as_of = soil_dynamic_data.get("as_of")
     moist_stale = is_timestamp_stale(
         moist_as_of,
         max_age_hours=DEFAULT_MAX_FACTOR_AGE_HOURS["soil_rootzone_moisture"],
         now=now_dt,
-    )
+    ) if moist_as_of else False
 
     relative_moisture = normalize_rootzone_moisture(
         theta=theta,
@@ -490,7 +618,6 @@ async def assemble_orchard_inputs(
         field_capacity=fc,
     )
 
-    moist_status = "نامشخص"
     if relative_moisture is not None:
         if relative_moisture < 0.30:
             moist_status = "نامطلوب"
@@ -499,45 +626,80 @@ async def assemble_orchard_inputs(
         else:
             moist_status = "خنثی"
 
-    factors["soil_rootzone_moisture"] = FactorInput(
-        id="soil_rootzone_moisture",
-        label_fa="رطوبت نسبی ریشه در خاک",
-        value=relative_moisture,
-        unit="نسبی (۰-۱)",
-        source_module="app.services.agriculture.soil",
-        quality_state="coarse_context" if relative_moisture is not None else "unknown",
-        as_of=moist_as_of,
-        is_stale=moist_stale,
-        status=moist_status,
-        details={
-            "theta_rootzone_m3m3": theta,
-            "field_capacity_m3m3": fc,
-            "wilting_point_m3m3": wp,
-            "relative_moisture": relative_moisture,
-            "normalized_formula": "clamp((theta - WP)/(FC - WP), 0, 1)",
-        },
-    )
+        factors["soil_rootzone_moisture"] = FactorInput(
+            id="soil_rootzone_moisture",
+            label_fa="رطوبت نسبی ریشه در خاک",
+            value=relative_moisture,
+            unit="نسبی (۰-۱)",
+            source_module="app.services.agriculture.soil",
+            quality_state="coarse_context",
+            as_of=moist_as_of,
+            is_stale=moist_stale,
+            static=False,
+            status=moist_status,
+            details={
+                "theta_rootzone_m3m3": theta,
+                "field_capacity_m3m3": fc,
+                "wilting_point_m3m3": wp,
+                "relative_moisture": relative_moisture,
+                "normalized_formula": "clamp((theta - WP)/(FC - WP), 0, 1)",
+                "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
+            },
+        )
+    else:
+        factors["soil_rootzone_moisture"] = FactorInput(
+            id="soil_rootzone_moisture",
+            label_fa="رطوبت نسبی ریشه در خاک",
+            value=None,
+            unit="نسبی (۰-۱)",
+            source_module="app.services.agriculture.soil",
+            quality_state="unavailable",
+            as_of=moist_as_of,
+            is_stale=False,
+            static=False,
+            status="ناموجود",
+            details={
+                "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
+            },
+        )
 
-    sand_pct = float(soil_static_data.get("sand_pct", 40.0))
-    class_fa = soil_static_data.get("class_fa", "لوم")
-    is_light = sand_pct > 70.0
-    factors["soil_texture_depth"] = FactorInput(
-        id="soil_texture_depth",
-        label_fa="بافت و عمق خاک",
-        value=class_fa,
-        unit="رده بافت USDA",
-        source_module="app.services.agriculture.soil_intelligence",
-        quality_state="coarse_context",
-        as_of=soil_static_data.get("as_of", "2020-01-01T00:00:00Z"),
-        is_stale=False,
-        status="نامطلوب" if is_light else ("مطلوب" if sand_pct < 35.0 else "خنثی"),
-        details={
-            "class_en": soil_static_data.get("class_en", "Loam"),
-            "class_fa": class_fa,
-            "sand_percent": sand_pct,
-            "clay_percent": soil_static_data.get("clay_pct", 20.0),
-        },
-    )
+    sand_pct = soil_static_data.get("sand_pct")
+    class_fa = soil_static_data.get("class_fa")
+    if class_fa is not None:
+        is_light = sand_pct > 70.0 if sand_pct is not None else False
+        factors["soil_texture_depth"] = FactorInput(
+            id="soil_texture_depth",
+            label_fa="بافت و عمق خاک",
+            value=class_fa,
+            unit="رده بافت USDA",
+            source_module="app.services.agriculture.soil_intelligence",
+            quality_state="coarse_context",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="نامطلوب" if is_light else ("مطلوب" if (sand_pct is not None and sand_pct < 35.0) else "خنثی"),
+            details={
+                "class_en": soil_static_data.get("class_en"),
+                "class_fa": class_fa,
+                "sand_percent": sand_pct,
+                "clay_percent": soil_static_data.get("clay_pct"),
+                "spatial_resolution_note": "تفکیک ۲۵۰ متری SoilGrids (مدل آماری بافت خاک، بدون نمونه‌برداری آزمایشگاهی میدانی)",
+            },
+        )
+    else:
+        factors["soil_texture_depth"] = FactorInput(
+            id="soil_texture_depth",
+            label_fa="بافت و عمق خاک",
+            value=None,
+            unit="رده بافت USDA",
+            source_module="app.services.agriculture.soil_intelligence",
+            quality_state="unavailable",
+            as_of=None,
+            is_stale=False,
+            static=True,
+            status="ناموجود",
+            details={},
+        )
 
     # -------------------------------------------------------------------------
     # 4. GFS Forecast: Cell-Level Shared Fetch & Per-Orchard Elevation Correction
@@ -646,6 +808,10 @@ async def assemble_orchard_inputs(
         crop=crop,
         current_stage=current_stage,
         stage_is_stale=stage_is_stale,
+        registered_elevation_m=registered_elevation_m,
+        dem_elevation_m=dem_elevation_m,
+        has_elevation_discrepancy=has_elevation_discrepancy,
+        elevation_discrepancy_warning_fa=elevation_discrepancy_warning_fa,
         orchard_forecast=orchard_forecast,
         raw_cell_forecast=raw_cell_forecast,
     )

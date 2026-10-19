@@ -21,10 +21,10 @@ factors:
     input_source: "پیش‌بینی دمای مؤثر و قاعده دیرش ساعتی GFS + DEM"
     source_module: "app.services.agriculture.forecast"
     protective_capable: false
-    quality_rule: "asymmetric_standard"
+    quality_rule: "gfs_coarse"
     margin_safe_c: 3.0
     status_placeholder: "dynamic"
-    source_note: "S1 (Hokmabadi 2010) & S2 (Hokmabadi 2011)"
+    source_note: "S1 (Hokmabadi 2010) & S2 (Hokmabadi 2011) — تفکیک GFS در رده coarse_context است و تصحیح DEM ماهیت آن را تغییر نمی‌دهد"
 
   - id: "phenological_stage"
     label_fa: "مرحله فنولوژیکی باغ"
@@ -34,7 +34,7 @@ factors:
     protective_capable: false
     quality_rule: "user_entered"
     status_placeholder: "orchard_stage"
-    source_note: "S2 vulnerability ordering (flower most sensitive, unopened bud most resistant)"
+    source_note: "S2 vulnerability ordering (flower most sensitive, unopened bud most resistant) — برآورد کارشناسی کالیبره‌نشده"
     stage_subscores:
       full_bloom: 1.0
       early_bloom: 0.85
@@ -51,7 +51,7 @@ factors:
     protective_capable: true
     quality_rule: "asymmetry_floor_0_5_for_coarse"
     status_placeholder: "dynamic_soil"
-    source_note: "Hokmabadi 2010 p. 72 (citing Snyder & Connell 1993); user research weights"
+    source_note: "Hokmabadi 2010 p. 72 (citing Snyder & Connell 1993); user research weights — برآورد کارشناسی کالیبره‌نشده"
     breakpoints:
       dry_threshold: 0.30     # < 0.30 -> adverse (0.85)
       moist_threshold: 0.70   # > 0.70 -> favorable (0.20 if valid, 0.50 if coarse)
@@ -64,7 +64,7 @@ factors:
     protective_capable: true
     quality_rule: "asymmetry_floor_0_5_for_coarse"
     status_placeholder: "static_soil"
-    source_note: "S2 (Hokmabadi 2011: light sandy soil adverse); user research weights"
+    source_note: "S2 (Hokmabadi 2011: light sandy soil adverse); SoilGrids 250m gridded proxy — برآورد کارشناسی کالیبره‌نشده"
     texture_subscores:
       light_sandy: 0.80       # شن و لوم شنی
       medium_loam: 0.50       # لوم و سیلت
@@ -119,7 +119,7 @@ factors:
     protective_capable: false
     quality_rule: "gfs_coarse"
     status_placeholder: "dynamic_humidity"
-    source_note: "Psychrometric physics: dry air/low dewpoint adverse (0.85), humid/latent heat favorable (0.20)"
+    source_note: "Psychrometric physics: dry air/low dewpoint adverse (0.85), humid/latent heat favorable (0.20) — برآورد کارشناسی کالیبره‌نشده"
     breakpoints:
       dry_rh_max_pct: 30.0    # < 30% RH: dry -> adverse (0.85)
       humid_rh_min_pct: 70.0  # > 70% RH: humid -> favorable (0.20)
@@ -132,7 +132,7 @@ factors:
     protective_capable: false
     quality_rule: "dem_30m_valid"
     status_placeholder: "static_pooling"
-    source_note: "Topographic Confinement Modeling (p >= 0.6 adverse, p < 0.3 favorable)"
+    source_note: "Topographic Confinement Modeling (p >= 0.6 adverse, p < 0.3 favorable) — برآورد کارشناسی کالیبره‌نشده"
     breakpoints:
       adverse_min_proxy: 0.60 # >= 0.60 -> adverse (0.90)
       favorable_max_proxy: 0.30 # < 0.30 -> favorable (0.10)
@@ -145,7 +145,20 @@ factors:
     protective_capable: false
     quality_rule: "dem_30m_valid"
     status_placeholder: "static_terrain"
-    source_note: "Terrain drainage: steep slope favorable (0.20), flat valley bottom adverse (0.80)"
+    source_note: "Terrain drainage: steep slope favorable (0.20), flat valley bottom adverse (0.80) — برآورد کارشناسی کالیبره‌نشده"
     breakpoints:
       steep_slope_deg: 5.0    # > 5.0 deg -> favorable (0.20)
       flat_slope_deg: 1.5     # < 1.5 deg -> adverse (0.80)
+
+# S3: دما شرط لازم (Temperature as a Necessary Condition)
+# margin = Tmin_eff - T_crit
+# m = 1.0 when margin <= margin_safe_c (4.0 °C)
+# Linear decay from 1.0 down to m_min (0.10) between margin_safe_c (4.0 °C) and margin_warm_c (10.0 °C)
+# m = 0.10 when margin >= margin_warm_c (10.0 °C)
+temperature_necessity_attenuation:
+  label_fa: "تعدیل‌گر شرط لازم دما (placeholder کالیبره‌نشده)"
+  status: "placeholder کالیبره‌نشده"
+  source_note: "برآورد کارشناسی کالیبره‌نشده"
+  margin_safe_c: 4.0
+  margin_warm_c: 10.0
+  m_min: 0.10

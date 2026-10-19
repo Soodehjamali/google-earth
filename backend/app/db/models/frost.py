@@ -21,6 +21,7 @@ class Orchard(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_orchards_crop", "crop"),
         Index("ix_orchards_created_at", "created_at"),
+        Index("ix_orchards_archived_at", "archived_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -37,6 +38,9 @@ class Orchard(Base, TimestampMixin):
     )
     current_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     stage_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 

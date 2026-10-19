@@ -58,6 +58,8 @@ backend/_soilgrids_meta.json
 backend/audit_tiles_result.json
 frontend/_saved_analysis_sample.json
 frontend/setting.json
+provenance_comparison.json
+backend/provenance_comparison.json
 
 # Sprint Audit Notes & Transient Prompts
 P-AGRI-*.md

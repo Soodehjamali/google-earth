@@ -142,6 +142,8 @@ async def test_assemble_orchard_inputs_cell_sharing_and_elevation_isolation():
         assert factor.label_fa
         assert factor.unit
         assert factor.source_module
-        assert factor.quality_state in ("valid", "coarse_context", "unknown")
-        assert factor.status in ("مطلوب", "خنثی", "نامطلوب", "نامشخص")
-        assert factor.as_of
+        assert factor.quality_state in ("valid", "coarse_context", "unknown", "unavailable")
+        assert factor.status in ("مطلوب", "خنثی", "نامطلوب", "نامشخص", "ناموجود")
+        if factor.quality_state != "unavailable":
+            assert factor.as_of
+

@@ -1973,6 +1973,7 @@ async def assess_frost_risk_endpoint(
 )
 async def list_orchards_endpoint(
     q: Optional[str] = Query(None, description="Search filter by orchard name"),
+    include_archived: bool = Query(False, description="Whether to include archived orchards"),
     limit: int = Query(50, ge=1, le=500, description="Page size limit"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: AsyncSession = Depends(get_db),
@@ -1989,6 +1990,8 @@ async def list_orchards_endpoint(
     offset_int = offset if isinstance(offset, int) else 0
 
     stmt = select(Orchard).options(selectinload(Orchard.alert_rules))
+    if not include_archived:
+        stmt = stmt.where(Orchard.archived_at.is_(None))
     if q_str and q_str.strip():
         stmt = stmt.where(Orchard.name.ilike(f"%{q_str.strip()}%"))
     stmt = stmt.order_by(Orchard.name).limit(limit_int).offset(offset_int)
@@ -2015,6 +2018,7 @@ async def list_orchards_endpoint(
             "current_stage": stage_val,
             "stage_updated_at": o.stage_updated_at.isoformat() if o.stage_updated_at else None,
             "stage_is_stale": is_stale,
+            "archived_at": o.archived_at.isoformat() if o.archived_at else None,
             "created_at": o.created_at.isoformat() if o.created_at else None,
             "alert_rules": [
                 {
@@ -2040,6 +2044,7 @@ async def list_orchards_endpoint(
 async def get_orchards_risk_summary_endpoint(
     horizon_h: int = Query(240, ge=24, le=384),
     threshold_set: str = Query("published_v1"),
+    include_archived: bool = Query(False, description="Whether to include archived orchards"),
     q: Optional[str] = Query(None, description="Search filter by orchard name"),
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(require_frost_auth),
@@ -2050,16 +2055,19 @@ async def get_orchards_risk_summary_endpoint(
     from sqlalchemy import select
 
     stmt = select(Orchard)
+    if not include_archived:
+        stmt = stmt.where(Orchard.archived_at.is_(None))
     if q and isinstance(q, str) and q.strip():
         stmt = stmt.where(Orchard.name.ilike(f"%{q.strip()}%"))
     stmt = stmt.order_by(Orchard.name)
     result = await db.execute(stmt)
     orchards = result.scalars().all()
 
-    use_live = (
-        getattr(settings, "is_production", False)
-        or getattr(settings, "APP_ENV", "") == "production"
+    use_live = bool(
+        getattr(settings, "USE_LIVE_GEE", False)
         or getattr(settings, "FROST_USE_LIVE_GEE", False)
+        or getattr(settings, "is_production", False)
+        or getattr(settings, "APP_ENV", "") == "production"
     )
     if use_live:
         from app.services.agriculture.forecast import NoaaGfsForecastProvider
@@ -2097,7 +2105,7 @@ async def get_orchard_risk_endpoint(
     from app.services.agriculture.frost_orchard_service import assess_single_orchard_risk
     from sqlalchemy import select
 
-    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    stmt = select(Orchard).where(Orchard.id == orchard_id, Orchard.archived_at.is_(None))
     res = await db.execute(stmt)
     orchard = res.scalar_one_or_none()
     if not orchard:
@@ -2107,10 +2115,11 @@ async def get_orchard_risk_endpoint(
             status_code=404,
         )
 
-    use_live = (
-        getattr(settings, "is_production", False)
-        or getattr(settings, "APP_ENV", "") == "production"
+    use_live = bool(
+        getattr(settings, "USE_LIVE_GEE", False)
         or getattr(settings, "FROST_USE_LIVE_GEE", False)
+        or getattr(settings, "is_production", False)
+        or getattr(settings, "APP_ENV", "") == "production"
     )
     if use_live:
         from app.services.agriculture.forecast import NoaaGfsForecastProvider
@@ -2257,18 +2266,122 @@ async def update_orchard_endpoint(
     }
 
 
+ALLOWED_PHENOLOGY_STAGES = {
+    "unopened_bud",
+    "swelling_bud",
+    "opening_bud",
+    "bloom",
+    "fruit",
+    "early_fruit",
+}
+
+
+@router.patch(
+    "/frost/orchards/{orchard_id}/stage",
+    tags=["Agriculture", "Frost"],
+    summary="Update orchard phenological stage (S8)",
+)
+async def patch_orchard_stage_endpoint(
+    orchard_id: uuid.UUID,
+    stage_in: Any = Body(...),
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Patch only current_stage for an orchard parcel; validates against published_v1 allowed stages."""
+    from app.db.models.frost import Orchard
+    from sqlalchemy import select
+
+    if isinstance(stage_in, dict):
+        raw_stage = stage_in.get("current_stage")
+    elif hasattr(stage_in, "current_stage"):
+        raw_stage = getattr(stage_in, "current_stage")
+    else:
+        raw_stage = str(stage_in)
+
+    if not raw_stage or raw_stage not in ALLOWED_PHENOLOGY_STAGES:
+        raise AppException(
+            message=f"مرحله رشد نامعتبر است: '{raw_stage}'. مراحل مجاز: {', '.join(sorted(ALLOWED_PHENOLOGY_STAGES))}",
+            code="ERR_INVALID_STAGE",
+            status_code=422,
+        )
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    orchard.current_stage = raw_stage
+    orchard.stage_updated_at = now_utc
+    orchard.updated_at = now_utc
+
+    await db.commit()
+    await db.refresh(orchard)
+
+    return {
+        "id": str(orchard.id),
+        "name": orchard.name,
+        "crop": orchard.crop,
+        "current_stage": orchard.current_stage,
+        "stage_updated_at": orchard.stage_updated_at.isoformat() if orchard.stage_updated_at else None,
+        "stage_is_stale": False,
+        "updated_at": orchard.updated_at.isoformat() if orchard.updated_at else None,
+    }
+
+
 @router.delete(
     "/frost/orchards/{orchard_id}",
     tags=["Agriculture", "Frost"],
     status_code=204,
-    summary="Delete an orchard parcel",
+    summary="Soft delete (archive) an orchard parcel",
 )
 async def delete_orchard_endpoint(
     orchard_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _: bool = Depends(require_frost_auth),
 ):
-    """Delete an orchard parcel and cascaded rules."""
+    """Soft delete (archive) an orchard parcel and disable all associated alert rules (S5, T7)."""
+    from app.db.models.frost import AlertRule, Orchard
+    from sqlalchemy import select, update
+
+    stmt = select(Orchard).where(Orchard.id == orchard_id)
+    res = await db.execute(stmt)
+    orchard = res.scalar_one_or_none()
+    if not orchard:
+        raise AppException(
+            message=f"Orchard {orchard_id} not found",
+            code="ERR_ORCHARD_NOT_FOUND",
+            status_code=404,
+        )
+
+    orchard.archived_at = datetime.now(timezone.utc)
+    # Disable all alert rules bound to this orchard
+    await db.execute(
+        update(AlertRule)
+        .where(AlertRule.orchard_id == orchard_id)
+        .values(enabled=False)
+    )
+    await db.commit()
+    return None
+
+
+@router.post(
+    "/frost/orchards/{orchard_id}/restore",
+    tags=["Agriculture", "Frost"],
+    status_code=200,
+    summary="Restore an archived orchard parcel",
+)
+async def restore_orchard_endpoint(
+    orchard_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: bool = Depends(require_frost_auth),
+):
+    """Restore an archived orchard parcel (S5, T7)."""
     from app.db.models.frost import Orchard
     from sqlalchemy import select
 
@@ -2282,9 +2395,22 @@ async def delete_orchard_endpoint(
             status_code=404,
         )
 
-    await db.delete(orchard)
+    if orchard.archived_at is None:
+        raise AppException(
+            message=f"Orchard {orchard_id} is not archived",
+            code="ERR_ORCHARD_NOT_ARCHIVED",
+            status_code=400,
+        )
+
+    orchard.archived_at = None
     await db.commit()
-    return None
+
+    return {
+        "status": "restored",
+        "orchard_id": str(orchard_id),
+        "name": orchard.name,
+        "archived_at": None,
+    }
 
 
 @router.post(

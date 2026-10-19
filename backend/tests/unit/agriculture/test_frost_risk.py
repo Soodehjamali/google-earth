@@ -765,14 +765,16 @@ def test_three_hourly_cadence_duration_not_resolvable():
     temps = [-4.5, -4.5, -4.5]
     steps_3h = _make_synthetic_steps(temps, step_hours=3.0)
 
-    total_h, longest_h, _, _, resolvable = calculate_interval_duration_run(
+    res = calculate_interval_duration_run(
         steps=steps_3h,
         reference_temp_c=-4.0,
         cooling_bump_c=0.0,
     )
+    total_h, longest_h, _, _, resolvable = res
     assert resolvable is False
-    assert total_h == 0.0
-    assert longest_h == 0.0
+    assert total_h == 9.0  # S2: duration is not zeroed out, built with 3h cadence
+    assert longest_h == 9.0
+    assert res.cadence_label_fa == "تفکیک ۳ ساعته"
 
     # Decision table handling of unresolvable duration
     cat, _, _, _, expl = evaluate_duration_rule_category(

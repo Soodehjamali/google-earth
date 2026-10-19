@@ -254,13 +254,48 @@ export const FrostNightCards: React.FC<FrostNightCardsProps> = ({
                     </div>
 
                     <div style={{ fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>
-                      {night.duration_below_t10_h > 0 ? (
-                        <span>
-                          <FormattedNumber value={night.duration_below_t10_h} /> ساعت زیر آستانه <FormattedNumber value={effectiveTc10 ?? 0} unit="°C" />
-                        </span>
-                      ) : (
-                        <span>هیچ شب زیر آستانه نیست</span>
-                      )}
+                      {(() => {
+                        const crit = effectiveTc10 ?? 0;
+                        const isBelow = night.effective_tmin_c !== undefined && night.effective_tmin_c <= crit;
+                        const isResolvable = night.duration_resolvable !== false;
+                        const cadence = night.cadence_label_fa || 'تفکیک ۱ ساعته';
+
+                        if (night.windows && night.windows.length > 0) {
+                          return (
+                            <div>
+                              {night.windows.map((w, wIdx) => (
+                                <div key={wIdx} style={{ color: '#b91c1c' }}>
+                                  ⏱️ {w.display_text_fa || `${w.start_local} تا ${w.end_local} — ${w.hours} ساعت`} (کمینه: {w.min_temp_c}°C)
+                                </div>
+                              ))}
+                              {!isResolvable && (
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>
+                                  ({cadence})
+                                </span>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (night.duration_below_t10_h > 0) {
+                          return (
+                            <span>
+                              <FormattedNumber value={night.duration_below_t10_h} /> ساعت زیر آستانه <FormattedNumber value={crit} unit="°C" />
+                              {!isResolvable && (
+                                <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>
+                                  ({cadence})
+                                </span>
+                              )}
+                            </span>
+                          );
+                        }
+                        if (isBelow) {
+                          return <span style={{ color: '#d97706' }}>مدت تداوم نامشخص {!isResolvable && `(${cadence})`}</span>;
+                        }
+                        if (isResolvable) {
+                          return <span style={{ color: '#166534' }}>بدون خطر در این بازه</span>;
+                        }
+                        return <span style={{ color: '#64748b' }}>مدت تداوم نامشخص ({cadence})</span>;
+                      })()}
                     </div>
 
                     <div style={{ fontSize: '0.82rem', color: '#334155', lineHeight: '1.4' }}>

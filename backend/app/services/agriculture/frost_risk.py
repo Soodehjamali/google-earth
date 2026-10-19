@@ -690,51 +690,108 @@ def classify_nightly_risk(
     return RISK_LEVEL_NONE, RISK_LEVEL_FA[RISK_LEVEL_NONE]
 
 
+class DurationRunResult(tuple):
+    """Subclass of tuple of length 5 for backward-compatible unpacking:
+    (total_hours, longest_hours, start_local, end_local, is_resolvable)
+    while exposing .cadence_label_fa and named properties per S2.
+    """
+
+    total_hours: float
+    longest_continuous_hours: float
+    start_local: Optional[str]
+    end_local: Optional[str]
+    is_resolvable: bool
+    cadence_label_fa: str
+    windows: List[Dict[str, Any]]
+
+    def __new__(
+        cls,
+        total_hours: float,
+        longest_hours: float,
+        start_local: Optional[str],
+        end_local: Optional[str],
+        is_resolvable: bool,
+        cadence_label_fa: str = "تفکیک ۱ ساعته",
+        windows: Optional[List[Dict[str, Any]]] = None,
+    ):
+        obj = super().__new__(
+            cls,
+            (float(total_hours), float(longest_hours), start_local, end_local, bool(is_resolvable)),
+        )
+        obj.total_hours = float(total_hours)
+        obj.longest_continuous_hours = float(longest_hours)
+        obj.start_local = start_local
+        obj.end_local = end_local
+        obj.is_resolvable = bool(is_resolvable)
+        obj.cadence_label_fa = str(cadence_label_fa)
+        obj.windows = list(windows or [])
+        return obj
+
+
 def calculate_interval_duration_run(
     steps: List[ForecastTimestep],
     reference_temp_c: float,
     cooling_bump_c: float,
     use_pessimistic: bool = False,
     local_utc_offset_hours: float = DEFAULT_LOCAL_UTC_OFFSET_HOURS,
-) -> Tuple[float, float, Optional[str], Optional[str], bool]:
-    """Calculate interval-based total and longest continuous hours below reference temperature (E8).
+) -> DurationRunResult:
+    """Calculate interval-based total and longest continuous hours below reference temperature (E8, S2, T6).
 
     Interval Arithmetic Definition:
     1. Timesteps in hourly series have spacing dt <= 1.5h (nominal dt = 1.0h).
-    2. Each step below threshold contributes exactly 1.0 hour of exposure duration.
-    3. If any step spacing in the series exceeds 1.5h (e.g. 3-hourly data beyond 120h),
+    2. If any step spacing in the series exceeds 1.5h (e.g. 3-hourly data beyond 120h),
        is_resolvable is set to False ('not resolvable').
-    4. Continuous runs are sequences of consecutive steps below threshold with dt <= 1.5h.
+    3. Per S2: If step spacing exceeds 1.5h, duration is NOT zeroed out. Contiguous runs
+       are constructed with the actual cadence (e.g. 3-hourly), labeled accordingly,
+       without hidden interpolation.
+    4. Continuous runs are sequences of consecutive steps below threshold.
     5. Run start and end timestamps are formatted in local Asia/Tehran time (HH:MM).
+    6. T6: Collects all contiguous run windows with (start, end, hours, min_temp).
 
     Returns:
-        (total_hours, longest_continuous_hours, start_local_hhmm, end_local_hhmm, is_resolvable)
+        DurationRunResult unpackable as (total_hours, longest_continuous_hours, start_local, end_local, is_resolvable)
     """
     if not steps:
-        return 0.0, 0.0, None, None, True
+        return DurationRunResult(0.0, 0.0, None, None, True, "تفکیک ۱ ساعته", [])
 
     tz_local = timezone(timedelta(hours=local_utc_offset_hours))
 
-    # Check for coarse cadence (> 1.5h step spacing)
-    is_resolvable = True
+    # Calculate step spacings
+    spacings_h: List[float] = []
     for i in range(len(steps) - 1):
         dt_i = datetime.fromisoformat(steps[i].timestamp_utc.replace("Z", "+00:00"))
         dt_next = datetime.fromisoformat(steps[i + 1].timestamp_utc.replace("Z", "+00:00"))
-        spacing_h = (dt_next - dt_i).total_seconds() / 3600.0
-        if spacing_h > 1.5:
-            is_resolvable = False
-            break
+        spacings_h.append((dt_next - dt_i).total_seconds() / 3600.0)
 
-    # If not resolvable (3-hourly data beyond 120h), duration is not resolvable
-    if not is_resolvable:
-        return 0.0, 0.0, None, None, False
+    max_spacing_h = max(spacings_h) if spacings_h else 1.0
+    is_resolvable = max_spacing_h <= 1.5
+
+    if max_spacing_h <= 1.5:
+        cadence_label_fa = "تفکیک ۱ ساعته"
+    elif max_spacing_h <= 2.5:
+        cadence_label_fa = "تفکیک ۲ ساعته"
+    elif max_spacing_h <= 4.5:
+        cadence_label_fa = "تفکیک ۳ ساعته"
+    else:
+        cadence_label_fa = f"تفکیک {int(round(max_spacing_h))} ساعته"
+
+    # Step durations without hidden interpolation
+    if len(steps) == 1:
+        step_durations = [1.0 if is_resolvable else max_spacing_h]
+    else:
+        step_durations = []
+        for i in range(len(steps) - 1):
+            step_durations.append(spacings_h[i])
+        step_durations.append(spacings_h[-1])
 
     below_mask: List[bool] = []
+    eff_temps: List[float] = []
     for s in steps:
         t_eff = s.temperature_2m_c - cooling_bump_c
         if use_pessimistic:
             t_eff -= s.total_uncertainty_c
         below_mask.append(t_eff <= reference_temp_c)
+        eff_temps.append(t_eff)
 
     # Extract contiguous runs
     runs: List[Tuple[int, int]] = []
@@ -751,15 +808,14 @@ def calculate_interval_duration_run(
     if in_run:
         runs.append((run_start, len(below_mask) - 1))
 
-    total_steps = sum((b - a + 1) for a, b in runs)
-    total_hours = float(total_steps) * 1.0
-
     if not runs:
-        return 0.0, 0.0, None, None, True
+        return DurationRunResult(0.0, 0.0, None, None, is_resolvable, cadence_label_fa, [])
 
-    # Find longest continuous run
-    longest_run = max(runs, key=lambda r: (r[1] - r[0] + 1))
-    longest_hours = float(longest_run[1] - longest_run[0] + 1) * 1.0
+    total_hours = sum(sum(step_durations[k] for k in range(a, b + 1)) for a, b in runs)
+
+    # Find longest continuous run by duration
+    longest_run = max(runs, key=lambda r: sum(step_durations[k] for k in range(r[0], r[1] + 1)))
+    longest_hours = sum(step_durations[k] for k in range(longest_run[0], longest_run[1] + 1))
 
     dt_start = datetime.fromisoformat(steps[longest_run[0]].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
     dt_end = datetime.fromisoformat(steps[longest_run[1]].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
@@ -767,7 +823,27 @@ def calculate_interval_duration_run(
     start_local = dt_start.strftime("%H:%M")
     end_local = dt_end.strftime("%H:%M")
 
-    return total_hours, longest_hours, start_local, end_local, True
+    # T6: Construct detailed windows
+    windows: List[Dict[str, Any]] = []
+    for r_start, r_end in runs:
+        r_dt_s = datetime.fromisoformat(steps[r_start].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
+        r_dt_e = datetime.fromisoformat(steps[r_end].timestamp_utc.replace("Z", "+00:00")).astimezone(tz_local)
+        r_hours = sum(step_durations[k] for k in range(r_start, r_end + 1))
+        r_min_temp = min(eff_temps[k] for k in range(r_start, r_end + 1))
+        s_loc = r_dt_s.strftime("%H:%M")
+        e_loc = r_dt_e.strftime("%H:%M")
+        h_formatted = f"{int(r_hours)}" if r_hours.is_integer() else f"{r_hours:.1f}"
+        windows.append({
+            "start_local": s_loc,
+            "end_local": e_loc,
+            "hours": round(r_hours, 1),
+            "min_temp_c": round(r_min_temp, 1),
+            "display_text_fa": f"{s_loc} تا {e_loc} — {h_formatted} ساعت",
+        })
+
+    return DurationRunResult(
+        total_hours, longest_hours, start_local, end_local, is_resolvable, cadence_label_fa, windows
+    )
 
 
 def evaluate_duration_rule_category(
@@ -794,7 +870,10 @@ def evaluate_duration_rule_category(
             cat = RISK_LEVEL_WATCH
         else:
             cat = RISK_LEVEL_NONE
-        expl = "فراتر از ۱۲۰ ساعت: داده‌ها ۳-ساعته بوده و مدت تداوم قابل تفکیک نیست؛ دسته‌بندی صرفاً بر اساس دما صورت گرفت."
+        if continuous_hours_nominal > 0:
+            expl = f"داده‌ها با تفکیک درشت (بیش از ۱.۵ ساعت) بوده و تداوم حدود {continuous_hours_nominal:.1f} ساعت زیر آستانه {reference_temp_c:.1f}°C برآورد شد."
+        else:
+            expl = "فراتر از ۱۲۰ ساعت: داده‌ها ۳-ساعته بوده و مدت تداوم قابل تفکیک نیست؛ دسته‌بندی صرفاً بر اساس دما صورت گرفت."
         return cat, RISK_LEVEL_FA[cat], False, False, expl
 
     # 2. Nominal temperature stays above reference threshold
@@ -1125,8 +1204,17 @@ def assess_frost_risk(
             duration_resolvable=is_resolvable,
         )
 
+        cadence_lbl = getattr(nom_total, "cadence_label_fa", "تفکیک ۳ ساعته") if not is_resolvable else "تفکیک ۱ ساعته"
         if not is_resolvable:
-            duration_display_text = "مدت تداوم نامشخص (داده‌های فراتر از ۱۲۰ ساعت با گام ۳-ساعته)"
+            if nom_total > 0 and nom_start_loc and nom_end_loc:
+                duration_display_text = (
+                    f"{nom_total:.1f} h below {ref_temp:.1f}°C "
+                    f"(longest continuous {nom_longest:.1f} h, from {nom_start_loc} to {nom_end_loc} - {cadence_lbl})"
+                )
+            elif t_adjusted_min <= ref_temp:
+                duration_display_text = f"مدت تداوم نامشخص ({cadence_lbl})"
+            else:
+                duration_display_text = f"0.0 h below {ref_temp:.1f}°C ({cadence_lbl})"
         elif nom_total > 0 and nom_start_loc and nom_end_loc:
             duration_display_text = (
                 f"{nom_total:.1f} h below {ref_temp:.1f}°C "

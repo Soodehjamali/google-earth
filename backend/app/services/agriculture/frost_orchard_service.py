@@ -71,6 +71,9 @@ class OrchardNightRiskDetail:
     window_coverage: float = 1.0
     is_partial_night: bool = False
     duration_display_text: str = ""
+    cadence_label_fa: str = "تفکیک ۱ ساعته"
+    is_duration_resolvable: bool = True
+    windows: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -99,6 +102,11 @@ class OrchardRiskReport:
     assembled_at: str
     forecast_source: str = "noaa_gfs_live"
     is_fake: bool = False
+    stage_updated_at: Optional[str] = None
+    registered_elevation_m: Optional[float] = None
+    dem_elevation_m: Optional[float] = None
+    has_elevation_discrepancy: bool = False
+    elevation_discrepancy_warning_fa: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         res = asdict(self)
@@ -124,6 +132,11 @@ class OrchardSummaryItem:
     gate_triggered: bool
     forecast_source: str = "noaa_gfs_live"
     is_fake: bool = False
+    cadence_label_fa: str = "تفکیک ۱ ساعته"
+    worst_night_resolvable: bool = True
+    critical_temp_c: Optional[float] = None
+    stage_updated_at: Optional[str] = None
+    archived_at: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -168,18 +181,29 @@ async def assess_single_orchard_risk(
     if resolved_stage not in crop_cfg.stages:
         resolved_stage = STAGE_ALIASES.get(stage_key, stage_key)
 
+    # Determine most sensitive stage in the active set (for swelling_bud or stale stages)
+    valid_stages = [s for s in crop_cfg.stages.values() if s.t_critical_c is not None]
+    most_sensitive_stage = max(
+        valid_stages,
+        key=lambda s: s.t_critical_c,
+        default=next(iter(crop_cfg.stages.values())),
+    )
+
     if resolved_stage in crop_cfg.stages:
         stage_cfg = crop_cfg.stages[resolved_stage]
         stage_name_fa = stage_cfg.name_fa
     else:
-        # Default to most sensitive stage if unrecognized
-        stage_cfg = max(crop_cfg.stages.values(), key=lambda s: s.t_critical_10_c if s.t_critical_10_c is not None else -10.0)
+        stage_cfg = most_sensitive_stage
         stage_name_fa = stage_cfg.name_fa
 
     # Critical damage threshold
-    tc_crit = stage_cfg.t_critical_c if getattr(stage_cfg, "t_critical_c", None) is not None else stage_cfg.t_critical_10_c
-    if tc_crit is None:
-        tc_crit = -2.0  # Fallback
+    # Rule S8: If swelling_bud (no sourced threshold) or stage is stale (>20 days), act conservatively using most sensitive stage
+    if resolved_stage == "swelling_bud" or inputs.stage_is_stale:
+        tc_crit = most_sensitive_stage.t_critical_c
+    else:
+        tc_crit = stage_cfg.t_critical_c if getattr(stage_cfg, "t_critical_c", None) is not None else stage_cfg.t_critical_10_c
+        if tc_crit is None:
+            tc_crit = most_sensitive_stage.t_critical_c
 
     # 3. Group timesteps by local night (18:00 to 09:00 local IRST)
     forecast_series = inputs.orchard_forecast.series if inputs.orchard_forecast else []
@@ -214,13 +238,15 @@ async def assess_single_orchard_risk(
         rh_pct = min_step.relative_humidity_percent
 
         # Duration run calculations
-        nom_total, nom_longest, nom_start_loc, nom_end_loc, is_resolvable = calculate_interval_duration_run(
+        nom_run_res = calculate_interval_duration_run(
             steps,
             reference_temp_c=tc_crit,
             cooling_bump_c=0.0,
             use_pessimistic=False,
             local_utc_offset_hours=3.5,
         )
+        nom_total, nom_longest, nom_start_loc, nom_end_loc, is_resolvable = nom_run_res
+        cadence_lbl = getattr(nom_run_res, "cadence_label_fa", "تفکیک ۱ ساعته")
 
         level, level_fa, short_dip, duration_escalated, expl_fa = evaluate_duration_rule_category(
             min_temp_adjusted_c=t_eff_min,
@@ -254,11 +280,19 @@ async def assess_single_orchard_risk(
         night_bins = {18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8}
         cov_ratio = round(min(1.0, len(covered_hours.intersection(night_bins)) / 15.0), 2)
 
-        dur_text = (
-            f"{nom_total:.1f} h below {tc_crit:.1f}°C"
-            if nom_total > 0
-            else f"0.0 h below {tc_crit:.1f}°C"
-        )
+        if nom_total > 0:
+            if is_resolvable:
+                dur_text = f"{nom_total:.1f} ساعت زیر {tc_crit:.1f}°C"
+            else:
+                dur_text = f"{nom_total:.1f} ساعت زیر {tc_crit:.1f}°C ({cadence_lbl})"
+        else:
+            if is_resolvable:
+                dur_text = f"0.0 ساعت زیر {tc_crit:.1f}°C"
+            else:
+                if t_eff_min <= tc_crit:
+                    dur_text = f"مدت تداوم نامشخص ({cadence_lbl})"
+                else:
+                    dur_text = f"0.0 ساعت زیر {tc_crit:.1f}°C ({cadence_lbl})"
 
         detail = OrchardNightRiskDetail(
             night_date=night_key,
@@ -282,8 +316,11 @@ async def assess_single_orchard_risk(
             wind_speed_mps=wind_spd,
             relative_moisture=inputs.factors["soil_rootzone_moisture"].value if "soil_rootzone_moisture" in inputs.factors else None,
             window_coverage=cov_ratio,
-            is_partial_night=cov_ratio < 1.0,
+            is_partial_night=(cov_ratio < 0.60),
             duration_display_text=dur_text,
+            cadence_label_fa=cadence_lbl,
+            is_duration_resolvable=is_resolvable,
+            windows=getattr(nom_run_res, "windows", []),
         )
         night_results.append(detail)
 
@@ -312,6 +349,14 @@ async def assess_single_orchard_risk(
     if RISK_HIERARCHY.get(worst_level, 0) >= RISK_HIERARCHY["warning"]:
         recs = list(GENERIC_RECOMMENDATIONS_FA)
 
+    stage_updated_at_val = (
+        orchard.stage_updated_at.isoformat()
+        if hasattr(orchard, "stage_updated_at") and orchard.stage_updated_at
+        else (orchard.get("stage_updated_at") if isinstance(orchard, dict) else None)
+    )
+    if stage_updated_at_val and isinstance(stage_updated_at_val, datetime):
+        stage_updated_at_val = stage_updated_at_val.isoformat()
+
     return OrchardRiskReport(
         orchard_id=inputs.orchard_id,
         orchard_name=inputs.orchard_name,
@@ -334,6 +379,11 @@ async def assess_single_orchard_risk(
         assembled_at=inputs.assembled_at,
         forecast_source=inputs.orchard_forecast.source if inputs.orchard_forecast else "unknown",
         is_fake=(inputs.orchard_forecast.source == "deterministic_fake") if inputs.orchard_forecast else False,
+        stage_updated_at=stage_updated_at_val,
+        registered_elevation_m=inputs.registered_elevation_m,
+        dem_elevation_m=inputs.dem_elevation_m,
+        has_elevation_discrepancy=inputs.has_elevation_discrepancy,
+        elevation_discrepancy_warning_fa=inputs.elevation_discrepancy_warning_fa,
     )
 
 
@@ -373,6 +423,8 @@ async def assess_orchards_summary(
             )
             spd = worst_night_obj.wind_speed_mps if worst_night_obj else None
             moist = worst_night_obj.relative_moisture if worst_night_obj else None
+            worst_night_cadence = worst_night_obj.cadence_label_fa if worst_night_obj else "تفکیک ۱ ساعته"
+            worst_night_resolvable = worst_night_obj.is_duration_resolvable if worst_night_obj else True
 
             item = OrchardSummaryItem(
                 orchard_id=report.orchard_id,
@@ -391,6 +443,11 @@ async def assess_orchards_summary(
                 gate_triggered=bool(worst.get("gate_triggered", False)),
                 forecast_source=report.forecast_source,
                 is_fake=report.is_fake,
+                cadence_label_fa=worst_night_cadence,
+                worst_night_resolvable=worst_night_resolvable,
+                critical_temp_c=report.critical_temperature_c,
+                stage_updated_at=report.stage_updated_at,
+                archived_at=getattr(o, "archived_at", None).isoformat() if getattr(o, "archived_at", None) else None,
             )
             summaries.append(item)
         except Exception as exc:

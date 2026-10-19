@@ -29,15 +29,15 @@ export interface PhenologyStageOption {
 }
 
 export const PUBLISHED_V1_STAGES: PhenologyStageOption[] = [
-  { value: 'unopened_bud', labelFa: 'جوانه بازنشده (−۴°C)', criticalTempC: -4.0 },
-  { value: 'opening_bud', labelFa: 'جوانه در حال باز شدن (Opening bud) (−۲°C)', criticalTempC: -2.0 },
-  { value: 'bloom', labelFa: 'گلدهی / شکوفه بازشده (−۱.۷°C)', criticalTempC: -1.7 },
-  { value: 'fruit', labelFa: 'میوه (ارزنک) (−۲°C)', criticalTempC: -2.0 },
+  { value: 'unopened_bud', labelFa: 'جوانه بازنشده (۴-°C)', criticalTempC: -4.0 },
+  { value: 'opening_bud', labelFa: 'جوانه در حال باز شدن (Opening bud) (۲-°C)', criticalTempC: -2.0 },
+  { value: 'bloom', labelFa: 'گلدهی / شکوفه بازشده (۱.۷-°C)', criticalTempC: -1.7 },
+  { value: 'fruit', labelFa: 'میوه اولیه (۲-°C)', criticalTempC: -2.0 },
   {
     value: 'swelling_bud',
-    labelFa: 'تورم جوانه (داده منتشرشده‌ای وجود ندارد)',
-    disabled: true,
-    missingDataNote: 'در منبع S2 هیچ رقمی برای مرحله تورم جوانه ذکر نشده است (داده منتشرشده‌ای وجود ندارد).',
+    labelFa: 'جوانه متورم (آستانه منبع‌دار ندارد)',
+    disabled: false /* legacy R7 had disabled: true; S8 enables user selection with conservative threshold */,
+    missingDataNote: 'گزینه جوانه متورم آستانه منبع‌دار ندارد؛ موتور سامانه محتاطانه با آستانه ۱.۷-°C (حساس‌ترین مرحله) رفتار می‌کند.',
     criticalTempC: null,
   },
 ];
@@ -69,6 +69,23 @@ const CATEGORY_STYLE: Record<string, { bg: string; text: string; border: string 
   warning: { bg: '#fff7ed', text: '#c2410c', border: '#fb923c' },
   watch: { bg: '#fefce8', text: '#854d0e', border: '#facc15' },
   none: { bg: '#f0fdf4', text: '#166534', border: '#86efac' },
+};
+
+const renderFactorRawValue = (val: any, unit?: string) => {
+  if (val === null || val === undefined || val === '—') return '—';
+  if (typeof val === 'number') {
+    return <FormattedNumber value={val} unit={unit || ''} />;
+  }
+  const str = String(val).trim();
+  if (!unit) return str;
+  if (str.endsWith(unit) || str.includes(unit)) {
+    return str;
+  }
+  if (unit === '°C' && str.includes('°')) return str;
+  if (unit === 'درجه' && (str.includes('°') || str.includes('درجه'))) return str;
+  if (unit === '٪' && str.includes('٪')) return str;
+  if (unit === 'm/s' && str.includes('m/s')) return str;
+  return `${str} ${unit}`;
 };
 
 export default function FrostRiskPage() {
@@ -105,6 +122,14 @@ export default function FrostRiskPage() {
   const [selectedNightDate, setSelectedNightDate] = useState<string | null>(null);
   const [showRecommendations, setShowRecommendations] = useState<boolean>(true);
 
+  // Deletion and Archive states (S5, T7)
+  const [showArchived, setShowArchived] = useState<boolean>(false);
+  const [deleteModalOrchard, setDeleteModalOrchard] = useState<OrchardSummaryItem | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
   // Orchard search & pagination (R9)
   const [orchardSearchQuery, setOrchardSearchQuery] = useState<string>('');
   const [orchardPage, setOrchardPage] = useState<number>(1);
@@ -128,8 +153,13 @@ export default function FrostRiskPage() {
   const [updatingStage, setUpdatingStage] = useState<boolean>(false);
   const [stageUpdateMsg, setStageUpdateMsg] = useState<string | null>(null);
 
+  // Inline table stage update per S8
+  const [updatingStageOrchardId, setUpdatingStageOrchardId] = useState<string | null>(null);
+  const [inlineStageFeedback, setInlineStageFeedback] = useState<Record<string, { type: 'success' | 'error'; text: string }>>({});
+
   // Orchard creation & alert subscription
   const [orchardName, setOrchardName] = useState<string>('');
+  const [newOrchardStage, setNewOrchardStage] = useState<string>(''); // Empty default per S8
   const [alertRecipient, setAlertRecipient] = useState<string>('');
   const [alertChannel, setAlertChannel] = useState<string>('sms');
   const [evalResult, setEvalResult] = useState<EvaluateAlertsResponse | null>(null);
@@ -147,11 +177,11 @@ export default function FrostRiskPage() {
     }
   };
 
-  // Load registered orchards summaries (R5/R6)
+  // Load registered orchards summaries (R5/R6, T7)
   const loadSummaries = useCallback(async () => {
     setLoadingSummaries(true);
     try {
-      const data = await frostApi.getFrostOrchardsRiskSummary(horizonH, thresholdSet);
+      const data = await frostApi.getFrostOrchardsRiskSummary(horizonH, thresholdSet, showArchived);
       setSummaries(data || []);
       if (data && data.length > 0 && !selectedOrchardId) {
         setSelectedOrchardId(data[0].orchard_id);
@@ -161,11 +191,48 @@ export default function FrostRiskPage() {
     } finally {
       setLoadingSummaries(false);
     }
-  }, [horizonH, thresholdSet, selectedOrchardId]);
+  }, [horizonH, thresholdSet, showArchived, selectedOrchardId]);
 
   useEffect(() => {
     loadSummaries();
   }, [loadSummaries]);
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModalOrchard) return;
+    if (deleteConfirmName.trim() !== deleteModalOrchard.name) {
+      setActionError('نام واردشده با نام باغ همخوانی ندارد.');
+      return;
+    }
+    setIsDeleting(true);
+    setActionError(null);
+    try {
+      await frostApi.deleteFrostOrchard(deleteModalOrchard.orchard_id);
+      setActionSuccessMsg(`باغ «${deleteModalOrchard.name}» با موفقیت بایگانی (حذف نرم) شد و قواعد هشدار آن غیرفعال گردید.`);
+      const removedId = deleteModalOrchard.orchard_id;
+      setDeleteModalOrchard(null);
+      setDeleteConfirmName('');
+      await loadSummaries();
+      if (selectedOrchardId === removedId) {
+        setSelectedOrchardId(null);
+        setOrchardRiskReport(null);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'خطا در بایگانی باغ');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRestoreOrchard = async (orchardId: string, oName: string) => {
+    setActionError(null);
+    try {
+      await frostApi.restoreFrostOrchard(orchardId);
+      setActionSuccessMsg(`باغ «${oName}» با موفقیت از حالت بایگانی بازگردانده شد.`);
+      await loadSummaries();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'خطا در بازگردانی باغ');
+    }
+  };
 
   // Load detailed risk report when an orchard is selected
   useEffect(() => {
@@ -337,16 +404,55 @@ export default function FrostRiskPage() {
     }
   }, [sharedGeometry, handleRunAssessment]);
 
+  const formatStageDate = (isoStr?: string | null) => {
+    if (!isoStr) return 'نامشخص';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('fa-IR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    } catch {
+      return isoStr;
+    }
+  };
+
+  const handleInlineStageChange = async (orchardId: string, newStage: string) => {
+    if (!newStage) return;
+    setUpdatingStageOrchardId(orchardId);
+    setInlineStageFeedback((prev) => ({ ...prev, [orchardId]: undefined as any }));
+    try {
+      await frostApi.patchFrostOrchardStage(orchardId, newStage);
+      setInlineStageFeedback((prev) => ({
+        ...prev,
+        [orchardId]: { type: 'success', text: 'مرحله با موفقیت ذخیره و ریسک دوباره محاسبه شد.' },
+      }));
+      await loadSummaries();
+      if (selectedOrchardId === orchardId) {
+        await loadOrchardRisk(orchardId);
+      }
+    } catch (err: any) {
+      setInlineStageFeedback((prev) => ({
+        ...prev,
+        [orchardId]: { type: 'error', text: err?.message || 'خطا در به‌روزرسانی مرحله باغ' },
+      }));
+    } finally {
+      setUpdatingStageOrchardId(null);
+    }
+  };
+
   // "Save as orchard" reuses shared analysis geometry without re-entry
   const handleCreateOrchard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orchardName.trim() || !sharedGeometry) return;
+    if (!newOrchardStage) {
+      setError('انتخاب مرحله فعلی باغ در فرم ثبت اجباری است و نمی‌تواند خالی باشد.');
+      return;
+    }
     try {
       const created = await frostApi.createFrostOrchard({
         name: orchardName,
         geometry: sharedGeometry,
         crop,
-        default_phenology_stage: stage,
+        default_phenology_stage: newOrchardStage,
+        current_stage: newOrchardStage,
       });
 
       if (alertRecipient.trim()) {
@@ -359,6 +465,7 @@ export default function FrostRiskPage() {
       }
       setOrchardName('');
       setAlertRecipient('');
+      setNewOrchardStage('');
       await loadSummaries();
       setSelectedOrchardId(created.id);
     } catch (err) {
@@ -566,6 +673,15 @@ export default function FrostRiskPage() {
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', cursor: 'pointer', margin: 0, color: '#334155' }}>
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    data-testid="show-archived-checkbox"
+                  />
+                  <span>نمایش بایگانی‌شده‌ها</span>
+                </label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <input
                     type="text"
@@ -598,6 +714,58 @@ export default function FrostRiskPage() {
                 </div>
               </div>
             </div>
+
+            {/* Action Feedback Messages */}
+            {actionSuccessMsg && (
+              <div
+                style={{
+                  margin: '10px 16px 0 16px',
+                  padding: '8px 12px',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #86efac',
+                  borderRadius: '6px',
+                  color: '#166534',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>✅ {actionSuccessMsg}</span>
+                <button
+                  type="button"
+                  onClick={() => setActionSuccessMsg(null)}
+                  style={{ background: 'none', border: 'none', color: '#166534', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {actionError && (
+              <div
+                style={{
+                  margin: '10px 16px 0 16px',
+                  padding: '8px 12px',
+                  backgroundColor: '#fef2f2',
+                  border: '1px solid #f87171',
+                  borderRadius: '6px',
+                  color: '#991b1b',
+                  fontSize: '0.82rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>⚠️ {actionError}</span>
+                <button
+                  type="button"
+                  onClick={() => setActionError(null)}
+                  style={{ background: 'none', border: 'none', color: '#991b1b', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             <div className="card-body" style={{ padding: 0, overflowX: 'auto' }}>
               {loadingSummaries ? (
@@ -639,23 +807,104 @@ export default function FrostRiskPage() {
                             borderBottom: '1px solid #f1f5f9',
                           }}
                         >
-                          <td style={{ padding: '10px 12px', fontWeight: 600 }}>{item.name}</td>
-                          <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            <span>{stageLabel}</span>
+                          <td style={{ padding: '10px 12px', fontWeight: 600 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span>{item.name}</span>
+                              {/تست|test|آزمایشی|demo/i.test(item.name) && (
+                                <span
+                                  data-testid="experimental-orchard-badge"
+                                  style={{
+                                    fontSize: '0.68rem',
+                                    backgroundColor: '#fef3c7',
+                                    color: '#854d0e',
+                                    border: '1px solid #facc15',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  [آزمایشی]
+                                </span>
+                              )}
+                              {item.archived_at && (
+                                <span
+                                  data-testid="archived-orchard-badge"
+                                  style={{
+                                    fontSize: '0.68rem',
+                                    backgroundColor: '#f1f5f9',
+                                    color: '#64748b',
+                                    border: '1px solid #cbd5e1',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  [بایگانی‌شده]
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <select
+                              value={item.current_stage}
+                              disabled={updatingStageOrchardId === item.orchard_id}
+                              onChange={(e) => handleInlineStageChange(item.orchard_id, e.target.value)}
+                              className="form-control form-control-sm"
+                              data-testid={`inline-stage-select-${item.orchard_id}`}
+                              style={{
+                                fontSize: '0.78rem',
+                                padding: '4px 6px',
+                                borderRadius: '4px',
+                                border: '1px solid #cbd5e1',
+                                width: '100%',
+                                minWidth: '150px',
+                                backgroundColor: updatingStageOrchardId === item.orchard_id ? '#f1f5f9' : '#ffffff',
+                              }}
+                            >
+                              {PUBLISHED_V1_STAGES.map((st) => (
+                                <option key={st.value} value={st.value}>
+                                  {st.labelFa}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Last updated date */}
+                            <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '3px' }}>
+                              آخرین به‌روزرسانی: {formatStageDate(item.stage_updated_at)}
+                            </div>
+
+                            {/* Stale Warning (>20 days per R4/S8) */}
                             {item.stage_is_stale && (
                               <span
+                                data-testid="stale-stage-badge"
                                 style={{
-                                  display: 'block',
-                                  fontSize: '0.7rem',
-                                  color: '#b45309',
+                                  display: 'inline-block',
+                                  fontSize: '0.68rem',
+                                  color: '#854d0e',
                                   backgroundColor: '#fef3c7',
+                                  border: '1px solid #facc15',
                                   borderRadius: '4px',
-                                  padding: '1px 4px',
-                                  marginTop: '2px',
+                                  padding: '2px 5px',
+                                  marginTop: '3px',
+                                  fontWeight: 600,
                                 }}
                               >
-                                ⚠️ قدیمی/نامشخص
+                                ⚠️ قدیمی/نامشخص: مرحله منقضی (آستانه ۱.۷-°C)
                               </span>
+                            )}
+
+                            {/* Inline Feedback message */}
+                            {inlineStageFeedback[item.orchard_id] && (
+                              <div
+                                style={{
+                                  fontSize: '0.68rem',
+                                  marginTop: '3px',
+                                  color: inlineStageFeedback[item.orchard_id].type === 'success' ? '#166534' : '#991b1b',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {inlineStageFeedback[item.orchard_id].text}
+                              </div>
                             )}
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center', direction: 'ltr' }}>
@@ -666,13 +915,36 @@ export default function FrostRiskPage() {
                             )}
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            {item.hours_below_threshold > 0 ? (
-                              <span>
-                                <FormattedNumber value={item.hours_below_threshold} /> ساعت
-                              </span>
-                            ) : (
-                              <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>
-                            )}
+                            {(() => {
+                              const isBelow =
+                                item.worst_effective_tmin_c !== null &&
+                                item.critical_temp_c !== null &&
+                                item.worst_effective_tmin_c !== undefined &&
+                                item.critical_temp_c !== undefined &&
+                                item.worst_effective_tmin_c <= item.critical_temp_c;
+                              const isResolvable = item.worst_night_resolvable !== false;
+                              const cadence = item.cadence_label_fa || 'تفکیک ۱ ساعته';
+
+                              if (item.hours_below_threshold > 0) {
+                                return (
+                                  <span>
+                                    <FormattedNumber value={item.hours_below_threshold} /> ساعت
+                                    {!isResolvable && (
+                                      <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'block' }}>
+                                        ({cadence})
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              }
+                              if (isBelow) {
+                                return <span style={{ color: '#d97706' }}>نامشخص {!isResolvable && `(${cadence})`}</span>;
+                              }
+                              if (isResolvable) {
+                                return <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>;
+                              }
+                              return <span style={{ color: '#64748b' }}>نامشخص ({cadence})</span>;
+                            })()}
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center', direction: 'ltr' }}>
                             {item.relative_rootzone_moisture !== null && item.relative_rootzone_moisture !== undefined ? (
@@ -708,20 +980,133 @@ export default function FrostRiskPage() {
                             </span>
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
-                              onClick={() => setSelectedOrchardId(item.orchard_id)}
-                              style={{ fontSize: '0.75rem', padding: '3px 8px' }}
-                            >
-                              {isSelected ? 'در حال بررسی' : 'مشاهده جزئیات'}
-                            </button>
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${isSelected ? 'btn-primary' : 'btn-outline-primary'}`}
+                                onClick={() => setSelectedOrchardId(item.orchard_id)}
+                                style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                              >
+                                {isSelected ? 'در حال بررسی' : 'مشاهده'}
+                              </button>
+                              {item.archived_at ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-success"
+                                  onClick={() => handleRestoreOrchard(item.orchard_id, item.name)}
+                                  style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                                  data-testid={`restore-orchard-btn-${item.orchard_id}`}
+                                  title="بازگردانی باغ از بایگانی"
+                                >
+                                  بازگردانی 🔄
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger"
+                                  onClick={() => {
+                                    setDeleteModalOrchard(item);
+                                    setDeleteConfirmName('');
+                                    setActionError(null);
+                                  }}
+                                  style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                                  data-testid={`delete-orchard-btn-${item.orchard_id}`}
+                                  title="حذف (بایگانی) باغ"
+                                >
+                                  حذف 🗑️
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+              )}
+
+              {/* Delete Orchard Modal (S5, T7) */}
+              {deleteModalOrchard && (
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 9999,
+                    padding: '16px',
+                  }}
+                  data-testid="delete-orchard-modal"
+                >
+                  <div
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '8px',
+                      maxWidth: '480px',
+                      width: '100%',
+                      padding: '20px',
+                      boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
+                      border: '1px solid #cbd5e1',
+                    }}
+                  >
+                    <h4 style={{ margin: '0 0 12px 0', fontSize: '1.05rem', color: '#991b1b', fontWeight: 700 }}>
+                      ⚠️ تأیید حذف (بایگانی) باغ: {deleteModalOrchard.name}
+                    </h4>
+                    <p style={{ fontSize: '0.85rem', color: '#334155', lineHeight: '1.5', margin: '0 0 12px 0' }}>
+                      حذف به صورت نرم (بایگانی) انجام خواهد شد و در صورت وجود، تمامی قواعد هشدار خودکار پیامکی/تلگرامی این باغ غیرفعال می‌گردند.
+                    </p>
+                    <div style={{ marginBottom: '14px' }}>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '6px', color: '#0f172a' }}>
+                        جهت اطمینان، لطفاً نام باغ «<strong style={{ color: '#b91c1c' }}>{deleteModalOrchard.name}</strong>» را عیناً در کادر زیر تایپ کنید:
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder={deleteModalOrchard.name}
+                        value={deleteConfirmName}
+                        onChange={(e) => setDeleteConfirmName(e.target.value)}
+                        data-testid="delete-orchard-confirm-input"
+                        style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        autoFocus
+                      />
+                    </div>
+
+                    {actionError && (
+                      <div style={{ fontSize: '0.8rem', color: '#991b1b', backgroundColor: '#fef2f2', padding: '6px 10px', borderRadius: '4px', marginBottom: '12px' }}>
+                        {actionError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setDeleteModalOrchard(null);
+                          setDeleteConfirmName('');
+                          setActionError(null);
+                        }}
+                        disabled={isDeleting}
+                      >
+                        انصراف
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={handleConfirmDelete}
+                        disabled={deleteConfirmName.trim() !== deleteModalOrchard.name || isDeleting}
+                        data-testid="delete-orchard-confirm-btn"
+                      >
+                        {isDeleting ? 'در حال حذف...' : 'تأیید و حذف باغ 🗑️'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {filteredSummaries.length > ORCHARD_PAGE_SIZE && (
@@ -782,6 +1167,23 @@ export default function FrostRiskPage() {
                       <FormattedNumber value={orchardRiskReport.critical_temperature_c} unit="°C" /> | مجموعه آستانه:{' '}
                       {orchardRiskReport.threshold_set}
                     </div>
+                    <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '4px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                      <span>
+                        <strong>ارتفاع ثبت‌شده کاربر:</strong>{' '}
+                        {orchardRiskReport.registered_elevation_m !== null && orchardRiskReport.registered_elevation_m !== undefined
+                          ? `${orchardRiskReport.registered_elevation_m} متر`
+                          : 'ثبت‌نشده'}
+                      </span>
+                      <span>
+                        <strong>ارتفاع مدل رقومی (DEM NASADEM 30m):</strong>{' '}
+                        {orchardRiskReport.dem_elevation_m !== null && orchardRiskReport.dem_elevation_m !== undefined
+                          ? `${orchardRiskReport.dem_elevation_m} متر`
+                          : 'نامشخص'}
+                      </span>
+                      <span style={{ color: '#0369a1', fontStyle: 'italic' }}>
+                        (محاسبه دما بر اساس ارتفاع DEM انجام شده است)
+                      </span>
+                    </div>
                   </div>
 
                   {/* Stage Update Control */}
@@ -828,6 +1230,25 @@ export default function FrostRiskPage() {
                   </div>
                 )}
 
+                {/* Elevation Discrepancy Warning (T5) */}
+                {orchardRiskReport.has_elevation_discrepancy && (
+                  <div
+                    data-testid="elevation-discrepancy-warning"
+                    style={{
+                      marginTop: '8px',
+                      padding: '8px 12px',
+                      backgroundColor: '#fef2f2',
+                      border: '1px solid #f87171',
+                      borderRadius: '6px',
+                      color: '#991b1b',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    ⚠️ {orchardRiskReport.elevation_discrepancy_warning_fa || 'هشدار ناهمخوانی با DEM: اختلاف ارتفاع ثبت‌شده کاربر با مدل رقومی DEM بیش از ۱۵۰ متر است.'}
+                  </div>
+                )}
+
                 {/* Stale Stage Conservative Warning */}
                 {orchardRiskReport.stage_is_stale && (
                   <div
@@ -866,7 +1287,7 @@ export default function FrostRiskPage() {
                         fontSize: '0.9rem',
                       }}
                     >
-                      هیچ شب زیر آستانه نیست
+                      بدون خطر در این بازه
                     </div>
                   ) : (
                     <div style={{ overflowX: 'auto' }}>
@@ -901,13 +1322,48 @@ export default function FrostRiskPage() {
                                   <FormattedNumber value={n.effective_tmin_c} unit="°C" />
                                 </td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                  {n.hours_below_threshold > 0 ? (
-                                    <span>
-                                      <FormattedNumber value={n.hours_below_threshold} /> ساعت
-                                    </span>
-                                  ) : (
-                                    <span style={{ color: '#166534' }}>هیچ شب زیر آستانه نیست</span>
-                                  )}
+                                  {(() => {
+                                    const crit = orchardRiskReport?.critical_temperature_c ?? 0;
+                                    const isBelow = n.effective_tmin_c <= crit;
+                                    const isResolvable = n.is_duration_resolvable !== false;
+                                    const cadence = n.cadence_label_fa || 'تفکیک ۱ ساعته';
+
+                                    if (n.windows && n.windows.length > 0) {
+                                      return (
+                                        <div>
+                                          {n.windows.map((w, wIdx) => (
+                                            <div key={wIdx} style={{ fontSize: '0.78rem', fontWeight: 600, color: '#b91c1c' }}>
+                                              {w.display_text_fa || `${w.start_local} تا ${w.end_local} — ${w.hours} ساعت`}
+                                            </div>
+                                          ))}
+                                          {!isResolvable && (
+                                            <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block' }}>
+                                              ({cadence})
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    }
+                                    if (n.hours_below_threshold > 0) {
+                                      return (
+                                        <span>
+                                          <FormattedNumber value={n.hours_below_threshold} /> ساعت
+                                          {!isResolvable && (
+                                            <span style={{ fontSize: '0.68rem', color: '#64748b', display: 'block' }}>
+                                              ({cadence})
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    }
+                                    if (isBelow) {
+                                      return <span style={{ color: '#d97706' }}>نامشخص {!isResolvable && `(${cadence})`}</span>;
+                                    }
+                                    if (isResolvable) {
+                                      return <span style={{ color: '#166534' }}>بدون خطر در این بازه</span>;
+                                    }
+                                    return <span style={{ color: '#64748b' }}>نامشخص ({cadence})</span>;
+                                  })()}
                                 </td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700, direction: 'ltr' }}>
                                   <FormattedNumber value={n.risk_index} unit="٪" />
@@ -960,7 +1416,7 @@ export default function FrostRiskPage() {
                         📊 تفکیک عوامل ده‌گانه مدل وزن‌دهی برای {selectedNight.night_display_fa}
                       </div>
                       <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                        برچسب: ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست)
+                        برچسب: ریسک راهنما ٪ (برآورد نیمه‌کمی، کالیبره‌نشده؛ احتمال واقعی نیست) | امتیازهای جزئی: برآورد کارشناسی کالیبره‌نشده
                       </div>
                     </div>
 
@@ -973,7 +1429,7 @@ export default function FrostRiskPage() {
                             <th style={{ padding: '8px 10px', textAlign: 'right' }}>منبع و کیفیت و تاریخ داده</th>
                             <th style={{ padding: '8px 10px', textAlign: 'center' }}>وضعیت</th>
                             <th style={{ padding: '8px 10px', textAlign: 'center' }}>وزن</th>
-                            <th style={{ padding: '8px 10px', textAlign: 'center' }}>امتیاز جزئی</th>
+                            <th style={{ padding: '8px 10px', textAlign: 'center' }} title="برآورد کارشناسی کالیبره‌نشده">امتیاز جزئی</th>
                             <th style={{ padding: '8px 10px', textAlign: 'center' }}>سهم</th>
                           </tr>
                         </thead>
@@ -982,15 +1438,23 @@ export default function FrostRiskPage() {
                             <tr key={f.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                               <td style={{ padding: '8px 10px', fontWeight: 600 }}>{f.label_fa}</td>
                               <td style={{ padding: '8px 10px', textAlign: 'center', direction: 'ltr' }}>
-                                {typeof f.raw_value === 'number' ? (
-                                  <FormattedNumber value={f.raw_value} unit={f.unit || ''} />
+                                {f.quality_state === 'unavailable' || f.raw_value === 'داده این باغ موجود نیست' ? (
+                                  <span style={{ color: '#64748b', fontSize: '0.78rem' }}>داده این باغ موجود نیست</span>
                                 ) : (
-                                  <span>{String(f.raw_value ?? '—')} {f.unit}</span>
+                                  <span style={{ unicodeBidi: 'isolate' }}>{renderFactorRawValue(f.raw_value, f.unit)}</span>
                                 )}
                               </td>
                               <td style={{ padding: '8px 10px', fontSize: '0.75rem', color: '#475569' }}>
-                                <div>{f.source_module} ({f.quality_state})</div>
-                                <div style={{ color: '#94a3b8' }}>{f.as_of}</div>
+                                <div>
+                                  {f.source_module} (
+                                  {f.quality_state === 'coarse_context'
+                                    ? 'تفکیک ~۹–۱۱ کیلومتر'
+                                    : f.quality_state === 'unavailable'
+                                    ? 'ناموجود'
+                                    : f.quality_state}
+                                  )
+                                </div>
+                                <div style={{ color: '#94a3b8' }}>{f.static ? 'لایه ثابت' : f.as_of}</div>
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                 <span
@@ -1019,13 +1483,19 @@ export default function FrostRiskPage() {
                                 </span>
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center', direction: 'ltr' }}>
-                                <FormattedNumber value={f.weight} unit="٪" />
+                                <span style={{ unicodeBidi: 'isolate' }}>
+                                  <FormattedNumber value={f.weight} unit="٪" />
+                                </span>
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center', direction: 'ltr' }}>
-                                <FormattedNumber value={f.subscore} />
+                                <span style={{ unicodeBidi: 'isolate' }}>
+                                  <FormattedNumber value={f.subscore} />
+                                </span>
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 600, direction: 'ltr' }}>
-                                <FormattedNumber value={f.contribution} unit="٪" />
+                                <span style={{ unicodeBidi: 'isolate' }}>
+                                  <FormattedNumber value={f.contribution} unit="٪" />
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -1432,10 +1902,31 @@ export default function FrostRiskPage() {
                   </div>
 
                   <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', marginBottom: '3px', fontWeight: 600 }}>
+                      مرحله فعلی باغ (اجباری) *:
+                    </label>
+                    <select
+                      className="form-control"
+                      required
+                      value={newOrchardStage}
+                      onChange={(e) => setNewOrchardStage(e.target.value)}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                      data-testid="new-orchard-stage-select"
+                    >
+                      <option value="">-- لطفاً مرحله فعلی را انتخاب کنید --</option>
+                      {PUBLISHED_V1_STAGES.map((st) => (
+                        <option key={st.value} value={st.value}>
+                          {st.labelFa}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
                     <button
                       type="submit"
                       className="btn btn-secondary"
-                      disabled={!orchardName.trim()}
+                      disabled={!orchardName.trim() || !newOrchardStage}
                       data-testid="save-orchard-submit-btn"
                       style={{ width: '100%' }}
                     >

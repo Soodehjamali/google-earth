@@ -113,6 +113,8 @@ export interface FrostNightAssessment {
   active_threshold_set?: string;
   window_coverage?: number;
   is_partial_night?: boolean;
+  cadence_label_fa?: string;
+  windows?: OrchardNightRiskWindow[];
   tmin_label?: string;
   tmin_display_label_fa?: string;
   illustrative_only?: boolean;
@@ -259,6 +261,11 @@ export interface OrchardSummaryItem {
   gate_triggered: boolean;
   forecast_source?: string;
   is_fake?: boolean;
+  cadence_label_fa?: string;
+  worst_night_resolvable?: boolean;
+  critical_temp_c?: number | null;
+  stage_updated_at?: string | null;
+  archived_at?: string | null;
 }
 
 export interface OrchardNightRiskFactor {
@@ -276,7 +283,16 @@ export interface OrchardNightRiskFactor {
   applied: boolean;
   source_note: string;
   is_stale: boolean;
+  static?: boolean;
   details?: Record<string, any>;
+}
+
+export interface OrchardNightRiskWindow {
+  start_local: string;
+  end_local: string;
+  hours: number;
+  min_temp_c: number;
+  display_text_fa: string;
 }
 
 export interface OrchardNightRiskDetail {
@@ -303,6 +319,9 @@ export interface OrchardNightRiskDetail {
   window_coverage: number;
   is_partial_night: boolean;
   duration_display_text: string;
+  cadence_label_fa?: string;
+  is_duration_resolvable?: boolean;
+  windows?: OrchardNightRiskWindow[];
 }
 
 export interface OrchardRiskReport {
@@ -318,6 +337,7 @@ export interface OrchardRiskReport {
   thresholds_verified: boolean;
   evidence_level: string;
   index_is_probability: boolean;
+  stage_updated_at?: string | null;
   guidance_risk_label_fa: string;
   overall_final_category: string;
   overall_final_category_fa: string;
@@ -335,5 +355,9 @@ export interface OrchardRiskReport {
   assembled_at: string;
   forecast_source?: string;
   is_fake?: boolean;
+  registered_elevation_m?: number | null;
+  dem_elevation_m?: number | null;
+  has_elevation_discrepancy?: boolean;
+  elevation_discrepancy_warning_fa?: string | null;
 }
 

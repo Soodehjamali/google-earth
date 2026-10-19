@@ -250,3 +250,64 @@ def test_missing_soil_moisture_neutral_subscore():
     assert moist_factor.subscore == 0.50
     assert moist_factor.status == "نامشخص"
     assert moist_factor.raw_value == "نامشخص"
+
+
+def test_temperature_necessity_attenuation_margin_17():
+    """Verify S3 T2 requirement: margin = 17 -> category 'none' and risk_index <= 5%."""
+    # Ardakan-like desert scenario:
+    # Tmin = 15.3 C, Tcrit = -1.7 C => margin = 17.0 C
+    # Sensitive stage bloom (subscore 1.0), dry soil, calm wind
+    inputs = _make_dummy_inputs(moist_val=0.15, stage="bloom", pooling=0.70)
+    res = evaluate_weighted_frost_model(
+        inputs=inputs,
+        night_tmin_c=15.3,
+        critical_temp_c=-1.7,
+        night_wind_speed_mps=0.5,
+        night_wind_dir_deg=180.0,
+        night_cloud_pct=0.0,
+        night_rh_pct=15.0,
+    )
+    assert res.necessity_margin_c == pytest.approx(17.0, abs=0.01)
+    assert res.necessity_multiplier == 0.10
+    assert res.raw_risk_index > 40.0  # Baseline raw index without attenuation is high
+    assert res.risk_index <= 5.0      # Attenuated final index must be <= 5%
+    assert res.final_category == "none"
+    assert res.gate_triggered is False
+
+
+def test_temperature_necessity_attenuation_margin_3_unchanged():
+    """Verify S3 T2 requirement: margin = 3 -> attenuation multiplier is 1.0 (unchanged)."""
+    # Tmin = 1.3 C, Tcrit = -1.7 C => margin = 3.0 C <= 4.0 C
+    inputs = _make_dummy_inputs(moist_val=0.45, stage="bloom", pooling=0.45)
+    res = evaluate_weighted_frost_model(
+        inputs=inputs,
+        night_tmin_c=1.3,
+        critical_temp_c=-1.7,
+        night_wind_speed_mps=2.0,
+        night_wind_dir_deg=180.0,
+        night_cloud_pct=50.0,
+        night_rh_pct=60.0,
+    )
+    assert res.necessity_margin_c == pytest.approx(3.0, abs=0.01)
+    assert res.necessity_multiplier == 1.0
+    assert res.risk_index == res.raw_risk_index
+    assert res.total_contribution == res.risk_index
+
+
+def test_temperature_necessity_attenuation_gate_remains_critical():
+    """Verify S3 T2 requirement: GATE remains critical even when duration escalated."""
+    inputs = _make_dummy_inputs()
+    res = evaluate_weighted_frost_model(
+        inputs=inputs,
+        night_tmin_c=-1.8,
+        critical_temp_c=-1.7,
+        night_wind_speed_mps=2.0,
+        night_wind_dir_deg=180.0,
+        night_cloud_pct=40.0,
+        night_rh_pct=50.0,
+        duration_escalated=True,
+    )
+    assert res.gate_category == "critical"
+    assert res.final_category == "critical"
+    assert res.gate_triggered is True
+

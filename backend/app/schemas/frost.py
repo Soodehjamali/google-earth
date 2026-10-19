@@ -55,6 +55,13 @@ class OrchardUpdate(BaseModel):
     elevation: Optional[float] = None
 
 
+class OrchardStageUpdate(BaseModel):
+    """Schema for updating only the current phenological stage of an orchard (S8)."""
+
+    model_config = ConfigDict(extra="forbid")
+    current_stage: str = Field(..., min_length=1, max_length=100, description="Updated phenological stage from published_v1")
+
+
 class AlertRuleCreate(BaseModel):
     """Schema for registering an alert rule bound to an orchard."""
 
@@ -90,6 +97,7 @@ class OrchardResponse(BaseModel):
     current_stage: Optional[str] = None
     stage_updated_at: Optional[str] = None
     stage_is_stale: bool = False
+    archived_at: Optional[str] = None
     created_at: str
     alert_rules: List[AlertRuleResponse] = []
 

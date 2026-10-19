@@ -58,17 +58,21 @@ async function extractError(response: Response): Promise<ApiError> {
   });
 }
 
-const DEFAULT_HEADERS: Record<string, string> = {
-  'X-Admin-Token':
-    (typeof import.meta !== 'undefined' &&
-      import.meta.env &&
-      (import.meta.env.VITE_ADMIN_API_KEY as string)) ||
-    'admin-secret-token',
-};
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token =
+    typeof import.meta !== 'undefined' &&
+    import.meta.env &&
+    (import.meta.env.VITE_ADMIN_API_KEY as string);
+  if (token) {
+    headers['X-Admin-Token'] = token;
+  }
+  return headers;
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: DEFAULT_HEADERS,
+    headers: getAuthHeaders(),
   });
   if (!response.ok) {
     throw await extractError(response);
@@ -79,7 +83,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, data: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...DEFAULT_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -91,7 +95,19 @@ export async function apiPost<T>(path: string, data: unknown): Promise<T> {
 export async function apiPut<T>(path: string, data: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...DEFAULT_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    throw await extractError(response);
+  }
+  return response.json();
+}
+
+export async function apiPatch<T>(path: string, data: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data),
   });
   if (!response.ok) {
@@ -103,7 +119,7 @@ export async function apiPut<T>(path: string, data: unknown): Promise<T> {
 export async function apiDelete(path: string): Promise<void> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
-    headers: DEFAULT_HEADERS,
+    headers: getAuthHeaders(),
   });
   if (!response.ok && response.status !== 204) {
     throw await extractError(response);

@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     ADMIN_API_KEY: Optional[str] = None
     ALERT_ADMIN_OVERRIDE: bool = False
     FROST_USE_LIVE_GEE: bool = False
+    USE_LIVE_GEE: Optional[bool] = None
     GEE_TILE_TIMEOUT_SECONDS: float = 60.0
 
     @property
@@ -71,13 +72,19 @@ class Settings(BaseSettings):
         return self.APP_ENV == "production"
 
     @model_validator(mode="after")
-    def _validate_production_safety(self) -> "Settings":
-        """Reject unsafe configuration when APP_ENV=production.
+    def _validate_and_resolve_settings(self) -> "Settings":
+        """Resolve USE_LIVE_GEE default and validate production safety."""
+        if self.USE_LIVE_GEE is None:
+            if self.FROST_USE_LIVE_GEE:
+                self.USE_LIVE_GEE = True
+            elif self.EE_PROJECT_ID and self.EE_PRIVATE_KEY_FILE:
+                key_path = Path(self.EE_PRIVATE_KEY_FILE)
+                if not key_path.is_absolute():
+                    key_path = _BACKEND_DIR / self.EE_PRIVATE_KEY_FILE
+                self.USE_LIVE_GEE = key_path.exists()
+            else:
+                self.USE_LIVE_GEE = False
 
-        Development defaults (debug mode, well-known database credentials,
-        wildcard CORS) must never reach a production deployment. Fail fast at
-        startup instead of silently running with them.
-        """
         if not self.is_production:
             return self
 
