@@ -48,10 +48,24 @@ from app.services.agriculture.quality_gating import (
 
 logger = get_logger(__name__)
 
+def get_stage_max_age_hours() -> float:
+    """Retrieve user phenological stage staleness threshold in hours from config/frost_factors.yaml (W4)."""
+    try:
+        from app.services.agriculture.frost_risk import load_frost_factors_config
+        cfg = load_frost_factors_config()
+        if "phenology" in cfg and "max_age_days" in cfg["phenology"]:
+            return float(cfg["phenology"]["max_age_days"]) * 24.0
+        if "phenology_stage_max_age_days" in cfg:
+            return float(cfg["phenology_stage_max_age_days"]) * 24.0
+    except Exception:
+        pass
+    return 20.0 * 24.0
+
+
 #: Configurable staleness thresholds in hours
 DEFAULT_MAX_FACTOR_AGE_HOURS: Dict[str, float] = {
     "temperature_duration": 6.0,          # Forecast data refreshed within 6 hours
-    "phenological_stage": 14.0 * 24.0,     # User-entered stage valid for 14 days (336h) per R4
+    "phenological_stage": 20.0 * 24.0,     # User-entered stage valid for 20 days (480h) per config/frost_factors.yaml (W4)
     "soil_rootzone_moisture": 120.0,       # Satellite/assimilated soil moisture lag (5 days)
     "soil_texture_depth": 365.0 * 24.0,    # Static soil map (1 year)
     "wind_speed": 6.0,
@@ -357,7 +371,7 @@ async def assemble_orchard_inputs(
 
     stage_is_stale = is_timestamp_stale(
         stage_updated_at_iso,
-        max_age_hours=DEFAULT_MAX_FACTOR_AGE_HOURS["phenological_stage"],
+        max_age_hours=get_stage_max_age_hours(),
         now=now_dt,
     )
 
@@ -674,9 +688,10 @@ async def assemble_orchard_inputs(
                 "wilting_point_m3m3": wp,
                 "relative_moisture": relative_moisture,
                 "below_wilting_point": is_below_wp,
-                "below_wilting_point_note": "خشک‌تر از نقطه پژمردگی (۰)" if is_below_wp else None,
+                "below_wilting_point_note": "خشک‌تر از نقطه پژمردگی (برآورد درشت‌مقیاس، نامطمئن)" if is_below_wp else None,
                 "normalized_formula": "clamp((theta - WP)/(FC - WP), 0, 1)",
                 "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
+                "source_disparity_note": "تخمین θ از ماهواره/بازتحلیل (~۹–۱۱ کیلومتر) و WP از SoilGrids (۲۵۰ متر) از دو منبع متفاوت با عدم‌قطعیت ذاتی است.",
             },
         )
     else:

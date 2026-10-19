@@ -894,6 +894,35 @@ class RootZoneSoilMoistureGLDASMetric(Metric):
             band_spec=dataset.band(band_name),
         )
 
+        # Fallback to centroid sampling if parcel area is smaller than coarse 28km GLDAS grid cell
+        if (stats.valid_pixel_count == 0 or stats.mean is None) and step_count > 0:
+            try:
+                geom = context.geometry
+                centroid_geom = None
+                if hasattr(geom, "centroid"):
+                    centroid_geom = geom.centroid()
+                elif isinstance(geom, dict) and geom.get("type"):
+                    centroid_geom = ee.Geometry(geom).centroid()
+
+                if centroid_geom is not None:
+                    raw_centroid = collection.mean().reduceRegion(
+                        reducer=build_reducer(ee),
+                        geometry=centroid_geom,
+                        scale=self.default_scale,
+                        maxPixels=1e9,
+                        bestEffort=True,
+                    ).getInfo()
+                    if raw_centroid and raw_centroid.get(f"{band_name}_mean") is not None:
+                        stats = parse_reduction_result(
+                            raw_centroid,
+                            band=band_name,
+                            total_pixel_count=1,
+                            pixel_area_sq_m=pixel_area_sq_m(self.default_scale),
+                            band_spec=dataset.band(band_name),
+                        )
+            except Exception:
+                pass
+
         quality = assess_quality(
             image_count=max(step_count, 1),
             coverage_percent=stats.coverage_percent,

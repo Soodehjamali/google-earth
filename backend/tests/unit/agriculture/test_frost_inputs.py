@@ -65,16 +65,20 @@ def test_gfs_cell_calculation():
 
 
 def test_staleness_detection():
-    """Verify staleness detection against configurable thresholds."""
+    """Verify staleness detection against configurable thresholds from config (W4)."""
+    from app.services.agriculture.frost_inputs import get_stage_max_age_hours
+
+    assert get_stage_max_age_hours() == 20.0 * 24.0
+
     now = datetime(2026, 4, 15, 12, 0, 0, tzinfo=timezone.utc)
 
-    # 10 days old: within 14-day phenology threshold
+    # 10 days old: within 20-day phenology threshold
     ts_fresh = (now - timedelta(days=10)).isoformat()
-    assert is_timestamp_stale(ts_fresh, max_age_hours=14 * 24, now=now) is False
+    assert is_timestamp_stale(ts_fresh, max_age_hours=get_stage_max_age_hours(), now=now) is False
 
-    # 15 days old: exceeds 14-day threshold
-    ts_stale = (now - timedelta(days=15)).isoformat()
-    assert is_timestamp_stale(ts_stale, max_age_hours=14 * 24, now=now) is True
+    # 25 days old: exceeds 20-day threshold
+    ts_stale = (now - timedelta(days=25)).isoformat()
+    assert is_timestamp_stale(ts_stale, max_age_hours=get_stage_max_age_hours(), now=now) is True
 
     # Missing timestamp is treated as stale
     assert is_timestamp_stale(None, max_age_hours=24, now=now) is True

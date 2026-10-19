@@ -113,8 +113,24 @@ const formatNightDisplayFa = (nightDateStr?: string | null, rawDisplay?: string 
   return rawDisplay || '';
 };
 
-const renderFactorRawValue = (val: any, unit?: string, _factorId?: string, _details?: any) => {
+const renderFactorRawValue = (val: any, unit?: string, factorId?: string, details?: any) => {
   if (val === null || val === undefined || val === '—') return '—';
+
+  if (factorId === 'soil_rootzone_moisture') {
+    const s = String(val).trim();
+    if (
+      s.includes('پژمردگی') ||
+      details?.below_wilting_point ||
+      s === '0' ||
+      s === '0.00' ||
+      s === '۰' ||
+      s === '۰.۰۰' ||
+      (typeof val === 'number' && val <= 0.001)
+    ) {
+      return 'خشک‌تر از نقطه پژمردگی (برآورد درشت‌مقیاس، نامطمئن)';
+    }
+  }
+
   if (typeof val === 'number') {
     return <FormattedNumber value={val} unit={unit || ''} />;
   }
@@ -1465,7 +1481,7 @@ export default function FrostRiskPage() {
                   </div>
                 )}
 
-                {/* Stale Stage Conservative Warning */}
+                {/* Stale Stage Warning */}
                 {orchardRiskReport.stage_is_stale && (
                   <div
                     style={{
@@ -1478,9 +1494,27 @@ export default function FrostRiskPage() {
                       fontSize: '0.8rem',
                     }}
                   >
-                    ⚠️ <strong>توجه محافظه‌کارانه:</strong> مرحله رشدی این باغ بیش از ۱۴ روز پیش ثبت شده یا نامشخص است؛ بر اساس رویکرد محافظه‌کارانه، حساس‌ترین مرحله منظور گردیده است. لطفاً مرحله فعلی را به‌روزرسانی نمایید.
+                    ⚠️ <strong>توجه:</strong> مرحله رشدی این باغ بیش از ۲۰ روز پیش ثبت شده یا نامشخص است؛ بر اساس قاعده ایمنی، حساس‌ترین مرحله منظور گردیده است. لطفاً مرحله فعلی را به‌روزرسانی نمایید.
                   </div>
                 )}
+
+                {/* Model Validity and Elevation Buffer Approximation Notice (X3 / X4) */}
+                <div
+                  data-testid="model-validity-limitation-notice"
+                  style={{
+                    marginTop: '8px',
+                    padding: '8px 12px',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    color: '#334155',
+                    fontSize: '0.78rem',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  ℹ️ <strong>محدودیت اعتبار و تراز ارتفاع:</strong> بدون مرجع زمینی؛ اختلاف GFS و ERA5-Land در شب‌های گذشته ۴–۶°C بود؛ عدم‌قطعیت دما ≥۵°C.
+                  تراز ارتفاع سلول GFS با تقریب «میانگین DEM بافر» (به دلیل فقدان باند orography در دیتاست NOAA/GFS0P25 در Earth Engine) محاسبه شده است.
+                </div>
               </div>
 
               <div className="card-body">
@@ -1677,6 +1711,11 @@ export default function FrostRiskPage() {
                                 <div style={{ color: '#94a3b8' }}>
                                   {f.static ? 'لایه ثابت' : formatPersianDateTime(f.as_of)}
                                 </div>
+                                {f.id === 'soil_rootzone_moisture' && (
+                                  <div style={{ color: '#b45309', fontSize: '0.70rem', marginTop: '2px', lineHeight: '1.3' }}>
+                                    تخمین θ و WP از دو منبع متفاوت با خطای ذاتی هستند (ماهواره/بازتحلیل ~۹–۱۱ کیلومتر و SoilGrids ۲۵۰ متر).
+                                  </div>
+                                )}
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                 <span

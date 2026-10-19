@@ -83,9 +83,9 @@ async def test_fresh_stage_evaluation():
 
 @pytest.mark.asyncio
 async def test_stale_stage_treated_as_unknown_conservative():
-    """Verify that a stage older than 14 days is treated as unknown: uses most sensitive stage flagged 'مرحله قدیمی/نامشخص'."""
+    """Verify that a stage older than 20 days is treated as unknown: uses most sensitive stage flagged 'مرحله قدیمی/نامشخص'."""
     now = datetime(2026, 4, 15, 10, 0, 0, tzinfo=timezone.utc)
-    updated_20_days_ago = (now - timedelta(days=20)).isoformat()
+    updated_21_days_ago = (now - timedelta(days=21)).isoformat()
 
     orchard_dict = {
         "id": "orchard_stale",
@@ -95,7 +95,7 @@ async def test_stale_stage_treated_as_unknown_conservative():
         "elevation": 1200.0,
         "crop": "pistachio",
         "current_stage": "unopened_bud",  # would normally be 0.30
-        "stage_updated_at": updated_20_days_ago,
+        "stage_updated_at": updated_21_days_ago,
     }
 
     inputs = await assemble_orchard_inputs(

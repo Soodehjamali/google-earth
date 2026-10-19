@@ -2004,7 +2004,8 @@ async def list_orchards_endpoint(
     for o in orchards:
         stage_val = o.current_stage or o.default_phenology_stage
         up_at_iso = o.stage_updated_at.isoformat() if o.stage_updated_at else (o.created_at.isoformat() if o.created_at else None)
-        is_stale = is_timestamp_stale(up_at_iso, max_age_hours=14.0 * 24.0)
+        from app.services.agriculture.frost_inputs import get_stage_max_age_hours
+        is_stale = is_timestamp_stale(up_at_iso, max_age_hours=get_stage_max_age_hours())
 
         out.append({
             "id": str(o.id),

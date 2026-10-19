@@ -11,6 +11,10 @@ description: "Physical & Environmental Modifiers for Frost Risk Effective Temper
 
 protective_credit_cap_c: 1.0
 
+# User phenological stage staleness threshold (W4)
+phenology:
+  max_age_days: 20
+
 # Sourced regimes per Hokmabadi (2011) [S2]
 regime_thresholds:
   radiative:

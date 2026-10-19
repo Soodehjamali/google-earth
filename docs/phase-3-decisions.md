@@ -530,7 +530,7 @@ aa5b907 untracked files on cline checkpoint
      - `bud_burst` / `opening_bud`: $s = 0.50$.
      - `unopened_bud`: $s = 0.30$ (most resistant).
      - `dormant`: $s = 0.10$.
-     - Stale stage (>14 days) or unknown: $s = 1.00$ (most sensitive stage, flagged *"مرحله قدیمی/نامشخص"*).
+     - Stale stage (>20 days per `config/frost_factors.yaml`) or unknown: $s = 1.00$ (most sensitive stage, flagged *"مرحله قدیمی/نامشخص"*).
    - **Relative Root-Zone Soil Moisture ($w = 7.5\%$):**
      - Relative moisture $m = \text{clamp}((\theta - WP)/(FC - WP), 0, 1)$.
      - $m \le 0.30 \implies s = 0.85$ (dry, adverse).
@@ -623,7 +623,7 @@ aa5b907 untracked files on cline checkpoint
    ```
    - Verified columns via async SQLAlchemy reflection: `current_stage` and `stage_updated_at` confirmed present in PostgreSQL `orchards` table.
 3. **Conservative Staleness Decision:**
-   - Decision: A developmental stage older than 14 days (336 hours) without grower update is classified as stale and treated as unknown.
+   - Decision: A developmental stage older than 20 days (480 hours per `config/frost_factors.yaml`) without grower update is classified as stale and treated as unknown.
    - When stale, the risk model falls back to the **most sensitive configured developmental stage** (`full_bloom`, subscore $1.00$), flagged explicitly as *"مرحله قدیمی/نامشخص"*.
    - Rationale: In spring, phenological progression is rapid; assuming an out-of-date resistant stage (e.g. unopened bud from 3 weeks ago when trees are actually in full bloom) would dangerously underestimate mortality risk. Defaulting to maximum sensitivity ensures farmer vigilance.
    - Satellite-derived SOS/EOS phenology metrics are retained strictly as advisory hints in the UI and never overwrite grower observations.
@@ -861,3 +861,72 @@ Headless Chrome capture script (`scripts/capture_phase3_evidence.mjs`) verified 
 #### R10(c) Clean Clone Verification
 - Clean clone repository located at `C:\Users\Jamali\Desktop\google_clean_clone`.
 - Verified branch synchronization, clean `npm test` passing all 601 frontend assertions, and consistent backend test execution matching commit specifications.
+
+---
+
+## Phase 3 Final Verification and Last Checks (Items X1–X6)
+
+### Item X1: Night Minimum Partitioning & Diurnal Assignment
+1. **Local Night Definition:**
+   - Window: Local Iranian Standard Time (IRST, UTC+3.5) from 18:00 on calendar date $D$ to 09:00 on date $D+1$.
+   - Midday steps (09:00 to 18:00 local) are filtered out of night buckets.
+2. **24-Hour Diurnal Separation (Ardakan October 2026 Verification):**
+   - **Night 1 (2026-10-19 / شب ۲۷ مهر):** Window 19 Oct 18:00 to 20 Oct 09:00 IRST. Minimum occurs at 20 Oct 06:30 IRST ($T_{\text{raw}} = 20.68^\circ\text{C}$, $\Delta T = +0.17^\circ\text{C}$, $T_{\text{eff}} = 20.85^\circ\text{C}$).
+   - **Night 2 (2026-10-20 / شب ۲۸ مهر):** Window 20 Oct 18:00 to 21 Oct 09:00 IRST. Minimum occurs at 21 Oct 06:30 IRST ($T_{\text{raw}} = 19.69^\circ\text{C}$, $\Delta T = +0.17^\circ\text{C}$, $T_{\text{eff}} = 19.86^\circ\text{C}$).
+   - **Night 3 (2026-10-21 / شب ۲۹ مهر):** Window 21 Oct 18:00 to 22 Oct 09:00 IRST. Minimum occurs at 22 Oct 05:30/06:30 IRST ($T_{\text{raw}} = 18.58^\circ\text{C}$, $\Delta T = +0.17^\circ\text{C}$, $T_{\text{eff}} = 18.75^\circ\text{C}$).
+   - **Discrepancy Explanation:** In an earlier assistant verification report, both 19.86 and 18.75 were mistakenly labeled with the typographical header "۲۹ مهر". In reality, the two minima occurred **24 hours apart** (morning of 21 Oct vs morning of 22 Oct) and belong strictly to consecutive nights. Unit test `test_aggregate_forecast_by_local_night_24h_separation` in `test_frost_night_partitioning.py` verifies this invariant.
+
+### Item X2: Soil Moisture Sourcing & Integration Test Resolution
+1. **Dynamic Moisture Provenance for Zarand:**
+   - Primary Asset: `NASA/SMAP/SPL4SMGP/008` (SMAP L4 Global 3-hourly 9 km Assimilated Model).
+   - Band: `sm_rootzone` (0–100 cm root-zone volumetric soil moisture).
+   - Image Timestamp: `2026-10-14T22:30:00+00:00`.
+   - Raw $\theta$: $0.2069\text{ m}^3/\text{m}^3$ (median over 7-day query window: $0.2066\text{ m}^3/\text{m}^3$).
+   - Fallback: `ECMWF/ERA5_LAND/HOURLY` (latency ~14 days; EE collection had 0 images within the 7-day forecast initialization window).
+2. **Sub-Wilting-Point Disparity Handling:**
+   - Root-zone $\theta$ ($0.207\text{ m}^3/\text{m}^3$) is derived from coarse ~9–11 km satellite/model data, whereas wilting point $WP$ ($0.218\text{ m}^3/\text{m}^3$) and field capacity $FC$ ($0.320\text{ m}^3/\text{m}^3$) are derived from ISRIC SoilGrids 250m water retention pedotransfer functions.
+   - When $\theta < WP$, the UI honestly labels the value: `"خشک‌تر از نقطه پژمردگی (برآورد درشت‌مقیاس، نامطمئن)"`, explicitly noting the source disparity between macro satellite footprints and 250m soil maps.
+3. **Soil Integration Test Resolution:**
+   - Centroid Fallback: Coarse GLDAS grid cells ($27.8\text{ km}$, $784\text{ km}^2$) failed polygon intersection on small $4\text{ km}^2$ parcels. Added centroid reduction fallback in `RootZoneSoilMoistureGLDASMetric.compute()` preserving physical coverage.
+   - SMAP L3 Split Test: NASA backfilled version 006 across the entire active mission back to 2015-03-31. The test was updated to verify collection emptiness prior to mission launch (2014).
+   - All 15 soil integration tests pass with `RUN_GEE_INTEGRATION_TESTS=1`.
+
+### Item X3: GFS Cell Orography & DEM Buffer Approximation
+1. **Earth Engine `NOAA/GFS0P25` Catalog Inspection:**
+   - GEE collection `NOAA/GFS0P25` contains exactly 9 meteorological bands (`temperature_2m_above_ground`, `u_component_of_wind_10m_above_ground`, `v_component_of_wind_10m_above_ground`, `total_cloud_cover_entire_atmosphere`, `relative_humidity_2m_above_ground`, `specific_humidity_2m_above_ground`, `downward_shortwave_radiation_flux`, `precipitable_water_entire_atmosphere`, `total_precipitation_surface`).
+   - The collection contains **no surface geopotential height or orography band**.
+2. **DEM Buffer Approximation:**
+   - Cell elevation $z_{\text{cell}}$ is approximated by computing the mean NASADEM 30m elevation over a 13.9 km radius buffer centered on the GFS grid point.
+   - Documented explicitly in the UI and codebase: `تقریب: میانگین DEM بافر (به دلیل فقدان باند orography در دیتاست NOAA/GFS0P25 در Earth Engine)`.
+3. **Damavand Lapse Rate Calculation:**
+   - Site elevation: $z_{\text{site}} = 1997.8\text{ m}$.
+   - Surrounding mountain cell mean DEM: $z_{\text{cell}} = 2322.5\text{ m}$ (snapped grid: $2291.9\text{ m}$).
+   - $\Delta z = 1997.8 - 2322.5 = -324.7\text{ m}$.
+   - Elevation temperature adjustment: $\Delta T = -\Gamma \times \Delta z = -0.0065 \times (-324.7) = \mathbf{+2.11^\circ\text{C}}$ ($\mathbf{+1.91^\circ\text{C}}$ snapped).
+
+### Item X4: Validity Limitations & Objective Uncertainty
+1. **Prominent UI Notice:**
+   - Renders `data-testid="model-validity-limitation-notice"`:
+     `ℹ️ محدودیت اعتبار و تراز ارتفاع: بدون مرجع زمینی؛ اختلاف GFS و ERA5-Land در شب‌های گذشته ۴–۶°C بود؛ عدم‌قطعیت دما ≥۵°C.`
+2. **Objective Phrasing:**
+   - All subjective, unproven assertions of "محافظه‌کارانه" (conservative) have been removed or replaced with precise physical descriptions (e.g., "بر اساس قاعده ایمنی، حساس‌ترین مرحله منظور گردیده است").
+
+### Item X5: Simulator Mode & Production Safety Guard
+1. **Startup Validation (`validate_production_frost_safety`):**
+   - If `ENVIRONMENT=production` or `APP_ENV=production`, setting `FROST_USE_LIVE_GEE=0` or configuring a fake forecast provider raises an unrecoverable `RuntimeError` at application startup (`CRITICAL_PRODUCTION_SAFETY_VIOLATION`), preventing accidental deployment of mock data in production.
+2. **Honesty Banner:**
+   - Whenever simulated data is active in development, `data-testid="fake-provider-honesty-banner"` displays the red banner: `داده شبیه‌سازی‌شده؛ برای تصمیم استفاده نشود`.
+
+### Item X6: Performance Timings & Optimization Plan
+1. **Measured Endpoints (Live Benchmark):**
+   - `GET /api/v1/agriculture/frost/orchards/risk-summary`: Cold: **19.24s** | Warm: **12.81s**.
+   - `GET /api/v1/agriculture/frost/orchards/{id}/risk`: Cold: **4.75s** | Warm: **3.53s**.
+2. **Cache Cadence:**
+   - GFS Forecast Cell Cache: 2 hours.
+   - Dynamic Soil Moisture: 6 hours.
+   - Static DEM / SoilGrids: 30 days.
+3. **Parallelization Proposal (Pending Approval):**
+   - Current bottleneck: `assess_orchards_summary()` evaluates orchards serially in a sequential loop (`for o in orchards: await assess_single_orchard_risk(...)`).
+   - Optimization: Replace with `asyncio.gather(*[assess_single_orchard_risk(...) for o in orchards])`, bounded by `asyncio.Semaphore(5)` to prevent Earth Engine rate-limiting.
+   - Expected impact: Multi-orchard summary latency reduced from ~19s to ~5s.
+

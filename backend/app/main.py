@@ -30,11 +30,33 @@ def validate_earth_engine_on_startup() -> None:
     log_earth_engine_startup_status()
 
 
+def validate_production_frost_safety() -> None:
+    """Enforce that FakeForecastProvider is never permitted in production environment (X5)."""
+    import os
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or settings.APP_ENV or "").lower()
+    is_prod = settings.is_production or env == "production"
+    use_live_env = os.environ.get("FROST_USE_LIVE_GEE")
+
+    if is_prod:
+        if use_live_env == "0":
+            raise RuntimeError(
+                "CRITICAL_PRODUCTION_SAFETY_VIOLATION: FROST_USE_LIVE_GEE=0 or FakeForecastProvider "
+                "is strictly forbidden in production environment."
+            )
+        is_live = (use_live_env == "1") or getattr(settings, "FROST_USE_LIVE_GEE", False) or getattr(settings, "USE_LIVE_GEE", False)
+        if not is_live:
+            raise RuntimeError(
+                "CRITICAL_PRODUCTION_SAFETY_VIOLATION: FROST_USE_LIVE_GEE=0 or FakeForecastProvider "
+                "is strictly forbidden in production environment."
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     setup_logging()
     logger.info("Agricultural Intelligence Platform starting (env=%s)", settings.APP_ENV)
+    validate_production_frost_safety()
     try:
         validate_earth_engine_on_startup()
     except Exception as exc:  # never block startup on EE reporting issues

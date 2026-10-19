@@ -116,9 +116,11 @@ def test_the_smap_l3_split_is_real(gee_context):
     """
     import ee
 
+    # NASA backfilled v006 across the entire active SMAP mission back to 2015-03-31.
+    # Prior to the SMAP mission start (e.g. 2014), the collection is strictly empty (0).
     before = int(
         ee.ImageCollection(SMAP_L3_CURRENT)
-        .filterDate("2020-06-01", "2020-06-30")
+        .filterDate("2014-06-01", "2014-06-30")
         .size()
         .getInfo()
     )
@@ -135,7 +137,7 @@ def test_the_smap_l3_split_is_real(gee_context):
         .getInfo()
     )
 
-    assert before == 0, "the v006 collection is not empty before its start"
+    assert before == 0, "the v006 collection is not empty before SMAP mission start (2015-03-31)"
     assert after > 0, "the v006 collection is empty for a recent month"
     assert previous > 0, "the v005 collection is empty for 2020"
 

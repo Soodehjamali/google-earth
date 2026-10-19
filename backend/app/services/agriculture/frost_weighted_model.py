@@ -644,7 +644,7 @@ def evaluate_weighted_frost_model(
                 )
             )
             if is_dry_below_wp and rel_moist <= 0.001:
-                display_moist = "۰ (خشک‌تر از نقطه پژمردگی)"
+                display_moist = "خشک‌تر از نقطه پژمردگی (برآورد درشت‌مقیاس، نامطمئن)"
             else:
                 display_moist = f"{rel_moist:.2f}"
 
