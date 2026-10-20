@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+import asyncio
 import math
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -148,6 +149,7 @@ async def assess_single_orchard_risk(
     threshold_set: str = "published_v1",
     forecast_provider: Optional[Any] = None,
     gfs_cell_cache: Optional[Dict[str, Any]] = None,
+    gfs_cell_locks: Optional[Dict[str, Any]] = None,
     use_cache: bool = True,
     now_utc: Optional[datetime] = None,
     weights_config: Optional[FrostWeightedModelConfig] = None,
@@ -169,6 +171,7 @@ async def assess_single_orchard_risk(
         orchard=orchard,
         forecast_provider=active_forecast_provider,
         gfs_cell_cache=gfs_cell_cache if not is_simulation else None,
+        gfs_cell_locks=gfs_cell_locks if not is_simulation else None,
         use_cache=use_cache if not is_simulation else False,
         now_utc=now_dt,
         horizon_h=horizon_h,
@@ -403,63 +406,68 @@ async def assess_orchards_summary(
     use_cache: bool = True,
     now_utc: Optional[datetime] = None,
 ) -> List[OrchardSummaryItem]:
-    """Assess multiple orchards with shared GFS cell cache, returning sorted summary items."""
+    """Assess multiple orchards in parallel with shared GFS cell cache, returning sorted summary items."""
     shared_gfs_cell_cache: Dict[str, Any] = {}
+    shared_gfs_cell_locks: Dict[str, asyncio.Lock] = {}
     weights_cfg = load_frost_factor_weights_config()
     now_dt = now_utc or datetime.now(timezone.utc)
+    semaphore = asyncio.Semaphore(5)
 
-    summaries: List[OrchardSummaryItem] = []
+    async def _assess_one(o: Any) -> Optional[OrchardSummaryItem]:
+        async with semaphore:
+            try:
+                report = await assess_single_orchard_risk(
+                    orchard=o,
+                    horizon_h=horizon_h,
+                    threshold_set=threshold_set,
+                    forecast_provider=forecast_provider,
+                    gfs_cell_cache=shared_gfs_cell_cache,
+                    gfs_cell_locks=shared_gfs_cell_locks,
+                    use_cache=use_cache,
+                    now_utc=now_dt,
+                    weights_config=weights_cfg,
+                )
 
-    for o in orchards:
-        try:
-            report = await assess_single_orchard_risk(
-                orchard=o,
-                horizon_h=horizon_h,
-                threshold_set=threshold_set,
-                forecast_provider=forecast_provider,
-                gfs_cell_cache=shared_gfs_cell_cache,
-                use_cache=use_cache,
-                now_utc=now_dt,
-                weights_config=weights_cfg,
-            )
+                worst = report.worst_night or {}
+                # Extract sample values from worst night if available
+                worst_night_obj = next(
+                    (n for n in report.nights if n.night_date == worst.get("night_date")),
+                    None,
+                )
+                spd = worst_night_obj.wind_speed_mps if worst_night_obj else None
+                moist = worst_night_obj.relative_moisture if worst_night_obj else None
+                worst_night_cadence = worst_night_obj.cadence_label_fa if worst_night_obj else "تفکیک ۱ ساعته"
+                worst_night_resolvable = worst_night_obj.is_duration_resolvable if worst_night_obj else True
 
-            worst = report.worst_night or {}
-            # Extract sample values from worst night if available
-            worst_night_obj = next(
-                (n for n in report.nights if n.night_date == worst.get("night_date")),
-                None,
-            )
-            spd = worst_night_obj.wind_speed_mps if worst_night_obj else None
-            moist = worst_night_obj.relative_moisture if worst_night_obj else None
-            worst_night_cadence = worst_night_obj.cadence_label_fa if worst_night_obj else "تفکیک ۱ ساعته"
-            worst_night_resolvable = worst_night_obj.is_duration_resolvable if worst_night_obj else True
+                return OrchardSummaryItem(
+                    orchard_id=report.orchard_id,
+                    name=report.orchard_name,
+                    crop=report.crop,
+                    current_stage=report.current_stage,
+                    stage_is_stale=report.stage_is_stale,
+                    worst_night_date=worst.get("night_date"),
+                    worst_effective_tmin_c=worst.get("effective_tmin_c"),
+                    hours_below_threshold=worst.get("hours_below_threshold", 0.0),
+                    relative_rootzone_moisture=moist,
+                    wind_speed_mps=spd,
+                    risk_index=worst.get("risk_index", 0.0),
+                    final_category=report.overall_final_category,
+                    final_category_fa=report.overall_final_category_fa,
+                    gate_triggered=bool(worst.get("gate_triggered", False)),
+                    forecast_source=report.forecast_source,
+                    is_fake=report.is_fake,
+                    cadence_label_fa=worst_night_cadence,
+                    worst_night_resolvable=worst_night_resolvable,
+                    critical_temp_c=report.critical_temperature_c,
+                    stage_updated_at=report.stage_updated_at,
+                    archived_at=getattr(o, "archived_at", None).isoformat() if getattr(o, "archived_at", None) else None,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to assess risk summary for orchard {getattr(o, 'id', 'unknown')}: {exc}")
+                return None
 
-            item = OrchardSummaryItem(
-                orchard_id=report.orchard_id,
-                name=report.orchard_name,
-                crop=report.crop,
-                current_stage=report.current_stage,
-                stage_is_stale=report.stage_is_stale,
-                worst_night_date=worst.get("night_date"),
-                worst_effective_tmin_c=worst.get("effective_tmin_c"),
-                hours_below_threshold=worst.get("hours_below_threshold", 0.0),
-                relative_rootzone_moisture=moist,
-                wind_speed_mps=spd,
-                risk_index=worst.get("risk_index", 0.0),
-                final_category=report.overall_final_category,
-                final_category_fa=report.overall_final_category_fa,
-                gate_triggered=bool(worst.get("gate_triggered", False)),
-                forecast_source=report.forecast_source,
-                is_fake=report.is_fake,
-                cadence_label_fa=worst_night_cadence,
-                worst_night_resolvable=worst_night_resolvable,
-                critical_temp_c=report.critical_temperature_c,
-                stage_updated_at=report.stage_updated_at,
-                archived_at=getattr(o, "archived_at", None).isoformat() if getattr(o, "archived_at", None) else None,
-            )
-            summaries.append(item)
-        except Exception as exc:
-            logger.error(f"Failed to assess risk summary for orchard {getattr(o, 'id', 'unknown')}: {exc}")
+    results = await asyncio.gather(*[_assess_one(o) for o in orchards])
+    summaries: List[OrchardSummaryItem] = [r for r in results if r is not None]
 
     # Sort descending by risk severity then risk index
     summaries.sort(

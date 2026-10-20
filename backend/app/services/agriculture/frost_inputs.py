@@ -19,6 +19,7 @@ This module implements Phase 3 Redesign v2 Product Decisions (P1, P2):
 
 from __future__ import annotations
 
+import asyncio
 import copy
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -307,6 +308,7 @@ async def assemble_orchard_inputs(
     orchard: Any,
     forecast_provider: Optional[Any] = None,
     gfs_cell_cache: Optional[Dict[str, Any]] = None,
+    gfs_cell_locks: Optional[Dict[str, Any]] = None,
     use_cache: bool = True,
     now_utc: Optional[datetime] = None,
     horizon_h: int = 240,
@@ -409,6 +411,10 @@ async def assemble_orchard_inputs(
     if terrain_data is None and use_cache:
         try:
             terrain_data = cache_service.get(terrain_cache_key)
+            if terrain_data is not None:
+                logger.info("[CACHE HIT] Terrain data: %s", terrain_cache_key)
+            else:
+                logger.info("[CACHE MISS] Terrain data: %s", terrain_cache_key)
         except Exception:
             terrain_data = None
 
@@ -452,6 +458,7 @@ async def assemble_orchard_inputs(
         if use_cache and pooling_proxy is not None:
             try:
                 cache_service.set(terrain_cache_key, terrain_data, ttl=STATIC_INPUT_CACHE_TTL_SEC)
+                logger.info("[CACHE SET] Terrain data cached: %s", terrain_cache_key)
             except Exception:
                 pass
 
@@ -551,6 +558,10 @@ async def assemble_orchard_inputs(
     if soil_static_data is None and use_cache:
         try:
             soil_static_data = cache_service.get(soil_static_cache_key)
+            if soil_static_data is not None:
+                logger.info("[CACHE HIT] Soil static data: %s", soil_static_cache_key)
+            else:
+                logger.info("[CACHE MISS] Soil static data: %s", soil_static_cache_key)
         except Exception:
             soil_static_data = None
 
@@ -558,6 +569,10 @@ async def assemble_orchard_inputs(
     if soil_dynamic_data is None and use_cache:
         try:
             soil_dynamic_data = cache_service.get(soil_dynamic_cache_key)
+            if soil_dynamic_data is not None:
+                logger.info("[CACHE HIT] Soil dynamic data: %s", soil_dynamic_cache_key)
+            else:
+                logger.info("[CACHE MISS] Soil dynamic data: %s", soil_dynamic_cache_key)
         except Exception:
             soil_dynamic_data = None
 
@@ -605,20 +620,28 @@ async def assemble_orchard_inputs(
                     if use_cache and fc_val is not None:
                         try:
                             cache_service.set(soil_static_cache_key, soil_static_data, ttl=STATIC_INPUT_CACHE_TTL_SEC)
+                            logger.info("[CACHE SET] Soil static data cached: %s", soil_static_cache_key)
                         except Exception:
                             pass
 
                 if soil_dynamic_data is None:
                     moist_dict = intel_res.get("moisture", {})
-                    root_moist = (moist_dict.get("rootzone") or {}).get("value")
-                    moist_as_of = (moist_dict.get("rootzone") or {}).get("as_of") or now_iso
+                    rz_info = moist_dict.get("rootzone") or {}
+                    root_moist = rz_info.get("value")
+                    moist_as_of = rz_info.get("as_of") or (moist_dict.get("surface") or {}).get("as_of") or now_iso
+                    moist_source = rz_info.get("source") or ("SMAP L4" if "SMAP" in str(rz_info) else "ERA5-Land")
+                    moist_source_fa = rz_info.get("source_fa") or ("مدل جذب ماهواره‌ای SMAP L4" if "SMAP" in str(rz_info) else "مدل بازتحلیل ERA5-Land")
                     soil_dynamic_data = {
                         "theta_rootzone": float(root_moist) if root_moist is not None else None,
                         "as_of": moist_as_of if root_moist is not None else None,
+                        "source": moist_source,
+                        "source_fa": moist_source_fa,
+                        "dataset": rz_info.get("dataset"),
                     }
                     if use_cache and root_moist is not None:
                         try:
                             cache_service.set(soil_dynamic_cache_key, soil_dynamic_data, ttl=DYNAMIC_INPUT_CACHE_TTL_SEC)
+                            logger.info("[CACHE SET] Soil dynamic data cached: %s", soil_dynamic_cache_key)
                         except Exception:
                             pass
 
@@ -671,12 +694,17 @@ async def assemble_orchard_inputs(
         else:
             moist_status = "خنثی"
 
+        moist_source_fa = soil_dynamic_data.get("source_fa") or ("مدل جذب ماهواره‌ای SMAP L4" if "SMAP" in str(soil_dynamic_data) else "مدل بازتحلیل ERA5-Land")
+        moist_source_name = soil_dynamic_data.get("source") or "SMAP L4"
+        moist_dataset = soil_dynamic_data.get("dataset") or "NASA/SMAP/SPL4SMGP/008"
+
         factors["soil_rootzone_moisture"] = FactorInput(
             id="soil_rootzone_moisture",
             label_fa="رطوبت نسبی ریشه در خاک",
             value=relative_moisture,
             unit="نسبی (۰-۱)",
             source_module="app.services.agriculture.soil",
+            source_name_fa=f"پایش رطوبت {moist_source_name}",
             quality_state="coarse_context",
             as_of=moist_as_of,
             is_stale=moist_stale,
@@ -692,15 +720,21 @@ async def assemble_orchard_inputs(
                 "normalized_formula": "clamp((theta - WP)/(FC - WP), 0, 1)",
                 "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
                 "source_disparity_note": "تخمین θ از ماهواره/بازتحلیل (~۹–۱۱ کیلومتر) و WP از SoilGrids (۲۵۰ متر) از دو منبع متفاوت با عدم‌قطعیت ذاتی است.",
+                "moisture_source_name": moist_source_name,
+                "moisture_source_fa": moist_source_fa,
+                "moisture_dataset": moist_dataset,
+                "moisture_as_of": moist_as_of,
             },
         )
     else:
+        moist_source_name = soil_dynamic_data.get("source") or "SMAP L4 / ERA5-Land"
         factors["soil_rootzone_moisture"] = FactorInput(
             id="soil_rootzone_moisture",
             label_fa="رطوبت نسبی ریشه در خاک",
             value=None,
             unit="نسبی (۰-۱)",
             source_module="app.services.agriculture.soil",
+            source_name_fa=f"پایش رطوبت {moist_source_name}",
             quality_state="unavailable",
             as_of=moist_as_of,
             is_stale=False,
@@ -711,6 +745,9 @@ async def assemble_orchard_inputs(
                 "field_capacity_m3m3": fc,
                 "wilting_point_m3m3": wp,
                 "spatial_resolution_note": "تفکیک ~۹–۱۱ کیلومتر",
+                "moisture_source_name": moist_source_name,
+                "moisture_dataset": soil_dynamic_data.get("dataset"),
+                "moisture_as_of": moist_as_of,
             },
         )
 
@@ -758,50 +795,81 @@ async def assemble_orchard_inputs(
     cell_lat, cell_lon = gfs_cell
     cell_cache_key = f"agri:frost_gfs_cell:{cell_lat:.2f}:{cell_lon:.2f}"
 
+    # Only use generic GFS cell cache if no custom forecast_provider was explicitly supplied
+    effective_use_cache = use_cache and (forecast_provider is None)
+
     raw_cell_forecast: Optional[ForecastResult] = None
     if gfs_cell_cache is not None and cell_cache_key in gfs_cell_cache:
         raw_cell_forecast = gfs_cell_cache[cell_cache_key]
-    elif use_cache:
+        logger.info("[CACHE HIT] GFS cell in-memory batch cache: %s", cell_cache_key)
+    elif effective_use_cache:
         try:
             cached_fc = cache_service.get(cell_cache_key)
-            if cached_fc and isinstance(cached_fc, dict):
-                # Deserialization helper if cached as dict
+            if cached_fc is not None:
                 raw_cell_forecast = cached_fc
-        except Exception:
+                logger.info("[CACHE HIT] GFS cell cache_service: %s", cell_cache_key)
+            else:
+                logger.info("[CACHE MISS] GFS cell cache_service: %s", cell_cache_key)
+        except Exception as exc:
+            logger.warning("[CACHE ERROR] GFS cell cache_service %s: %s", cell_cache_key, exc)
             raw_cell_forecast = None
 
     if not raw_cell_forecast:
-        if forecast_provider:
-            provider = forecast_provider
-        else:
+        async def _fetch_cell_forecast() -> ForecastResult:
+            if forecast_provider:
+                provider = forecast_provider
+            else:
+                try:
+                    provider = NoaaGfsForecastProvider()
+                except Exception:
+                    provider = FakeForecastProvider()
+            cell_centroid_geom = {
+                "type": "Point",
+                "coordinates": [cell_lon, cell_lat],
+            }
             try:
-                provider = NoaaGfsForecastProvider()
-            except Exception:
-                provider = FakeForecastProvider()
-        cell_centroid_geom = {
-            "type": "Point",
-            "coordinates": [cell_lon, cell_lat],
-        }
-        try:
-            raw_cell_forecast = await provider.get_hourly_forecast(
-                geometry=cell_centroid_geom,
-                horizon_h=horizon_h,
-            )
-        except Exception as exc:
-            logger.error(f"Failed to fetch GFS forecast for cell {gfs_cell}: {exc}")
-            from app.services.agriculture.forecast import FakeForecastProvider
-            raw_cell_forecast = await FakeForecastProvider().get_hourly_forecast(
-                geometry=cell_centroid_geom,
-                horizon_h=horizon_h,
-            )
+                fc = await provider.get_hourly_forecast(
+                    geometry=cell_centroid_geom,
+                    horizon_h=horizon_h,
+                )
+            except Exception as exc:
+                logger.error(f"Failed to fetch GFS forecast for cell {gfs_cell}: {exc}")
+                from app.services.agriculture.forecast import FakeForecastProvider
+                fc = await FakeForecastProvider().get_hourly_forecast(
+                    geometry=cell_centroid_geom,
+                    horizon_h=horizon_h,
+                )
+            return fc
 
-        if gfs_cell_cache is not None and raw_cell_forecast is not None:
-            gfs_cell_cache[cell_cache_key] = raw_cell_forecast
-        if use_cache and raw_cell_forecast is not None:
-            try:
-                cache_service.set(cell_cache_key, raw_cell_forecast, ttl=GFS_CELL_CACHE_TTL_SEC)
-            except Exception:
-                pass
+        if gfs_cell_locks is not None:
+            cell_lock = gfs_cell_locks.setdefault(cell_cache_key, asyncio.Lock())
+            async with cell_lock:
+                if gfs_cell_cache is not None and cell_cache_key in gfs_cell_cache:
+                    raw_cell_forecast = gfs_cell_cache[cell_cache_key]
+                    logger.info("[CACHE HIT] GFS cell in-memory lock double-check: %s", cell_cache_key)
+                elif effective_use_cache and cache_service.get(cell_cache_key) is not None:
+                    raw_cell_forecast = cache_service.get(cell_cache_key)
+                    logger.info("[CACHE HIT] GFS cell cache_service lock double-check: %s", cell_cache_key)
+                else:
+                    raw_cell_forecast = await _fetch_cell_forecast()
+                    if gfs_cell_cache is not None and raw_cell_forecast is not None:
+                        gfs_cell_cache[cell_cache_key] = raw_cell_forecast
+                    if effective_use_cache and raw_cell_forecast is not None:
+                        try:
+                            cache_service.set(cell_cache_key, raw_cell_forecast, ttl=GFS_CELL_CACHE_TTL_SEC)
+                            logger.info("[CACHE SET] GFS cell cached with TTL=%ds: %s", GFS_CELL_CACHE_TTL_SEC, cell_cache_key)
+                        except Exception:
+                            pass
+        else:
+            raw_cell_forecast = await _fetch_cell_forecast()
+            if gfs_cell_cache is not None and raw_cell_forecast is not None:
+                gfs_cell_cache[cell_cache_key] = raw_cell_forecast
+            if effective_use_cache and raw_cell_forecast is not None:
+                try:
+                    cache_service.set(cell_cache_key, raw_cell_forecast, ttl=GFS_CELL_CACHE_TTL_SEC)
+                    logger.info("[CACHE SET] GFS cell cached with TTL=%ds: %s", GFS_CELL_CACHE_TTL_SEC, cell_cache_key)
+                except Exception:
+                    pass
 
     # Per-Orchard Elevation Correction from the Shared Cell Forecast
     orchard_forecast = copy.deepcopy(raw_cell_forecast)

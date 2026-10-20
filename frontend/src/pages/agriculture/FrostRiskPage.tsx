@@ -1712,9 +1712,16 @@ export default function FrostRiskPage() {
                                   {f.static ? 'لایه ثابت' : formatPersianDateTime(f.as_of)}
                                 </div>
                                 {f.id === 'soil_rootzone_moisture' && (
-                                  <div style={{ color: '#b45309', fontSize: '0.70rem', marginTop: '2px', lineHeight: '1.3' }}>
-                                    تخمین θ و WP از دو منبع متفاوت با خطای ذاتی هستند (ماهواره/بازتحلیل ~۹–۱۱ کیلومتر و SoilGrids ۲۵۰ متر).
-                                  </div>
+                                  <>
+                                    {f.details?.moisture_source_name && (
+                                      <div style={{ color: '#0369a1', fontWeight: 600, fontSize: '0.72rem', marginTop: '2px' }}>
+                                        منبع رطوبت: {f.details.moisture_source_name} {f.details?.moisture_as_of ? `(تصویر: ${formatPersianDateTime(f.details.moisture_as_of)})` : ''}
+                                      </div>
+                                    )}
+                                    <div style={{ color: '#b45309', fontSize: '0.70rem', marginTop: '2px', lineHeight: '1.3' }}>
+                                      تخمین θ و WP از دو منبع متفاوت با خطای ذاتی هستند (ماهواره/بازتحلیل ~۹–۱۱ کیلومتر و SoilGrids ۲۵۰ متر).
+                                    </div>
+                                  </>
                                 )}
                               </td>
                               <td style={{ padding: '8px 10px', textAlign: 'center' }}>

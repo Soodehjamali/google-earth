@@ -281,13 +281,23 @@ def _extract_soil_moisture(
             l3 = raw.get("volumetric_soil_water_layer_3")
             if l1 is not None and l2 is not None and l3 is not None:
                 rz_era5 = round((float(l1) * 7.0 + float(l2) * 21.0 + float(l3) * 72.0) / 100.0, 4)
+                as_of_era5 = None
+                try:
+                    t_latest = era5_col.sort("system:time_start", False).first().get("system:time_start").getInfo()
+                    if t_latest:
+                        from datetime import datetime, timezone
+                        as_of_era5 = datetime.fromtimestamp(t_latest / 1000.0, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
                 results["rootzone"] = {
                     "value": rz_era5,
                     "unit": "m3/m3",
                     "depth": "0–100 cm",
                     "depth_fa": "۰ تا ۱۰۰ سانتی‌متر (ناحیه ریشه)",
-                    "source": "ERA5-Land Multi-layer (Weighted 0–100 cm)",
+                    "source": "ERA5-Land",
+                    "source_fa": "مدل بازتحلیل زمین ERA5-Land",
                     "dataset": "ECMWF/ERA5_LAND/DAILY_AGGR",
+                    "as_of": as_of_era5,
                     "scale_m": 11132,
                     "status": "available",
                     "data_status": "available",
@@ -359,13 +369,23 @@ def _extract_soil_moisture(
             ).getInfo() or {}
             val = smap_l4_raw.get("sm_rootzone")
             if val is not None and not math.isnan(val) and val > 0:
+                as_of_smap = None
+                try:
+                    t_latest = smap_l4.sort("system:time_start", False).first().get("system:time_start").getInfo()
+                    if t_latest:
+                        from datetime import datetime, timezone
+                        as_of_smap = datetime.fromtimestamp(t_latest / 1000.0, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
                 results["rootzone"] = {
                     "value": round(float(val), 4),
                     "unit": "m3/m3",
                     "depth": "0–100 cm",
                     "depth_fa": "۰ تا ۱۰۰ سانتی‌متر (ناحیه ریشه)",
-                    "source": "SMAP L4 Assimilated Land Model",
+                    "source": "SMAP L4",
+                    "source_fa": "مدل جذب ماهواره‌ای SMAP L4",
                     "dataset": "NASA/SMAP/SPL4SMGP/008",
+                    "as_of": as_of_smap,
                     "scale_m": 9000,
                     "status": "available",
                     "data_status": "available",
