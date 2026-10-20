@@ -77,14 +77,18 @@ Before deploying calibrated parameters to production:
 - **Thermal Correction ($\Delta T$):** $+0.17^\circ\text{C}$ (Lapse warming: lower altitude yields slightly warmer air)
 - **Night Window (Asia/Tehran):** 18:00 (Sunset / dusk) to 08:00 (Sunrise / morning transition). $T_{\min}$ is extracted from candidate hours between 21:00 and 07:00 local time.
 
+> [!NOTE]
+> **Provenance & Git History Note (Commit `f1bc26e4`):**
+> In commit `f1bc26e4` (2026-10-19 16:45:39 +0330), live GFS hourly forecast data from October 19/20, 2026 was recorded below, but the headers were mistakenly labeled `2026-03-20` due to discussion of spring frost calibration. The corrected table below reflects the actual forecast timeline for night 2026-10-19 (شب ۲۷ مهر به بامداد ۲۸ مهر ۱۴۰۵).
+
 ```
 | UTC Timestamp        | Asia/Tehran Local | Raw GFS T (°C) | z_cell (m) | z_site (m) | Γ (K/m) | DEM Corrected T (°C) |
 |----------------------|-------------------|----------------|------------|------------|---------|----------------------|
-| 2026-03-20 15:00 UTC | 18:30 (غروب)      | 24.12          | 1066.3     | 1040.0     | 0.0065  | 24.29                |
-| 2026-03-20 18:00 UTC | 21:30             | 22.45          | 1066.3     | 1040.0     | 0.0065  | 22.62                |
-| 2026-03-20 21:00 UTC | 00:30 (نیمه‌شب)   | 21.30          | 1066.3     | 1040.0     | 0.0065  | 21.47                |
-| 2026-03-21 00:00 UTC | 03:30 (بامداد)    | 20.68          | 1066.3     | 1040.0     | 0.0065  | 20.85 (Tmin)         |
-| 2026-03-21 03:00 UTC | 06:30 (صبح زود)   | 21.05          | 1066.3     | 1040.0     | 0.0065  | 21.22                |
-| 2026-03-21 06:00 UTC | 09:30 (روز)       | 25.40          | 1066.3     | 1040.0     | 0.0065  | 25.57                |
+| 2026-10-19 15:00 UTC | 18:30 (غروب)      | 24.12          | 1066.7     | 1040.1     | 0.0065  | 24.29                |
+| 2026-10-19 18:00 UTC | 21:30             | 22.45          | 1066.7     | 1040.1     | 0.0065  | 22.62                |
+| 2026-10-19 21:00 UTC | 00:30 (نیمه‌شب)   | 21.30          | 1066.7     | 1040.1     | 0.0065  | 21.47                |
+| 2026-10-20 00:00 UTC | 03:30 (بامداد)    | 20.68          | 1066.7     | 1040.1     | 0.0065  | 20.85 (Tmin)         |
+| 2026-10-20 03:00 UTC | 06:30 (صبح زود)   | 21.05          | 1066.7     | 1040.1     | 0.0065  | 21.22                |
+| 2026-10-20 06:00 UTC | 09:30 (روز)       | 25.40          | 1066.7     | 1040.1     | 0.0065  | 25.57                |
 ```
 

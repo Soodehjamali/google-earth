@@ -2913,3 +2913,18 @@ async def evaluate_alerts_endpoint(
         "notifications": notifications_out,
     }
 
+
+@router.post(
+    "/frost/cache/clear",
+    tags=["Agriculture", "Frost"],
+    summary="Clear in-memory and persistent cache for frost assessment",
+)
+async def clear_frost_cache_endpoint(
+    _: bool = Depends(require_admin_auth),
+):
+    """Admin-only endpoint to clear frost assessment cache for cold-start benchmarking."""
+    from app.services.cache_service import cache_service
+    cache_service.clear()
+    return {"status": "cleared", "message": "Frost cache cleared successfully"}
+
+

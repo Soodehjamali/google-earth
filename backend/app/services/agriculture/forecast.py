@@ -226,8 +226,12 @@ class NoaaGfsForecastProvider(ForecastProvider):
         ).getInfo()
         z_site = float(site_raw["elevation"]) if site_raw and site_raw.get("elevation") is not None else 1000.0
 
-        # Grid cell elevation (averaged over GFS cell footprint ~28km)
-        cell_geom = ee_geom.centroid().buffer(GFS_CELL_RADIUS_M)
+        # Grid cell elevation (averaged over GFS cell footprint ~28km around snapped 0.25 deg cell center)
+        centroid_coords = ee_geom.centroid().coordinates().getInfo()
+        lon_c, lat_c = float(centroid_coords[0]), float(centroid_coords[1])
+        snapped_lat = round(lat_c * 4.0) / 4.0
+        snapped_lon = round(lon_c * 4.0) / 4.0
+        cell_geom = ee.Geometry.Point([snapped_lon, snapped_lat]).buffer(GFS_CELL_RADIUS_M)
         cell_raw = dem.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=cell_geom,

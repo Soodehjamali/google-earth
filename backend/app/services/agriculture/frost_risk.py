@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 from app.core.logging import get_logger
+from app.services.agriculture.calendar_util import format_night_display_fa
 from app.services.agriculture.cold_air_pooling import ColdAirPoolingResult
 from app.services.agriculture.forecast import ForecastResult, ForecastTimestep
 
@@ -1281,7 +1282,7 @@ def assess_frost_risk(
         nightly_risks.append(
             NightlyFrostRisk(
                 night_date=night_key,
-                night_display_fa=f"شب {night_key}",
+                night_display_fa=format_night_display_fa(night_key),
                 start_time_utc=start_utc,
                 end_time_utc=end_utc,
                 tmin_forecast_c=t_raw_min,

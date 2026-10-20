@@ -32,6 +32,7 @@ from app.services.agriculture.frost_risk import (
     RECOMMENDATION_WARNING_FA,
     STAGE_ALIASES,
 )
+from app.services.agriculture.calendar_util import format_night_display_fa
 from app.services.agriculture.frost_weighted_model import (
     evaluate_weighted_frost_model,
     load_frost_factor_weights_config,
@@ -108,6 +109,7 @@ class OrchardRiskReport:
     dem_elevation_m: Optional[float] = None
     has_elevation_discrepancy: bool = False
     elevation_discrepancy_warning_fa: Optional[str] = None
+    hourly_series: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         res = asdict(self)
@@ -307,7 +309,7 @@ async def assess_single_orchard_risk(
 
         detail = OrchardNightRiskDetail(
             night_date=night_key,
-            night_display_fa=f"شب {night_key}",
+            night_display_fa=format_night_display_fa(night_key),
             start_time_utc=start_utc,
             end_time_utc=end_utc,
             min_temp_local_time=min_temp_local,
@@ -368,6 +370,24 @@ async def assess_single_orchard_risk(
     if stage_updated_at_val and isinstance(stage_updated_at_val, datetime):
         stage_updated_at_val = stage_updated_at_val.isoformat()
 
+    hourly_steps = []
+    if inputs.orchard_forecast and inputs.orchard_forecast.series:
+        for s in inputs.orchard_forecast.series:
+            hourly_steps.append({
+                "lead_hours": s.lead_hours,
+                "timestamp_utc": s.timestamp_utc,
+                "temperature_2m_c_raw": s.temperature_2m_c_raw,
+                "temperature_2m_c": s.temperature_2m_c,
+                "elevation_delta_m": s.elevation_delta_m,
+                "elevation_correction_c": s.elevation_correction_c,
+                "relative_humidity_percent": s.relative_humidity_percent,
+                "wind_speed_10m_mps": s.wind_speed_10m_mps,
+                "wind_direction_10m_deg": s.wind_direction_10m_deg,
+                "total_cloud_cover_percent": s.total_cloud_cover_percent,
+                "dewpoint_2m_c": s.dewpoint_2m_c,
+                "total_uncertainty_c": s.total_uncertainty_c,
+            })
+
     return OrchardRiskReport(
         orchard_id=inputs.orchard_id,
         orchard_name=inputs.orchard_name,
@@ -395,6 +415,7 @@ async def assess_single_orchard_risk(
         dem_elevation_m=inputs.dem_elevation_m,
         has_elevation_discrepancy=inputs.has_elevation_discrepancy,
         elevation_discrepancy_warning_fa=inputs.elevation_discrepancy_warning_fa,
+        hourly_series=hourly_steps,
     )
 
 

@@ -75,12 +75,26 @@ const CATEGORY_STYLE: Record<string, { bg: string; text: string; border: string 
 const formatPersianDate = (dateStr?: string | null): string => {
   if (!dateStr) return 'نامشخص';
   try {
+    const cleanStr = dateStr.trim().slice(0, 10);
+    const parts = cleanStr.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      // Use noon UTC to eliminate any midnight timezone boundary shift
+      const d = new Date(Date.UTC(year, month, day, 12, 0, 0));
+      return new Intl.DateTimeFormat('fa-IR', {
+        calendar: 'persian',
+        day: 'numeric',
+        month: 'long',
+      }).format(d);
+    }
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     return new Intl.DateTimeFormat('fa-IR', {
-      year: 'numeric',
-      month: 'long',
+      calendar: 'persian',
       day: 'numeric',
+      month: 'long',
     }).format(d);
   } catch {
     return dateStr;
@@ -93,6 +107,7 @@ const formatPersianDateTime = (dateStr?: string | null): string => {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     return new Intl.DateTimeFormat('fa-IR', {
+      calendar: 'persian',
       year: 'numeric',
       month: 'numeric',
       day: 'numeric',
@@ -105,6 +120,10 @@ const formatPersianDateTime = (dateStr?: string | null): string => {
 };
 
 const formatNightDisplayFa = (nightDateStr?: string | null, rawDisplay?: string | null): string => {
+  if (rawDisplay && rawDisplay.startsWith('شب ') && !rawDisplay.includes('-')) {
+    // If backend already provided localized Persian night string (e.g. 'شب ۲۷ مهر'), preserve verbatim
+    return rawDisplay;
+  }
   if (!nightDateStr && !rawDisplay) return 'شب نامشخص';
   if (nightDateStr) {
     const pDate = formatPersianDate(nightDateStr);
