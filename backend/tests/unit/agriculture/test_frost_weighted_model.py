@@ -174,9 +174,9 @@ def test_absolute_safety_gate_dilution_prevention():
         duration_escalated=False,
     )
 
-    # Even if weighted index drops into 'watch' or 'none' band:
-    assert res.gate_category == "warning"
-    assert res.final_category in ("warning", "critical")
+    # Lethal temperature triggers Level 1 GATE at 'critical':
+    assert res.gate_category == "critical"
+    assert res.final_category == "critical"
     assert res.gate_triggered is True
     assert "آستانه آسیب" in res.gate_reason_fa
 

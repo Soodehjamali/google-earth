@@ -97,6 +97,8 @@ class FrostWeightedModelConfig:
     thresholds_verified: bool = False
 
     temperature_necessity: Dict[str, Any] = field(default_factory=dict)
+    temperature_uncertainty_c: float = 5.0
+    temperature_uncertainty_label_fa: str = "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
 
     def get_factor(self, factor_id: str) -> Optional[FrostFactorRow]:
         for f in self.factors:
@@ -179,7 +181,18 @@ def load_frost_factor_weights_config(
         "margin_safe_c": 4.0,
         "margin_warm_c": 10.0,
         "m_min": 0.10,
+        "temperature_uncertainty_c": 5.0,
+        "temperature_uncertainty_label_fa": "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده",
     })
+
+    t_unc = float(
+        data.get("temperature_uncertainty_c")
+        or temp_necessity.get("temperature_uncertainty_c", 5.0)
+    )
+    t_unc_label = str(
+        data.get("temperature_uncertainty_label_fa")
+        or temp_necessity.get("temperature_uncertainty_label_fa", "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده")
+    )
 
     return FrostWeightedModelConfig(
         factors=parsed_factors,
@@ -190,6 +203,8 @@ def load_frost_factor_weights_config(
         index_is_probability=bool(data.get("index_is_probability", False)),
         thresholds_verified=bool(data.get("thresholds_verified", False)),
         temperature_necessity=temp_necessity,
+        temperature_uncertainty_c=t_unc,
+        temperature_uncertainty_label_fa=t_unc_label,
     )
 
 
@@ -240,6 +255,9 @@ class WeightedRiskResult:
     raw_risk_index: float = 0.0
     necessity_multiplier: float = 1.0
     necessity_margin_c: float = 0.0
+    necessity_margin_prime_c: float = 0.0
+    temperature_uncertainty_c: float = 5.0
+    temperature_uncertainty_label_fa: str = "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
     illustrative_only: bool = True
     index_is_probability: bool = False
     thresholds_verified: bool = False
@@ -533,11 +551,12 @@ def evaluate_weighted_frost_model(
         contrib_temp = round(f_temp.weight * s_temp, 2)
         total_contribution += contrib_temp
         status_temp = _resolve_status_from_subscore(s_temp)
+        t_unc = float(getattr(cfg, "temperature_uncertainty_c", 5.0))
         evaluated_factors.append(
             EvaluatedFactor(
                 id="temperature_duration",
                 label_fa=f_temp.label_fa,
-                raw_value=f"{night_tmin_c:.1f} °C (آستانه {critical_temp_c:.1f} °C)",
+                raw_value=f"{night_tmin_c:.1f} ± {t_unc:.0f} °C (آستانه {critical_temp_c:.1f} °C)",
                 unit="°C",
                 source_module=f_temp.source_module,
                 quality_state="coarse_context",
@@ -553,6 +572,8 @@ def evaluate_weighted_frost_model(
                     "effective_tmin_c": night_tmin_c,
                     "critical_temperature_c": critical_temp_c,
                     "margin_c": round(night_tmin_c - critical_temp_c, 2),
+                    "margin_prime_c": round(night_tmin_c - critical_temp_c - t_unc, 2),
+                    "temperature_uncertainty_c": t_unc,
                     "duration_escalated": duration_escalated,
                 },
             )
@@ -952,23 +973,27 @@ def evaluate_weighted_frost_model(
     # -------------------------------------------------------------------------
     # S3: Temperature as a Necessary Condition (تعدیل‌گر شرط لازم دما)
     # margin = Tmin_eff - T_crit
-    # m = 1.0 when margin <= margin_safe_c (4.0 °C)
+    # margin' = Tmin_eff - T_crit - U
+    # m = 1.0 when margin' <= margin_safe_c (4.0 °C)
     # Linear attenuation from 1.0 down to m_min (0.10) between 4.0 °C and 10.0 °C
-    # m = 0.10 when margin >= margin_warm_c (10.0 °C)
+    # m = 0.10 when margin' >= margin_warm_c (10.0 °C)
     # index_final = index * m
     # -------------------------------------------------------------------------
+    t_unc = float(getattr(cfg, "temperature_uncertainty_c", 5.0))
+    t_unc_label = str(getattr(cfg, "temperature_uncertainty_label_fa", "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"))
     margin_c = round(night_tmin_c - critical_temp_c, 2)
+    margin_prime_c = round(margin_c - t_unc, 2)
     t_nec_cfg = cfg.temperature_necessity or {}
     safe_margin = float(t_nec_cfg.get("margin_safe_c", 4.0))
     warm_margin = float(t_nec_cfg.get("margin_warm_c", 10.0))
     m_min = float(t_nec_cfg.get("m_min", 0.10))
 
-    if margin_c <= safe_margin:
+    if margin_prime_c <= safe_margin:
         m_attenuation = 1.0
-    elif margin_c >= warm_margin:
+    elif margin_prime_c >= warm_margin:
         m_attenuation = m_min
     else:
-        frac = (margin_c - safe_margin) / (warm_margin - safe_margin)
+        frac = (margin_prime_c - safe_margin) / (warm_margin - safe_margin)
         m_attenuation = 1.0 - frac * (1.0 - m_min)
 
     m_attenuation = round(max(m_min, min(1.0, m_attenuation)), 4)
@@ -1001,21 +1026,30 @@ def evaluate_weighted_frost_model(
         index_cat = "critical"
 
     # -------------------------------------------------------------------------
-    # Absolute Safety Gate (GATE) Enforcement
+    # Absolute Safety Gate (GATE) Enforcement (دروازه دوسطحی با عدم‌قطعیت دما)
+    # 1. Tmin_eff <= T_crit (یا دیرش بحرانی) -> بحرانی (critical)
+    # 2. Tmin_eff - U <= T_crit -> حداقل دیده‌بانی سرما (watch)
     # -------------------------------------------------------------------------
     gate_cat = "none"
     gate_reason_fa = None
 
-    if duration_escalated:
+    if duration_escalated or night_tmin_c <= critical_temp_c:
         gate_cat = "critical"
+        if duration_escalated:
+            gate_reason_fa = (
+                "دیرش تداوم دما زیر آستانه بحرانی خسارت محقق شده است (ارتقای قطعی به بحرانی)."
+            )
+        else:
+            gate_reason_fa = (
+                f"دمای مؤثر ({night_tmin_c:.1f} °C) در یا زیر آستانه آسیب فیزیولوژیک "
+                f"({critical_temp_c:.1f} °C) است؛ مدل دروازه ایمنی قطعی (GATE) را در سطح بحرانی فعال کرد."
+            )
+    elif round(night_tmin_c - t_unc, 2) <= critical_temp_c:
+        gate_cat = "watch"
         gate_reason_fa = (
-            "دیرش تداوم دما زیر آستانه بحرانی خسارت محقق شده است (ارتقای قطعی به بحرانی)."
-        )
-    elif night_tmin_c <= critical_temp_c:
-        gate_cat = "warning"
-        gate_reason_fa = (
-            f"دمای مؤثر ({night_tmin_c:.1f} °C) در یا زیر آستانه آسیب فیزیولوژیک "
-            f"({critical_temp_c:.1f} °C) است؛ مدل اجازه تقلیل خطر به زیر سطح هشدار را نمی‌دهد."
+            f"با احتساب عدم‌قطعیت دما (±{t_unc:.1f} °C)، دمای مؤثر منهای عدم‌قطعیت "
+            f"({night_tmin_c - t_unc:.1f} °C) در یا زیر آستانه آسیب ({critical_temp_c:.1f} °C) قرار می‌گیرد؛ "
+            f"دروازه ایمنی فعال شده و حداقل سطح دیده‌بانی سرما الزامی است."
         )
 
     # Final Category = max(index_category, gate_category)
@@ -1050,6 +1084,9 @@ def evaluate_weighted_frost_model(
         raw_risk_index=raw_risk_index,
         necessity_multiplier=m_attenuation,
         necessity_margin_c=margin_c,
+        necessity_margin_prime_c=margin_prime_c,
+        temperature_uncertainty_c=t_unc,
+        temperature_uncertainty_label_fa=t_unc_label,
         illustrative_only=cfg.illustrative_only,
         index_is_probability=cfg.index_is_probability,
         thresholds_verified=cfg.thresholds_verified,

@@ -266,6 +266,8 @@ export interface OrchardSummaryItem {
   critical_temp_c?: number | null;
   stage_updated_at?: string | null;
   archived_at?: string | null;
+  temperature_uncertainty_c?: number;
+  temperature_uncertainty_label_fa?: string;
 }
 
 export interface OrchardNightRiskFactor {
@@ -350,6 +352,8 @@ export interface OrchardNightRiskDetail {
   cadence_label_fa?: string;
   is_duration_resolvable?: boolean;
   windows?: OrchardNightRiskWindow[];
+  temperature_uncertainty_c?: number;
+  temperature_uncertainty_label_fa?: string;
 }
 
 export interface OrchardRiskReport {
@@ -369,6 +373,8 @@ export interface OrchardRiskReport {
   guidance_risk_label_fa: string;
   overall_final_category: string;
   overall_final_category_fa: string;
+  temperature_uncertainty_c?: number;
+  temperature_uncertainty_label_fa?: string;
   worst_night: {
     night_date: string;
     effective_tmin_c: number;

@@ -152,9 +152,13 @@ factors:
 
 # S3: دما شرط لازم (Temperature as a Necessary Condition)
 # margin = Tmin_eff - T_crit
-# m = 1.0 when margin <= margin_safe_c (4.0 °C)
+# margin' = Tmin_eff - T_crit - U
+# m = 1.0 when margin' <= margin_safe_c (4.0 °C)
 # Linear decay from 1.0 down to m_min (0.10) between margin_safe_c (4.0 °C) and margin_warm_c (10.0 °C)
-# m = 0.10 when margin >= margin_warm_c (10.0 °C)
+# m = 0.10 when margin' >= margin_warm_c (10.0 °C)
+temperature_uncertainty_c: 5.0
+temperature_uncertainty_label_fa: "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
+
 temperature_necessity_attenuation:
   label_fa: "تعدیل‌گر شرط لازم دما (placeholder کالیبره‌نشده)"
   status: "placeholder کالیبره‌نشده"
@@ -162,3 +166,5 @@ temperature_necessity_attenuation:
   margin_safe_c: 4.0
   margin_warm_c: 10.0
   m_min: 0.10
+  temperature_uncertainty_c: 5.0
+  temperature_uncertainty_label_fa: "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"

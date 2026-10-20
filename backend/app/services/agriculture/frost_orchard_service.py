@@ -76,6 +76,8 @@ class OrchardNightRiskDetail:
     cadence_label_fa: str = "تفکیک ۱ ساعته"
     is_duration_resolvable: bool = True
     windows: List[Dict[str, Any]] = field(default_factory=list)
+    temperature_uncertainty_c: float = 5.0
+    temperature_uncertainty_label_fa: str = "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -110,6 +112,8 @@ class OrchardRiskReport:
     has_elevation_discrepancy: bool = False
     elevation_discrepancy_warning_fa: Optional[str] = None
     hourly_series: List[Dict[str, Any]] = field(default_factory=list)
+    temperature_uncertainty_c: float = 5.0
+    temperature_uncertainty_label_fa: str = "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
 
     def to_dict(self) -> Dict[str, Any]:
         res = asdict(self)
@@ -140,6 +144,8 @@ class OrchardSummaryItem:
     critical_temp_c: Optional[float] = None
     stage_updated_at: Optional[str] = None
     archived_at: Optional[str] = None
+    temperature_uncertainty_c: float = 5.0
+    temperature_uncertainty_label_fa: str = "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -334,6 +340,8 @@ async def assess_single_orchard_risk(
             cadence_label_fa=cadence_lbl,
             is_duration_resolvable=is_resolvable,
             windows=getattr(nom_run_res, "windows", []),
+            temperature_uncertainty_c=weighted_res.temperature_uncertainty_c,
+            temperature_uncertainty_label_fa=weighted_res.temperature_uncertainty_label_fa,
         )
         night_results.append(detail)
 
@@ -416,6 +424,8 @@ async def assess_single_orchard_risk(
         has_elevation_discrepancy=inputs.has_elevation_discrepancy,
         elevation_discrepancy_warning_fa=inputs.elevation_discrepancy_warning_fa,
         hourly_series=hourly_steps,
+        temperature_uncertainty_c=weights_cfg.temperature_uncertainty_c,
+        temperature_uncertainty_label_fa=weights_cfg.temperature_uncertainty_label_fa,
     )
 
 
@@ -482,6 +492,8 @@ async def assess_orchards_summary(
                     critical_temp_c=report.critical_temperature_c,
                     stage_updated_at=report.stage_updated_at,
                     archived_at=getattr(o, "archived_at", None).isoformat() if getattr(o, "archived_at", None) else None,
+                    temperature_uncertainty_c=weights_cfg.temperature_uncertainty_c,
+                    temperature_uncertainty_label_fa=weights_cfg.temperature_uncertainty_label_fa,
                 )
             except Exception as exc:
                 logger.error(f"Failed to assess risk summary for orchard {getattr(o, 'id', 'unknown')}: {exc}")

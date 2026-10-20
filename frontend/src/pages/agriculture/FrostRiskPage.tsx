@@ -988,7 +988,18 @@ export default function FrostRiskPage() {
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'center', direction: 'ltr' }}>
                             {item.worst_effective_tmin_c !== null && item.worst_effective_tmin_c !== undefined ? (
-                              <FormattedNumber value={item.worst_effective_tmin_c} unit="°C" />
+                              <div>
+                                <span style={{ fontWeight: 600 }}>
+                                  <FormattedNumber value={item.worst_effective_tmin_c} unit="°C" />{' '}
+                                  <span style={{ color: '#64748b', fontSize: '0.78rem' }}>±۵</span>
+                                </span>
+                                <div
+                                  style={{ fontSize: '0.65rem', color: '#64748b', direction: 'rtl', marginTop: '2px' }}
+                                  title={item.temperature_uncertainty_label_fa || 'عدم‌قطعیت دما: برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده'}
+                                >
+                                  عدم‌قطعیت دما (کالیبره‌نشده)
+                                </div>
+                              </div>
                             ) : (
                               '—'
                             )}
@@ -1202,7 +1213,15 @@ export default function FrostRiskPage() {
                           <div style={{ color: '#64748b', fontSize: '0.7rem' }}>کمینه دما</div>
                           <div style={{ fontWeight: 600, color: '#0f172a', direction: 'ltr' }}>
                             {item.worst_effective_tmin_c !== null && item.worst_effective_tmin_c !== undefined ? (
-                              <FormattedNumber value={item.worst_effective_tmin_c} unit="°C" />
+                              <div>
+                                <span>
+                                  <FormattedNumber value={item.worst_effective_tmin_c} unit="°C" />{' '}
+                                  <span style={{ color: '#64748b', fontSize: '0.78rem' }}>±۵</span>
+                                </span>
+                                <div style={{ fontSize: '0.62rem', color: '#64748b', direction: 'rtl', marginTop: '1px' }}>
+                                  عدم‌قطعیت دما (کالیبره‌نشده)
+                                </div>
+                              </div>
                             ) : (
                               '—'
                             )}
@@ -1590,7 +1609,18 @@ export default function FrostRiskPage() {
                                   {formatNightDisplayFa(n.night_date, n.night_display_fa)}
                                 </td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center', direction: 'ltr' }}>
-                                  <FormattedNumber value={n.effective_tmin_c} unit="°C" />
+                                  <div>
+                                    <span style={{ fontWeight: 600 }}>
+                                      <FormattedNumber value={n.effective_tmin_c} unit="°C" />{' '}
+                                      <span style={{ color: '#64748b', fontSize: '0.78rem' }}>±۵</span>
+                                    </span>
+                                    <div
+                                      style={{ fontSize: '0.62rem', color: '#64748b', direction: 'rtl', marginTop: '1px' }}
+                                      title={n.temperature_uncertainty_label_fa || 'عدم‌قطعیت دما: برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده'}
+                                    >
+                                      عدم‌قطعیت: ±۵°C (کالیبره‌نشده)
+                                    </div>
+                                  </div>
                                 </td>
                                 <td style={{ padding: '6px 10px', textAlign: 'center' }}>
                                   {(() => {
