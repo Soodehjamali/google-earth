@@ -166,5 +166,4 @@ temperature_necessity_attenuation:
   margin_safe_c: 4.0
   margin_warm_c: 10.0
   m_min: 0.10
-  temperature_uncertainty_c: 5.0
-  temperature_uncertainty_label_fa: "برآورد از مقایسه با Open-Meteo و ERA5-Land، کالیبره‌نشده"
+

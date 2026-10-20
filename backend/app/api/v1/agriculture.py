@@ -2799,7 +2799,7 @@ async def evaluate_alerts_endpoint(
 
         # Identify the earliest upcoming night with elevated frost risk (final category)
         target_night = next(
-            (n for n in orchard_report.nights if n.final_category not in ("none", "watch")),
+            (n for n in orchard_report.nights if n.final_category != "none"),
             None,
         )
         if not target_night:
@@ -2837,6 +2837,16 @@ async def evaluate_alerts_endpoint(
             )
             continue
 
+        # Alert Policy (F5):
+        # - "watch" (دیده‌بانی سرما) -> in-app notification only ("in_app")
+        # - "warning" (هشدار) and "critical" (بحرانی) -> SMS ("sms")
+        if target_night.final_category == "watch":
+            dispatch_channel = "in_app"
+        elif target_night.final_category in ("warning", "critical"):
+            dispatch_channel = "sms"
+        else:
+            dispatch_channel = rule.channel
+
         msg = (
             f"هشدار یخبندان باغ {orchard.name}: سطح خطر {target_night.final_category_fa} "
             f"برای مرحله {orchard_report.stage_fa} پسته ({target_night.night_display_fa}). "
@@ -2857,7 +2867,7 @@ async def evaluate_alerts_endpoint(
         err_msg = None
         try:
             dispatch_res = await dispatch_alert_with_safety_lock(
-                channel=rule.channel,
+                channel=dispatch_channel,
                 recipient=rule.recipient,
                 message=msg,
                 metadata=meta,
@@ -2879,7 +2889,7 @@ async def evaluate_alerts_endpoint(
             alert_rule_id=rule.id,
             idempotency_key=idem_key,
             recipient=mask_recipient(rule.recipient),
-            channel=rule.channel,
+            channel=dispatch_channel,
             payload={
                 "message": msg,
                 "metadata": meta,

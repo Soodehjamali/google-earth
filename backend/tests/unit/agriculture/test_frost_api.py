@@ -297,6 +297,93 @@ async def test_evaluate_alerts_idempotency_and_escalation():
         assert res2["evaluated_orchards"] == 1
         assert res2["dispatched_notifications"] == 0  # Did not duplicate!
         assert len(db_entries) == 1
+        assert db_entries[0].channel == "sms"
+
+
+@pytest.mark.asyncio
+async def test_evaluate_alerts_policy_watch_in_app_and_warning_sms():
+    """Verify alert policy F5:
+    - 'watch' (دیده‌بانی سرما) -> in-app notification only ('in_app').
+    - 'warning' / 'critical' -> SMS ('sms').
+    """
+    from app.api.v1.agriculture import evaluate_alerts_endpoint
+    from app.db.models.frost import Orchard, AlertRule, NotificationLog
+    from app.services.agriculture.forecast import FakeForecastProvider
+
+    orchard_id = uuid.uuid4()
+    mock_orchard = Orchard(
+        id=orchard_id,
+        name="باغ آزمایشی سیاست هشدار",
+        geometry=SAMPLE_POLYGON,
+        crop="pistachio",
+        default_phenology_stage="bloom",
+        elevation=1200.0,
+    )
+    mock_rule = AlertRule(
+        id=uuid.uuid4(),
+        orchard_id=orchard_id,
+        recipient="+989123456789",
+        channel="sms",  # rule requested sms, but watch must force in_app
+        lead_time_h=24,
+        enabled=True,
+        orchard=mock_orchard,
+    )
+
+    db_entries: list[NotificationLog] = []
+
+    class MockDbSession:
+        async def execute(self, stmt):
+            stmt_str = str(stmt)
+            mock_res = MagicMock()
+            if "alert_rules" in stmt_str:
+                mock_res.scalars.return_value.all.return_value = [mock_rule]
+            elif "notification_log" in stmt_str:
+                mock_res.scalars.return_value.all.return_value = list(db_entries)
+            else:
+                mock_res.scalars.return_value.all.return_value = []
+            return mock_res
+
+        def add(self, obj):
+            db_entries.append(obj)
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, obj):
+            pass
+
+    mock_db = MockDbSession()
+
+    # 1. Under Tmin = 3.0 °C in bloom stage (-1.7 °C):
+    # Level 2 GATE activates 'watch' (3.0 - 5.0 = -2.0 <= -1.7).
+    # Policy F5 requires 'watch' -> 'in_app' only!
+    with patch(
+        "app.services.agriculture.forecast.FakeForecastProvider",
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=3.0, z_site_m=1200.0),
+    ):
+        res_watch = await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=mock_db,
+        )
+        assert res_watch["dispatched_notifications"] == 1
+        assert len(db_entries) == 1
+        assert db_entries[0].payload["metadata"]["risk_level"] == "watch"
+        assert db_entries[0].channel == "in_app"
+
+    # 2. Under freezing temperature (Tmin = -3.0 °C):
+    # Upward escalation to 'critical' -> Policy F5 requires 'critical' -> 'sms'!
+    with patch(
+        "app.services.agriculture.forecast.FakeForecastProvider",
+        lambda *args, **kwargs: FakeForecastProvider(base_tmin_c=-3.0, z_site_m=1200.0),
+    ):
+        res_crit = await evaluate_alerts_endpoint(
+            eval_in={"dry_run": True, "use_live_gee": False},
+            db=mock_db,
+        )
+        assert res_crit["dispatched_notifications"] == 1
+        assert len(db_entries) == 2
+        assert db_entries[1].payload["metadata"]["risk_level"] == "critical"
+        assert db_entries[1].channel == "sms"
 
 
 def test_evaluate_alerts_endpoint_admin_auth_required():
@@ -1069,6 +1156,43 @@ async def test_orchard_observations_crud_and_filtering():
         except Exception:
             pass
         await dispose_engine()
+
+
+def test_frost_cache_clear_requires_admin_auth(monkeypatch):
+    """Verify POST /frost/cache/clear enforces admin authentication (F3).
+
+    - Without token: returns 401 or 403.
+    - With invalid token: returns 401 or 403.
+    - With valid admin token (read from env / settings): returns 200 {"status": "cleared"}.
+    """
+    from app.core.config import settings
+
+    admin_token = os.environ.get("ADMIN_API_KEY", "env-test-admin-secret-key")
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", admin_token)
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # 1. No token provided -> 401/403
+    resp_no_token = client.post("/api/v1/agriculture/frost/cache/clear")
+    assert resp_no_token.status_code in (401, 403)
+
+    # 2. Invalid token provided -> 401/403
+    resp_bad = client.post(
+        "/api/v1/agriculture/frost/cache/clear",
+        headers={"X-Admin-Token": "bad-unauthorized-key"},
+    )
+    assert resp_bad.status_code in (401, 403)
+
+    # 3. Valid admin token from env -> 200
+    resp_ok = client.post(
+        "/api/v1/agriculture/frost/cache/clear",
+        headers={"X-Admin-Token": admin_token},
+    )
+    assert resp_ok.status_code == 200
+    data = resp_ok.json()
+    assert data.get("status") == "cleared"
+    assert "cleared successfully" in data.get("message", "")
+
 
 
 

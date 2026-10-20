@@ -170,6 +170,8 @@ class NotificationProviderRegistry:
         self._providers: Dict[str, NotificationProvider] = {}
         # Default all channels to safe Stubs
         self.register("sms", StubNotificationProvider("sms"))
+        self.register("in_app", StubNotificationProvider("in_app"))
+        self.register("in-app", StubNotificationProvider("in-app"))
         self.register("telegram", StubNotificationProvider("telegram"))
         self.register("webhook", StubNotificationProvider("webhook"))
         self.register("email", StubNotificationProvider("email"))

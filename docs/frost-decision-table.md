@@ -13,7 +13,7 @@ In strict accordance with the sourced literature recorded in `docs/frost-sources
 | **Dormant** (`dormant`) | *Null* (placeholder $-15.0^\circ\text{C}$) | S1/S2 no data | *Null* | — | — |
 | **Unopened Bud** (`bud_burst` / flower buds) | $-4.0^\circ\text{C}$ | S2; S1 p. 72 | $\le -4.0^\circ\text{C}$ for $\ge 2.0\text{ h} \implies \text{Critical}$<br>$-4.0$ to $-6.0^\circ\text{C}$ for $\ge 6.0\text{ h} \implies \text{Critical (Severe)}$ | S1 p. 72 | — |
 | **Opening Bud** (`bud_burst`) | $-2.0^\circ\text{C}$ | S2 | $\le -4.0^\circ\text{C}$ for $\ge 2.0\text{ h} \implies \text{Critical}$ | S1 p. 72 | — |
-| **Bloom** (`early_bloom`, `full_bloom`) | $-1.7^\circ\text{C}$ | S1 p. 77 | *Null* (no duration data published) | — | $+2.0^\circ\text{C}$ in S2 (conflicting; NOT used as damage threshold) |
+| **Bloom** (`early_bloom`, `full_bloom`) | $-1.7^\circ\text{C}$ | Hokmabadi 2010 CIHEAM (Options Méditerranéennes A94, p. 77) | *Null* (no duration data published) | — | $+2.0^\circ\text{C}$ in Hokmabadi 2011 Iran Pistachio Association (conflicting; NOT used as damage threshold) |
 | **Fruit Set** (`fruit_set`) | $-2.0^\circ\text{C}$ | S2 | *Null* (no duration data published) | — | — |
 
 > [!IMPORTANT]

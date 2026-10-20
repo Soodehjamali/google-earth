@@ -3,8 +3,8 @@
 # NOTE: Numbers under engine_default_v0 are illustrative placeholders (مقادیر نمایشی) and are NOT from pistachio literature.
 #
 # SOURCED RESEARCH PROVENANCE (Phase 3 Close-out 3):
-# [S1] Hokmabadi H. (2010). Pistachio frost damage in Iran and new methods of frost protection. Options Méditerranéennes A94, pp. 71-78.
-# [S2] Hokmabadi H. (2011). Spring frost (سرمازدگی بهاره), Iran Pistachio Association.
+# [S1] Hokmabadi H. (2010) CIHEAM. Pistachio frost damage in Iran and new methods of frost protection. Options Méditerranéennes A94, pp. 71-78.
+# [S2] Hokmabadi H. (2011) Iran Pistachio Association. Spring frost (سرمازدگی بهاره).
 # Note: S1 and S2 share the SAME author and are NOT independent confirmations.
 #
 version: "1.0"
@@ -149,7 +149,7 @@ threshold_sets:
         conflicting_source: "Hokmabadi H. (2011), Iran Pistachio Association [S2]"
         conflicting_notes_fa: "مقدار ۲+ درجه در S2 با مقدار ۱.۷- درجه در S1 متعارض است و به عنوان آستانه خسارت استفاده نمی‌شود."
         duration_rules: null
-        source: "Hokmabadi H. (2010), Options Méditerranéennes A94, p. 77 [S1]"
+        source: "Hokmabadi H. (2010) CIHEAM, Options Méditerranéennes A94, p. 77 [S1]"
         status: "published"
       fruit:
         name_fa: "میوه (ارزنک)"

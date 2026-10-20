@@ -201,15 +201,50 @@ def test_tmin_below_critical_triggers_critical_gate():
     assert res_sub.gate_triggered is True
 
 
-def test_two_level_gate_triggers_watch_within_uncertainty():
-    """Verify Level 2 GATE: when Tmin - U <= Tcrit, gate forces at least 'watch'.
+def test_two_level_gate_dormant_stage_threshold_minus_4():
+    """Verify scenario: Tmin = 3.0 °C in dormant stage with its own threshold (-4.0 °C).
 
-    Scenario: Dormant stage with low base index (< 25%), but Tmin = 3.0 °C, Tcrit = -1.7 °C:
-    Tmin - U = 3.0 - 5.0 = -2.0 °C <= -1.7 °C.
-    Gate must force at least 'watch' even if index category is 'none'.
+    Physics:
+    - Tmin = 3.0 °C, U = 5.0 °C, Tcrit = -4.0 °C (dormant / unopened_bud threshold).
+    - Tmin - U = 3.0 - 5.0 = -2.0 °C > -4.0 °C => Level 2 GATE is NOT triggered.
+    - Low base vulnerability in dormant stage (subscore 0.10) keeps risk_index in 'none' (< 25%).
+    - Final category remains 'none' (عادی / بدون خطر).
     """
     inputs = _make_dummy_inputs(
         stage="dormant",
+        moist_val=0.90,
+        moist_qstate="valid",
+        pooling=0.10,
+        slope=8.0,
+    )
+    res = evaluate_weighted_frost_model(
+        inputs=inputs,
+        night_tmin_c=3.0,
+        critical_temp_c=-4.0,
+        night_wind_speed_mps=2.5,
+        night_wind_dir_deg=180.0,
+        night_cloud_pct=90.0,
+        night_rh_pct=85.0,
+    )
+
+    # Gate is inactive because Tmin - U (-2.0 °C) > Tcrit (-4.0 °C)
+    assert res.gate_triggered is False
+    assert res.gate_category == "none"
+    assert res.gate_reason_fa is None
+    assert res.final_category == "none"
+    assert res.final_category_fa == "عادی (بدون خطر)"
+
+
+def test_two_level_gate_bloom_stage_threshold_minus_1_point_7():
+    """Verify scenario: Tmin = 3.0 °C in bloom stage with its threshold (-1.7 °C).
+
+    Physics:
+    - Tmin = 3.0 °C, U = 5.0 °C, Tcrit = -1.7 °C (bloom stage threshold Hokmabadi 2010 CIHEAM).
+    - Tmin - U = 3.0 - 5.0 = -2.0 °C <= -1.7 °C => Level 2 GATE is triggered!
+    - Gate unconditionally forces category to at least 'watch' (دیده‌بانی سرما).
+    """
+    inputs = _make_dummy_inputs(
+        stage="bloom",
         moist_val=0.90,
         moist_qstate="valid",
         pooling=0.10,
@@ -225,8 +260,9 @@ def test_two_level_gate_triggers_watch_within_uncertainty():
         night_rh_pct=85.0,
     )
 
+    assert res.gate_triggered is True
     assert res.gate_category == "watch"
     assert res.final_category in ("watch", "warning", "critical")
-    assert res.gate_triggered is True
     assert "عدم‌قطعیت" in res.gate_reason_fa
     assert "دیده‌بانی سرما" in res.gate_reason_fa
+
